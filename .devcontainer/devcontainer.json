@@ -1,0 +1,29 @@
+{
+  "name": "Jiffy — Firefox extension",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:24-trixie",
+
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": { "label": "Test page server (optional)" }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "mozilla.firefox-devtools-vscode-firefox-debug"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+        "[jsonc]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+        "files.eol": "\n"
+      }
+    }
+  },
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "remoteUser": "node"
+}
