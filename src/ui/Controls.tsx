@@ -9,6 +9,7 @@ import type { Engine } from '../engine/types';
 import { useEngineState } from './useEngineState';
 import { PauseIcon, PlayIcon, StepBackIcon, StepForwardIcon } from './icons';
 import { Scrubber } from './Scrubber';
+import { Readout } from './Readout';
 
 /** Props for the top-level controls component. */
 export interface ControlsProps {
@@ -74,9 +75,12 @@ export function Controls({ engine }: ControlsProps) {
         }}
       />
 
-      <span class="readout">
-        {index + 1} / {frameCount}
-      </span>
+      <Readout
+        index={index}
+        frameCount={frameCount}
+        time={currentTime}
+        duration={duration}
+      />
     </div>
   );
 }
