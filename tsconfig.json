@@ -31,7 +31,7 @@
     "skipLibCheck": true
   },
   "include": ["src", "types"],
-  /* Test files run via `node --experimental-strip-types` (Node globals, no DOM);
-     keep them out of the browser-targeted typecheck. */
-  "exclude": ["**/*.test.ts"]
+  /* Test files + test helpers run under the esbuild test runner (Node globals,
+     jsdom, no @types); keep them out of the browser-targeted typecheck. */
+  "exclude": ["**/*.test.ts", "**/*.test.tsx", "src/test/**"]
 }
