@@ -31,7 +31,12 @@ class FakeImageData {
 }
 
 class FakeCtx {
-  constructor(private w: number, private h: number) {}
+  w: number;
+  h: number;
+  constructor(w: number, h: number) {
+    this.w = w;
+    this.h = h;
+  }
   clearRect() {}
   drawImage() {}
   putImageData() {}
@@ -41,7 +46,12 @@ class FakeCtx {
 }
 
 class FakeOffscreenCanvas {
-  constructor(public width: number, public height: number) {}
+  width: number;
+  height: number;
+  constructor(width: number, height: number) {
+    this.width = width;
+    this.height = height;
+  }
   getContext() {
     return new FakeCtx(this.width, this.height);
   }

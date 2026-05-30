@@ -15,8 +15,12 @@ declare module 'gifuct-js' {
     delay: number;
     /** Disposal method: how to treat the canvas before the next frame. */
     disposalType: number;
-    /** RGBA pixel data for this frame's rectangle (present when patches built). */
-    patch?: Uint8ClampedArray;
+    /**
+     * RGBA pixel data for this frame's rectangle (present when patches built).
+     * Backed by a plain `ArrayBuffer` so it satisfies the `ImageData`
+     * constructor's `ImageDataArray` (not `SharedArrayBuffer`).
+     */
+    patch?: Uint8ClampedArray<ArrayBuffer>;
     /** Raw colour-indexed pixels for this frame. */
     pixels: number[];
     colorTable: Array<[number, number, number]>;
