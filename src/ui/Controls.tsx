@@ -10,6 +10,7 @@ import { useEngineState } from './useEngineState';
 import { PauseIcon, PlayIcon, StepBackIcon, StepForwardIcon } from './icons';
 import { Scrubber } from './Scrubber';
 import { Readout } from './Readout';
+import { handleControlKey } from './keymap';
 
 /** Props for the top-level controls component. */
 export interface ControlsProps {
@@ -29,7 +30,17 @@ export function Controls({ engine }: ControlsProps) {
   const wasPlaying = useRef(false);
 
   return (
-    <div class="bar">
+    // Focus-scoped keyboard shortcuts (issue 12): the bar is focusable so
+    // Space/arrows only drive *this* GIF when its controls have focus — no
+    // document-level capture, so two GIFs never react to one keypress and page
+    // text inputs keep their keys.
+    <div
+      class="bar"
+      tabIndex={0}
+      onKeyDown={(event) => {
+        if (handleControlKey(event.key, engine)) event.preventDefault();
+      }}
+    >
       <button
         type="button"
         class="icon"

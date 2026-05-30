@@ -53,5 +53,35 @@ act(() => prev!.click());
 assert.equal(engine.state.index, 0, 'prev steps back');
 assert.match(text(), /1 \/ 3/, 'readout back to 1 / 3');
 
+// ---- keyboard shortcuts (issue 12) ---------------------------------------
+// Shortcuts are scoped to the focusable bar (not document), so they only fire
+// when the controls have focus. Space toggles + preventDefaults (no page
+// scroll); arrows step. State starts paused on frame 1 after the steps above.
+const bar = container.querySelector('.bar') as HTMLElement;
+assert.equal(bar.tabIndex, 0, 'controls bar is focusable');
+
+const press = (key: string) => {
+  const event = new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  act(() => {
+    bar.dispatchEvent(event);
+  });
+  return event;
+};
+
+const space = press(' ');
+assert.equal(engine.state.playing, true, 'Space toggles play');
+assert.equal(space.defaultPrevented, true, 'Space is preventDefault-ed (no page scroll)');
+
+press('ArrowRight');
+assert.equal(engine.state.index, 1, 'ArrowRight steps forward');
+assert.equal(engine.state.playing, false, 'stepping pauses');
+
+press('ArrowLeft');
+assert.equal(engine.state.index, 0, 'ArrowLeft steps back');
+
+// Unrelated keys are left for the page/browser.
+const other = press('a');
+assert.equal(other.defaultPrevented, false, 'unrelated keys are not consumed');
+
 render(null, container);
 console.log('Controls.test: OK');
