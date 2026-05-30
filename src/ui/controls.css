@@ -1,17 +1,61 @@
-/* Adopted stylesheet for the controls, scoped inside the shadow root (PRD §7).
-   Filled out in issue 09. */
+/* Adopted stylesheet for the controls bar (issue 07). Injected into the shadow
+   root so host-page CSS can't reach in and our rules can't leak out (PRD §7).
+   :host is the shadow host element; all selectors below match only inside the
+   shadow tree. The bar, buttons, scrubber and readout are fleshed out in
+   issues 08–10. */
+
+:host {
+  all: initial; /* neutralise inherited host-page styles */
+}
+
 .bar {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
-  font: 12px/1 system-ui, sans-serif;
+  box-sizing: border-box;
+  padding: 6px 10px;
+  font: 12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  color: #fff;
+  background: rgba(17, 17, 17, 0.82);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  user-select: none;
 }
 
 .bar button {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
   cursor: pointer;
+}
+
+.bar button:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.bar button:focus-visible {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 1px;
+}
+
+.bar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.icon {
+  display: inline-flex;
+  align-items: center;
 }
 
 .readout {
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }

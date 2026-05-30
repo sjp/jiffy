@@ -1,14 +1,48 @@
-// Inlined SVG icon strings (borrowed from Lucide, per PRD §6 — icons only, no
-// icon package). Rendered into buttons via dangerouslySetInnerHTML.
+// Inlined player-control SVG glyphs (issue 07 / PRD §6). We borrow simple inline
+// icons rather than pulling in an icon package — the content script injects into
+// every matching page, so bundle size matters. Built with Preact's `h` (no JSX)
+// so this stays a plain `.ts` module per the project structure.
+//
+// Icons are decorative: `aria-hidden` + `focusable="false"`, leaving the
+// accessible name to the enclosing <button> (issue 08).
+import { h } from 'preact';
+import type { ComponentChildren, VNode } from 'preact';
 
-export const playIcon =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 3 20 12 6 21 6 3"/></svg>';
+export interface IconProps {
+  size?: number;
+}
 
-export const pauseIcon =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+const glyph = (size: number, children: ComponentChildren): VNode =>
+  h(
+    'svg',
+    {
+      width: size,
+      height: size,
+      viewBox: '0 0 24 24',
+      fill: 'currentColor',
+      'aria-hidden': 'true',
+      focusable: 'false',
+    },
+    children,
+  );
 
-export const prevIcon =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2"/></svg>';
+export const PlayIcon = ({ size = 16 }: IconProps): VNode =>
+  glyph(size, h('path', { d: 'M8 5v14l11-7z' }));
 
-export const nextIcon =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2"/></svg>';
+export const PauseIcon = ({ size = 16 }: IconProps): VNode =>
+  glyph(size, [
+    h('rect', { x: 6, y: 5, width: 4, height: 14 }),
+    h('rect', { x: 14, y: 5, width: 4, height: 14 }),
+  ]);
+
+export const StepBackIcon = ({ size = 16 }: IconProps): VNode =>
+  glyph(size, [
+    h('rect', { x: 6, y: 6, width: 2, height: 12 }),
+    h('path', { d: 'M20 6 9 12l11 6z' }),
+  ]);
+
+export const StepForwardIcon = ({ size = 16 }: IconProps): VNode =>
+  glyph(size, [
+    h('rect', { x: 16, y: 6, width: 2, height: 12 }),
+    h('path', { d: 'M4 6l11 6L4 18z' }),
+  ]);
