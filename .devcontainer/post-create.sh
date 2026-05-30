@@ -13,7 +13,7 @@ if [ -f package.json ]; then
 fi
 
 sudo chown -R $(id -u):$(id -g) ~/.claude
-echo '{\"hasCompletedOnboarding\":true,\"numStartups\":1,\"installMethod\":\"npm\"}' > ~/.claude.json
+echo '{"hasCompletedOnboarding":true,"numStartups":1,"installMethod":"npm"}' > ~/.claude.json
 
 cat <<'EOF'
 
