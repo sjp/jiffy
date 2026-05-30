@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Jiffy",
+  "version": "0.0.0",
+  "description": "Give animated GIFs video-like playback controls: play, pause, frame-step, and seek.",
+  "icons": {
+    "48": "icons/icon.svg",
+    "96": "icons/icon.svg"
+  },
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": ["<all_urls>"],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "jiffy@sjp.co.nz",
+      "strict_min_version": "115.0"
+    }
+  }
+}
