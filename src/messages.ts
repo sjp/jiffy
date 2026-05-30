@@ -31,6 +31,24 @@ export function isFetchGifRequest(message: unknown): message is FetchGifRequest 
 }
 
 /**
+ * Popup → content script: enter "pick a GIF" mode (issue 11 trigger). Sent when
+ * the user clicks the toolbar popup's button; the content script then enhances
+ * the next GIF they click.
+ */
+export interface PickGifRequest {
+  readonly type: 'PICK_GIF';
+}
+
+/** Narrow an untyped incoming message to a `PickGifRequest`. */
+export function isPickGifRequest(message: unknown): message is PickGifRequest {
+  return (
+    typeof message === 'object' &&
+    message !== null &&
+    (message as { type?: unknown }).type === 'PICK_GIF'
+  );
+}
+
+/**
  * Perform the actual cross-origin fetch (runs in the background context). Never
  * throws — network failures and non-OK statuses become a typed error response.
  */

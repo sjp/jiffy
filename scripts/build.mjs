@@ -54,6 +54,7 @@ const options = {
   entryPoints: {
     background: path.join(root, 'src/background.ts'),
     content: path.join(root, 'src/content/index.ts'),
+    popup: path.join(root, 'src/popup/popup.ts'),
   },
   outdir,
   bundle: true,

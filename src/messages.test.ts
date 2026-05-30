@@ -2,7 +2,7 @@
 // Run: `npm test`. `fetch` is stubbed so no network is touched.
 
 import assert from 'node:assert/strict';
-import { handleFetchGif, isFetchGifRequest } from './messages.ts';
+import { handleFetchGif, isFetchGifRequest, isPickGifRequest } from './messages.ts';
 
 // ---- isFetchGifRequest guard --------------------------------------------
 assert.equal(isFetchGifRequest({ type: 'FETCH_GIF', url: 'http://x/a.gif' }), true);
@@ -10,6 +10,12 @@ assert.equal(isFetchGifRequest({ type: 'FETCH_GIF' }), false, 'missing url');
 assert.equal(isFetchGifRequest({ type: 'OTHER', url: 'x' }), false, 'wrong type');
 assert.equal(isFetchGifRequest(null), false);
 assert.equal(isFetchGifRequest('FETCH_GIF'), false);
+
+// ---- isPickGifRequest guard ---------------------------------------------
+assert.equal(isPickGifRequest({ type: 'PICK_GIF' }), true);
+assert.equal(isPickGifRequest({ type: 'FETCH_GIF', url: 'x' }), false, 'wrong type');
+assert.equal(isPickGifRequest(null), false);
+assert.equal(isPickGifRequest(undefined), false);
 
 const realFetch = globalThis.fetch;
 const stub = (impl: () => Promise<unknown>) => {

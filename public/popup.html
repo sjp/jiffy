@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jiffy</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        padding: 12px;
+        width: 220px;
+        font: 13px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 14px;
+      }
+      p {
+        margin: 0 0 12px;
+        opacity: 0.75;
+      }
+      button {
+        width: 100%;
+        padding: 8px 10px;
+        font: inherit;
+        font-weight: 600;
+        color: #fff;
+        background: #6d28d9;
+        border: 0;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #7c3aed;
+      }
+      button:focus-visible {
+        outline: 2px solid #8b5cf6;
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Jiffy</h1>
+    <p>Add video-style controls to a GIF on this page.</p>
+    <button id="pick" type="button">Select a GIF to control</button>
+    <script src="popup.js"></script>
+  </body>
+</html>
