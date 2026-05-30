@@ -7,8 +7,14 @@
 //
 // The pipeline's collaborators are injected (createController) so the discovery /
 // registry / teardown logic is unit-testable headless without a real canvas or
-// the background channel. Dynamic discovery (MutationObserver) is issue 13 — this
-// module exposes `discover`/`teardown` so 13 can drive them.
+// the background channel.
+//
+// Issue 13 adds DOM-lifecycle reconciliation: a debounced MutationObserver tears
+// down a GIF's player when its <img> leaves the document (lazy unmount, SPA route
+// change), reusing the idempotent registry + teardown so no rAF loop, listener or
+// bitmap leaks. Because discovery is ON-DEMAND (the user picks GIFs via the
+// popup), the observer does NOT auto-enhance inserted GIFs — it only reconciles
+// removals.
 import { decode } from '../engine/decode';
 import { createEngine } from '../engine/engine';
 import { createOverlay, type Overlay } from './overlay';
@@ -42,6 +48,10 @@ export interface Controller {
   teardown(img: HTMLImageElement): void;
   /** Tear down everything. */
   teardownAll(): void;
+  /** Tear down any instance whose <img> has left the document (issue 13). */
+  reconcile(): void;
+  /** Watch `target` and reconcile removals (debounced); returns a stop fn (issue 13). */
+  observe(target?: Node): () => void;
   /** Live registry (exposed for issue 13 + tests). */
   readonly instances: ReadonlyMap<HTMLImageElement, Instance>;
 }
@@ -103,7 +113,43 @@ export function createController(deps: PipelineDeps): Controller {
     instances.clear();
   }
 
-  return { processImage, discover, teardown, teardownAll, instances };
+  // Tear down players whose <img> is no longer in the document. Cheap (O(live
+  // players)) and idempotent, so it's safe to call from a noisy observer.
+  function reconcile(): void {
+    for (const img of [...instances.keys()]) {
+      if (!img.isConnected) teardown(img);
+    }
+  }
+
+  function observe(target: Node = document): () => void {
+    // Coalesce a burst of mutations (infinite scroll, an SPA swapping a whole
+    // subtree) into a single reconcile on the next microtask.
+    let scheduled = false;
+    const schedule = (): void => {
+      if (scheduled) return;
+      scheduled = true;
+      queueMicrotask(() => {
+        scheduled = false;
+        reconcile();
+      });
+    };
+    const observer =
+      typeof MutationObserver !== 'undefined' ? new MutationObserver(schedule) : null;
+    observer?.observe(target, { childList: true, subtree: true });
+    // SPA route changes can swap DOM via history navigation; reconcile then too.
+    const onPopState = (): void => schedule();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('popstate', onPopState);
+    }
+    return () => {
+      observer?.disconnect();
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('popstate', onPopState);
+      }
+    };
+  }
+
+  return { processImage, discover, teardown, teardownAll, reconcile, observe, instances };
 }
 
 /** Default wiring used when running as the actual content script. */
@@ -167,8 +213,12 @@ export function init(): () => void {
     return undefined;
   };
   browser.runtime.onMessage.addListener(onMessage);
+  // Keep the player set in sync with the live DOM: tear down players whose GIF
+  // was removed (lazy unmount / SPA navigation) so nothing leaks (issue 13).
+  const stopObserving = controller.observe();
   return () => {
     browser.runtime.onMessage.removeListener(onMessage);
+    stopObserving();
     exitPickMode();
     controller.teardownAll();
   };

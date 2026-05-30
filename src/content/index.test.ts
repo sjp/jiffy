@@ -86,6 +86,39 @@ assert.equal(ctrl.instances.size, 2, 'two GIFs discovered, PNG ignored');
 ctrl.teardownAll();
 assert.equal(ctrl.instances.size, 0, 'everything torn down');
 
+// ---- reconcile() tears down players whose <img> left the DOM (issue 13) --
+const live = imgWith('http://x/live.gif');
+document.body.appendChild(live);
+await ctrl.processImage(live);
+assert.equal(ctrl.instances.size, 1, 'connected GIF enhanced');
+
+const destroyedBefore = destroyed;
+live.remove();
+ctrl.reconcile();
+assert.equal(ctrl.instances.size, 0, 'reconcile tore down the removed GIF');
+assert.equal(destroyed, destroyedBefore + 1, 'overlay destroyed on reconcile');
+
+// ---- observe() reconciles removals automatically (debounced) -------------
+const stop = ctrl.observe(document);
+const watched = imgWith('http://x/watched.gif');
+document.body.appendChild(watched);
+await ctrl.processImage(watched);
+assert.equal(ctrl.instances.size, 1, 'watched GIF enhanced');
+
+watched.remove();
+await flush(); // let the observer's microtask-coalesced reconcile run
+assert.equal(ctrl.instances.size, 0, 'observer tore down the removed GIF');
+
+// After stopping, removals are no longer auto-reconciled.
+stop();
+const orphan = imgWith('http://x/orphan.gif');
+document.body.appendChild(orphan);
+await ctrl.processImage(orphan);
+orphan.remove();
+await flush();
+assert.equal(ctrl.instances.size, 1, 'no teardown once the observer is stopped');
+ctrl.teardownAll();
+
 // ---- pick-mode state machine --------------------------------------------
 const docEl = document.documentElement;
 
