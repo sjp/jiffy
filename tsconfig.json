@@ -30,5 +30,8 @@
 
     "skipLibCheck": true
   },
-  "include": ["src", "types"]
+  "include": ["src", "types"],
+  /* Test files run via `node --experimental-strip-types` (Node globals, no DOM);
+     keep them out of the browser-targeted typecheck. */
+  "exclude": ["**/*.test.ts"]
 }
