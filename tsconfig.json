@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    /* Output target — modern browsers (Firefox MV3 / recent Chromium). */
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+
+    /* Module system — bundler-driven, no TS emit (esbuild does the emit). */
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+
+    /* Preact JSX runtime — must match the esbuild jsx config. */
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+
+    /* Ambient types: the Firefox WebExtension `browser.*` API (used from issue 02/04 on). */
+    "types": ["firefox-webext-browser"],
+
+    /* Strictness — enabled from the start; retrofitting later is painful. */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "forceConsistentCasingInFileNames": true,
+
+    "skipLibCheck": true
+  },
+  "include": ["src", "types"]
+}

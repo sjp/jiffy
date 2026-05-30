@@ -1,0 +1,17 @@
+/* Adopted stylesheet for the controls, scoped inside the shadow root (PRD §7).
+   Filled out in issue 09. */
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 12px/1 system-ui, sans-serif;
+}
+
+.bar button {
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.readout {
+  font-variant-numeric: tabular-nums;
+}
