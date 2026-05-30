@@ -1,12 +1,14 @@
 // <Controls> — the control bar and the ONLY component that talks to the engine
 // (PRD §8). It subscribes via useEngineState and dispatches engine commands;
-// children (Scrubber/Readout, issues 09/10) are pure props+callbacks.
+// children (Scrubber, and Readout in issue 10) are pure props+callbacks.
 //
-// Issue 08 builds the play/pause toggle + prev/next frame-step buttons. The
-// scrubber and readout slot into the same bar in issues 09 and 10.
+// Issue 08 added the play/pause + frame-step buttons; issue 09 adds the scrubber
+// (time-driven seek with pause-while-dragging). The full readout lands in 10.
+import { useRef } from 'preact/hooks';
 import type { Engine } from '../engine/types';
 import { useEngineState } from './useEngineState';
 import { PauseIcon, PlayIcon, StepBackIcon, StepForwardIcon } from './icons';
+import { Scrubber } from './Scrubber';
 
 /** Props for the top-level controls component. */
 export interface ControlsProps {
@@ -15,12 +17,15 @@ export interface ControlsProps {
 
 /** Top-level controls bar. */
 export function Controls({ engine }: ControlsProps) {
-  const { playing, index, frameCount } = useEngineState(engine);
+  const { playing, index, frameCount, currentTime, duration } = useEngineState(engine);
 
   // With a single frame there's nothing to play or step through. At the ends we
   // let the engine clamp rather than disabling the buttons, so they don't
   // flicker disabled on every loop during playback (issue 04 already clamps).
   const steppable = frameCount > 1;
+
+  // Remember whether playback was running when a scrub began, to resume on release.
+  const wasPlaying = useRef(false);
 
   return (
     <div class="bar">
@@ -54,6 +59,20 @@ export function Controls({ engine }: ControlsProps) {
       >
         <StepForwardIcon />
       </button>
+
+      <Scrubber
+        time={currentTime}
+        duration={duration}
+        onSeek={(t) => engine.seekToTime(t)}
+        onScrubStart={() => {
+          // Read live state (avoids stale closure) and pause while dragging.
+          wasPlaying.current = engine.state.playing;
+          engine.pause();
+        }}
+        onScrubEnd={() => {
+          if (wasPlaying.current) engine.play();
+        }}
+      />
 
       <span class="readout">
         {index + 1} / {frameCount}

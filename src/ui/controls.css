@@ -55,6 +55,14 @@
   align-items: center;
 }
 
+.scrubber {
+  flex: 1 1 100px;
+  min-width: 80px;
+  margin: 0 2px;
+  accent-color: #8b5cf6;
+  cursor: pointer;
+}
+
 .readout {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
