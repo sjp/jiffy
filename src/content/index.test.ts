@@ -4,7 +4,13 @@
 // exercise the discovery/registry/teardown orchestration in jsdom.
 import '../test/setup-dom.ts';
 import assert from 'node:assert/strict';
-import { createController, isGifCandidate, enterPickMode, exitPickMode } from './index.ts';
+import {
+  createController,
+  isGifCandidate,
+  enterPickMode,
+  exitPickMode,
+  enhanceStandaloneGif,
+} from './index.ts';
 
 const imgWith = (src: string) => {
   const img = document.createElement('img');
@@ -138,5 +144,62 @@ notAGif.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
 assert.notEqual(docEl.style.cursor, 'crosshair', 'clicking a non-GIF exits pick mode');
 
 exitPickMode(); // no-op if already exited
+
+// ---- standalone GIF: toolbar toggles directly (ImageDocument) ------------
+// Firefox renders a directly-opened .gif as an ImageDocument: contentType
+// 'image/gif', body is a single <img>. A toolbar click toggles that one GIF via
+// enhanceStandaloneGif() instead of entering pick mode. It returns true on such
+// a document (caller skips pick mode), false otherwise. We stub the controller
+// so the real decode/overlay aren't needed, and fake document.contentType
+// (read-only in jsdom) per case.
+const setContentType = (value: string) =>
+  Object.defineProperty(document, 'contentType', { value, configurable: true });
+
+const standaloneInstances = new Map<HTMLImageElement, object>();
+let standalonePicked: HTMLImageElement | null = null;
+let standaloneTorndown: HTMLImageElement | null = null;
+const standaloneTarget = {
+  instances: standaloneInstances as never,
+  processImage: async (img: HTMLImageElement) => {
+    standalonePicked = img;
+    standaloneInstances.set(img, {});
+  },
+  teardown: (img: HTMLImageElement) => {
+    standaloneTorndown = img;
+    standaloneInstances.delete(img);
+  },
+};
+
+// Normal page (not an ImageDocument): returns false → caller uses pick mode.
+setContentType('text/html');
+document.body.innerHTML = '';
+document.body.appendChild(imgWith('http://x/page.gif'));
+assert.equal(enhanceStandaloneGif(standaloneTarget), false, 'normal page → not handled');
+assert.equal(standalonePicked, null, 'normal page is not auto-enhanced');
+
+// Standalone GIF document: first click enhances the single <img>.
+setContentType('image/gif');
+document.body.innerHTML = '';
+const standalone = imgWith('http://x/standalone.gif');
+document.body.appendChild(standalone);
+assert.equal(enhanceStandaloneGif(standaloneTarget), true, 'standalone GIF → handled');
+await flush();
+assert.equal(standalonePicked, standalone, 'first toolbar click enhances the GIF');
+
+// Second click toggles it back off (tears down).
+assert.equal(enhanceStandaloneGif(standaloneTarget), true, 'still handled');
+assert.equal(standaloneTorndown, standalone, 'second toolbar click tears it down');
+
+// Defensive: an image document with a non-GIF img is still "handled" (no pick
+// mode on an image page) but enhances nothing.
+setContentType('image/gif');
+document.body.innerHTML = '';
+standalonePicked = null;
+document.body.appendChild(imgWith('http://x/not.png'));
+assert.equal(enhanceStandaloneGif(standaloneTarget), true, 'image doc → handled');
+assert.equal(standalonePicked, null, 'non-GIF in an image document is ignored');
+
+setContentType('text/html');
+document.body.innerHTML = '';
 
 console.log('content-glue.test: OK');

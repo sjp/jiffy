@@ -202,6 +202,28 @@ function onPickKey(event: KeyboardEvent): void {
   if (event.key === 'Escape') exitPickMode();
 }
 
+/**
+ * Handle a toolbar click on a standalone GIF (top-level navigation to a .gif
+ * renders as an ImageDocument: a generated page whose body is a single <img>).
+ * There's exactly one unambiguous target, so toggle it directly — enhance it, or
+ * tear it down if already enhanced — instead of entering crosshair pick mode.
+ *
+ * Returns `true` when this is a standalone GIF document (caller should skip pick
+ * mode), `false` on a normal page so the caller falls back to pick mode. Guarded
+ * by content type so it never fires on pages that merely contain GIFs.
+ */
+export function enhanceStandaloneGif(
+  target: Pick<Controller, 'processImage' | 'teardown' | 'instances'> = controller,
+): boolean {
+  if (typeof document === 'undefined' || document.contentType !== 'image/gif') return false;
+  const img = document.querySelector('img');
+  if (img && isGifCandidate(img)) {
+    if (target.instances.has(img)) target.teardown(img);
+    else void target.processImage(img);
+  }
+  return true; // a standalone GIF document — handled here, don't enter pick mode
+}
+
 /** Bootstrap the toolbar-driven trigger. Returns a teardown for SPA cleanup (issue 13). */
 export function init(): () => void {
   // Guard so importing this module headlessly (tests) doesn't touch `browser`.
@@ -209,7 +231,10 @@ export function init(): () => void {
     return () => {};
   }
   const onMessage = (message: unknown) => {
-    if (isPickGifRequest(message)) enterPickMode();
+    // Toolbar click. On a standalone GIF (opened directly) there's exactly one
+    // unambiguous target, so toggle it straight away; otherwise fall back to
+    // on-demand pick mode so the user chooses which GIF on the page to enhance.
+    if (isPickGifRequest(message) && !enhanceStandaloneGif()) enterPickMode();
     return undefined;
   };
   browser.runtime.onMessage.addListener(onMessage);
