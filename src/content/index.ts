@@ -30,7 +30,7 @@ export interface PipelineDeps {
   decode: (bytes: ArrayBuffer) => Promise<DecodeResult>;
   createEngine: (frames: Frame[], duration: number) => Engine;
   createOverlay: (img: HTMLImageElement, engine: Engine, frames: Frame[]) => Overlay;
-  mountControls: (img: HTMLImageElement, engine: Engine) => () => void;
+  mountControls: (img: HTMLImageElement, engine: Engine, onClose: () => void) => () => void;
 }
 
 /** A live, controllable GIF on the page. */
@@ -80,7 +80,7 @@ export function createController(deps: PipelineDeps): Controller {
 
       const engine = deps.createEngine(frames, duration);
       const overlay = deps.createOverlay(img, engine, frames);
-      const teardownControls = deps.mountControls(img, engine);
+      const teardownControls = deps.mountControls(img, engine, () => teardown(img));
       instances.set(img, { engine, overlay, teardownControls });
     } catch (err) {
       // One bad GIF shouldn't break the rest.

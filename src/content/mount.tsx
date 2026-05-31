@@ -17,7 +17,7 @@ const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
  * Mount the controls in a shadow root anchored to `img`. Returns a teardown
  * function that unmounts Preact, detaches listeners, and removes the host.
  */
-export function mountControls(img: HTMLImageElement, engine: Engine): () => void {
+export function mountControls(img: HTMLImageElement, engine: Engine, onClose: () => void): () => void {
   const host = document.createElement('div');
   host.style.position = 'absolute';
   host.style.zIndex = HOST_Z_INDEX;
@@ -79,7 +79,7 @@ export function mountControls(img: HTMLImageElement, engine: Engine): () => void
   // sibling <style> node.
   const mountPoint = document.createElement('div');
   shadow.appendChild(mountPoint);
-  render(<Controls engine={engine} onDragStart={beginDrag} />, mountPoint);
+  render(<Controls engine={engine} onDragStart={beginDrag} onClose={onClose} />, mountPoint);
 
   let scheduled = false;
   const schedule = (): void => {

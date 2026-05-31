@@ -47,6 +47,9 @@ export const StepForwardIcon = ({ size = 16 }: IconProps): VNode =>
     h('path', { d: 'M4 6l11 6L4 18z' }),
   ]);
 
+export const CloseIcon = ({ size = 16 }: IconProps): VNode =>
+  glyph(size, h('path', { d: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z' }));
+
 // Six-dot "grip" affordance for the drag handle (issue: movable controls). Two
 // columns of three dots — the conventional cue that an element can be dragged.
 export const GripIcon = ({ size = 16 }: IconProps): VNode =>

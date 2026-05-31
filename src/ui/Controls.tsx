@@ -7,7 +7,7 @@
 import { useRef } from 'preact/hooks';
 import type { Engine } from '../engine/types';
 import { useEngineState } from './useEngineState';
-import { GripIcon, PauseIcon, PlayIcon, StepBackIcon, StepForwardIcon } from './icons';
+import { CloseIcon, GripIcon, PauseIcon, PlayIcon, StepBackIcon, StepForwardIcon } from './icons';
 import { Scrubber } from './Scrubber';
 import { Readout } from './Readout';
 import { handleControlKey } from './keymap';
@@ -22,10 +22,12 @@ export interface ControlsProps {
    * — e.g. in component tests — the grip is not rendered.
    */
   onDragStart?: (event: PointerEvent) => void;
+  /** Called when the user clicks the close button; tears down the player. */
+  onClose?: () => void;
 }
 
 /** Top-level controls bar. */
-export function Controls({ engine, onDragStart }: ControlsProps) {
+export function Controls({ engine, onDragStart, onClose }: ControlsProps) {
   const { playing, index, frameCount, currentTime, duration } = useEngineState(engine);
 
   // With a single frame there's nothing to play or step through. At the ends we
@@ -114,6 +116,17 @@ export function Controls({ engine, onDragStart }: ControlsProps) {
         time={currentTime}
         duration={duration}
       />
+
+      {onClose && (
+        <button
+          type="button"
+          class="icon"
+          aria-label="Close"
+          onClick={() => onClose()}
+        >
+          <CloseIcon />
+        </button>
+      )}
     </div>
   );
 }
