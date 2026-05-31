@@ -56,6 +56,11 @@ export function createOverlay(
     objectPosition: computed.objectPosition,
   });
 
+  // The canvas covers the img entirely; hide the original so transparent canvas
+  // regions show the page background rather than the underlying image.
+  const savedOpacity = img.style.opacity;
+  img.style.opacity = '0';
+
   document.body.appendChild(canvas);
 
   const ctx = canvas.getContext('2d');
@@ -105,6 +110,7 @@ export function createOverlay(
   return {
     canvas,
     destroy() {
+      img.style.opacity = savedOpacity;
       unsubscribe();
       window.removeEventListener('scroll', scheduleReposition, SCROLL_OPTS);
       window.removeEventListener('resize', scheduleReposition);
