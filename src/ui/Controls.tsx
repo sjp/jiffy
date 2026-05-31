@@ -7,7 +7,7 @@
 import { useRef } from 'preact/hooks';
 import type { Engine } from '../engine/types';
 import { useEngineState } from './useEngineState';
-import { PauseIcon, PlayIcon, StepBackIcon, StepForwardIcon } from './icons';
+import { GripIcon, PauseIcon, PlayIcon, StepBackIcon, StepForwardIcon } from './icons';
 import { Scrubber } from './Scrubber';
 import { Readout } from './Readout';
 import { handleControlKey } from './keymap';
@@ -15,10 +15,17 @@ import { handleControlKey } from './keymap';
 /** Props for the top-level controls component. */
 export interface ControlsProps {
   engine: Engine;
+  /**
+   * Called when a pointer drag begins on the move handle. Positioning the bar
+   * is the host's job (it owns the page-realm element the shadow tree lives in),
+   * so the actual move math lives in the mount layer (mount.tsx). When omitted
+   * — e.g. in component tests — the grip is not rendered.
+   */
+  onDragStart?: (event: PointerEvent) => void;
 }
 
 /** Top-level controls bar. */
-export function Controls({ engine }: ControlsProps) {
+export function Controls({ engine, onDragStart }: ControlsProps) {
   const { playing, index, frameCount, currentTime, duration } = useEngineState(engine);
 
   // With a single frame there's nothing to play or step through. At the ends we
@@ -41,6 +48,21 @@ export function Controls({ engine }: ControlsProps) {
         if (handleControlKey(event.key, engine)) event.preventDefault();
       }}
     >
+      {onDragStart && (
+        // Drag handle (issue: movable controls). A non-<button> element so it
+        // stays out of the tab order and the keyboard step shortcuts — it's a
+        // pointer-only affordance for repositioning the bar away from content.
+        <div
+          class="grip"
+          role="button"
+          aria-label="Move controls"
+          title="Drag to move"
+          onPointerDown={(event) => onDragStart(event)}
+        >
+          <GripIcon />
+        </div>
+      )}
+
       <button
         type="button"
         class="icon"

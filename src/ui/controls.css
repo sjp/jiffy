@@ -55,6 +55,31 @@
   align-items: center;
 }
 
+/* Drag handle: a pointer-only grip the user drags to reposition the bar. Muted
+   until hover so it reads as an affordance, not another control. `touch-action:
+   none` stops the browser claiming the gesture for scroll/pan so our pointermove
+   tracking stays clean. */
+.grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 28px;
+  margin-right: 2px;
+  color: inherit;
+  opacity: 0.55;
+  cursor: grab;
+  touch-action: none;
+}
+
+.grip:hover {
+  opacity: 1;
+}
+
+.grip:active {
+  cursor: grabbing;
+}
+
 .scrubber {
   flex: 1 1 100px;
   min-width: 80px;
