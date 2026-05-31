@@ -10,9 +10,39 @@
 // bitmaps held in memory. Fine for typical GIFs. The patches + keyframe-index
 // fallback for very large GIFs lives in issue 14; start with the simple version.
 
-import { parseGIF, decompressFrames } from 'gifuct-js';
-import type { FrameDims } from 'gifuct-js';
-import type { DecodeResult, Frame } from './types';
+import { parseGIF, decompressFrames } from "gifuct-js";
+import type { FrameDims } from "gifuct-js";
+import type { DecodeResult, Frame } from "./types";
+
+/**
+ * Firefox content scripts run in a sandbox realm while the `OffscreenCanvas`
+ * pixel buffer lives in the page realm, exposed through an Xray wrapper.
+ * `.wrappedJSObject` returns the underlying page-realm object; on Chrome / Node
+ * (no Xray) the value is returned unchanged.
+ */
+const unwrapXray = <T>(value: T): T =>
+  (value as { wrappedJSObject?: T }).wrappedJSObject ?? value;
+
+/**
+ * Copy gifuct's `patch` bytes into the canvas-backed ImageData.
+ *
+ * On Chrome / Node a plain `.set` works. In a Firefox content script the patch
+ * is a sandbox-realm typed array while the canvas buffer is a page-realm one,
+ * and `TypedArray.set(src)` refuses to read a source from another realm
+ * ("Permission denied to access object"). `cloneInto` can't help here because
+ * the sandbox `globalThis` isn't the page realm, so it clones into the wrong
+ * realm. The reliable bridge is an element-wise copy through unwrapped views:
+ * it only ever touches numeric indices, never an object across the boundary.
+ */
+function copyPatchInto(dest: Uint8ClampedArray, patch: Uint8ClampedArray): void {
+  try {
+    dest.set(patch);
+  } catch {
+    const d = unwrapXray(dest);
+    const s = unwrapXray(patch);
+    for (let i = 0; i < s.length; i++) d[i] = s[i]!;
+  }
+}
 
 /**
  * Delay clamp (PRD §4). GIF delays are unreliable — `0`/`1` centiseconds are
@@ -50,8 +80,8 @@ export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
   // Work canvas at the GIF's native (logical screen) resolution. The snapshots
   // we take from it are full-canvas at native resolution, ready to blit.
   const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) throw new Error('decode: failed to acquire 2D context');
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("decode: failed to acquire 2D context");
 
   const frames: Frame[] = [];
   let elapsed = 0;
@@ -68,8 +98,16 @@ export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
     // 1. Apply the previous frame's disposal to the work canvas.
     if (prevDims) {
       if (prevDisposalType === DISPOSAL_RESTORE_BACKGROUND) {
-        ctx.clearRect(prevDims.left, prevDims.top, prevDims.width, prevDims.height);
-      } else if (prevDisposalType === DISPOSAL_RESTORE_PREVIOUS && restoreSnapshot) {
+        ctx.clearRect(
+          prevDims.left,
+          prevDims.top,
+          prevDims.width,
+          prevDims.height,
+        );
+      } else if (
+        prevDisposalType === DISPOSAL_RESTORE_PREVIOUS &&
+        restoreSnapshot
+      ) {
         ctx.putImageData(restoreSnapshot, 0, 0);
       }
     }
@@ -81,14 +119,28 @@ export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
       restoreSnapshot = ctx.getImageData(0, 0, width, height);
     }
 
-    // 3. Draw this frame's patch with proper alpha compositing. `putImageData`
-    //    would clobber transparency (overwriting unchanged pixels with alpha 0),
-    //    so route the patch through an ImageBitmap + drawImage (source-over).
+    // 3. Composite this frame's patch onto the work canvas with correct alpha.
+    //    - putImageData straight onto the work canvas would clobber transparency
+    //      (the patch's alpha-0 pixels overwrite real ones), so we stage the patch
+    //      on its own transparent temp canvas and drawImage it (source-over).
+    //    - In a Firefox content script the gifuct patch lives in the extension
+    //      sandbox realm while the canvas buffer lives in the page realm (seen
+    //      through an Xray wrapper). Canvas pixel APIs refuse to read a typed
+    //      array across that boundary ("Failed to extract Uint8ClampedArray" /
+    //      "Permission denied to access object" / "Accessing from Xray wrapper is
+    //      not supported"). We make the copy same-realm by unwrapping the
+    //      destination (page realm) and cloning the source patch INTO it. Both
+    //      helpers are no-ops outside Firefox.
     if (rf.patch) {
-      const patchData = new ImageData(rf.patch, rf.dims.width, rf.dims.height);
-      const patchBitmap = await createImageBitmap(patchData);
-      ctx.drawImage(patchBitmap, rf.dims.left, rf.dims.top);
-      patchBitmap.close();
+      const { width: pw, height: ph, left, top } = rf.dims;
+      const patchCanvas = new OffscreenCanvas(pw, ph);
+      const patchCtx = patchCanvas.getContext("2d");
+      if (!patchCtx)
+        throw new Error("decode: failed to acquire patch 2D context");
+      const patchData = patchCtx.createImageData(pw, ph);
+      copyPatchInto(patchData.data, rf.patch);
+      patchCtx.putImageData(patchData, 0, 0);
+      ctx.drawImage(patchCanvas, left, top);
     }
 
     // 4. Snapshot the full composited canvas → ready-to-blit bitmap.

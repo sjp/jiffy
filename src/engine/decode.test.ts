@@ -43,6 +43,9 @@ class FakeCtx {
   getImageData() {
     return new FakeImageData(this.w, this.h);
   }
+  createImageData(w: number, h: number) {
+    return new FakeImageData(w, h);
+  }
 }
 
 class FakeOffscreenCanvas {

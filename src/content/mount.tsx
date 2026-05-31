@@ -24,11 +24,20 @@ export function mountControls(img: HTMLImageElement, engine: Engine): () => void
   document.body.appendChild(host);
 
   const shadow = host.attachShadow({ mode: 'open' });
-  const sheet = new CSSStyleSheet();
-  sheet.replaceSync(controlsCss);
-  shadow.adoptedStyleSheets = [sheet];
+  // Inject CSS via a <style> element rather than a constructable stylesheet:
+  // in a Firefox content script `new CSSStyleSheet()` is a sandbox-realm object
+  // and `shadow` is a page-realm Xray node, so `adoptedStyleSheets = [sheet]`
+  // throws "Accessing from Xray wrapper is not supported". A <style> node is a
+  // plain page-realm element with string content, so it crosses no boundary.
+  const style = document.createElement('style');
+  style.textContent = controlsCss;
+  shadow.appendChild(style);
 
-  render(<Controls engine={engine} />, shadow);
+  // Render into a dedicated mount point so Preact's diffing never touches the
+  // sibling <style> node.
+  const mountPoint = document.createElement('div');
+  shadow.appendChild(mountPoint);
+  render(<Controls engine={engine} />, mountPoint);
 
   // Pin the bar to the bottom-left of the img box, in page coordinates.
   const reposition = (): void => {
@@ -55,7 +64,7 @@ export function mountControls(img: HTMLImageElement, engine: Engine): () => void
   resizeObserver.observe(img);
 
   return () => {
-    render(null, shadow);
+    render(null, mountPoint);
     window.removeEventListener('scroll', schedule, SCROLL_OPTS);
     window.removeEventListener('resize', schedule);
     resizeObserver.disconnect();
