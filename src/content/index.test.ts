@@ -26,7 +26,10 @@ assert.equal(isAnimatedCandidate(imgWith('http://x/a.gif')), true);
 assert.equal(isAnimatedCandidate(imgWith('http://x/a.gif?v=2')), true, 'query string');
 assert.equal(isAnimatedCandidate(imgWith('http://x/a.gif#frag')), true, 'fragment');
 assert.equal(isAnimatedCandidate(imgWith('http://x/a.GIF')), true, 'case-insensitive');
-assert.equal(isAnimatedCandidate(imgWith('http://x/a.png')), false);
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.png')), true, 'png candidate');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.PNG')), true, 'png case-insensitive');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.png?v=2')), true, 'png query string');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.pngx')), false, 'png no false positive');
 assert.equal(isAnimatedCandidate(imgWith('http://x/a.gifx')), false, 'no false positive');
 // WebP
 assert.equal(isAnimatedCandidate(imgWith('http://x/a.webp')), true);
@@ -94,7 +97,7 @@ document.body.append(
 );
 ctrl.discover(document);
 await flush();
-assert.equal(ctrl.instances.size, 2, 'GIF and WebP discovered, PNG ignored');
+assert.equal(ctrl.instances.size, 3, 'GIF, WebP, and PNG discovered');
 
 // ---- global teardown -------------------------------------------------------
 ctrl.teardownAll();
@@ -212,7 +215,7 @@ assert.equal(standalonePicked, standaloneWebP, 'standalone WebP enhanced');
 setContentType('image/gif');
 document.body.innerHTML = '';
 standalonePicked = null;
-document.body.appendChild(imgWith('http://x/not.png'));
+document.body.appendChild(imgWith('http://x/not.jpg'));
 assert.equal(enhanceStandaloneImage(standaloneTarget), true, 'image doc → handled');
 assert.equal(standalonePicked, null, 'non-candidate in an image document is ignored');
 

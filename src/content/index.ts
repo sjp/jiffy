@@ -60,7 +60,7 @@ export interface Controller {
 /** True if the image's resolved URL looks like an animated GIF or WebP. */
 export function isAnimatedCandidate(img: HTMLImageElement): boolean {
   const url = img.currentSrc || img.src;
-  return /\.(gif|webp)(?:[?#]|$)/i.test(url);
+  return /\.(gif|webp|png)(?:[?#]|$)/i.test(url);
 }
 
 export function createController(deps: PipelineDeps): Controller {
@@ -218,7 +218,7 @@ export function enhanceStandaloneImage(
 ): boolean {
   if (typeof document === 'undefined') return false;
   const ct = document.contentType;
-  if (ct !== 'image/gif' && ct !== 'image/webp') return false;
+  if (ct !== 'image/gif' && ct !== 'image/webp' && ct !== 'image/png') return false;
   const img = document.querySelector('img');
   if (img && isAnimatedCandidate(img)) {
     if (target.instances.has(img)) target.teardown(img);

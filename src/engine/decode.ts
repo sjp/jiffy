@@ -14,6 +14,7 @@ import { parseGIF, decompressFrames } from "gifuct-js";
 import type { FrameDims } from "gifuct-js";
 import type { DecodeResult, Frame } from "./types";
 import { decodeWebP, isAnimatedWebP } from "./decodeWebP";
+import { decodeApng, isAnimatedPng } from "./decodeApng";
 
 /**
  * Firefox content scripts run in a sandbox realm while the `OffscreenCanvas`
@@ -73,6 +74,7 @@ const DISPOSAL_RESTORE_PREVIOUS = 3;
  */
 export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
   if (isAnimatedWebP(bytes)) return decodeWebP(bytes);
+  if (isAnimatedPng(bytes))  return decodeApng(bytes);
   const gif = parseGIF(bytes);
   // `true` → build per-frame RGBA `patch` arrays for us.
   const rawFrames = decompressFrames(gif, true);
