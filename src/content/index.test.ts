@@ -1,15 +1,16 @@
-// Headless tests for the content-script glue (issue 11): GIF detection, the
-// per-GIF pipeline, de-duplication, single-frame skip, and teardown. The
-// pipeline collaborators are stubbed (real decode/overlay need a canvas), so we
-// exercise the discovery/registry/teardown orchestration in jsdom.
+// Headless tests for the content-script glue (issue 11): animated-image
+// detection (GIF + WebP), the per-image pipeline, de-duplication, single-frame
+// skip, and teardown. The pipeline collaborators are stubbed (real decode/overlay
+// need a canvas), so we exercise the discovery/registry/teardown orchestration
+// in jsdom.
 import '../test/setup-dom.ts';
 import assert from 'node:assert/strict';
 import {
   createController,
-  isGifCandidate,
+  isAnimatedCandidate,
   enterPickMode,
   exitPickMode,
-  enhanceStandaloneGif,
+  enhanceStandaloneImage,
 } from './index.ts';
 
 const imgWith = (src: string) => {
@@ -19,15 +20,22 @@ const imgWith = (src: string) => {
 };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-// ---- isGifCandidate ------------------------------------------------------
-assert.equal(isGifCandidate(imgWith('http://x/a.gif')), true);
-assert.equal(isGifCandidate(imgWith('http://x/a.gif?v=2')), true, 'query string');
-assert.equal(isGifCandidate(imgWith('http://x/a.gif#frag')), true, 'fragment');
-assert.equal(isGifCandidate(imgWith('http://x/a.GIF')), true, 'case-insensitive');
-assert.equal(isGifCandidate(imgWith('http://x/a.png')), false);
-assert.equal(isGifCandidate(imgWith('http://x/a.gifx')), false, 'no false positive');
+// ---- isAnimatedCandidate ---------------------------------------------------
+// GIF
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.gif')), true);
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.gif?v=2')), true, 'query string');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.gif#frag')), true, 'fragment');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.GIF')), true, 'case-insensitive');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.png')), false);
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.gifx')), false, 'no false positive');
+// WebP
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.webp')), true);
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.webp?v=2')), true, 'webp query string');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.webp#frag')), true, 'webp fragment');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.WEBP')), true, 'webp case-insensitive');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.webpx')), false, 'webp no false positive');
 
-// ---- pipeline stubs ------------------------------------------------------
+// ---- pipeline stubs --------------------------------------------------------
 let overlays = 0;
 let controls = 0;
 let destroyed = 0;
@@ -53,67 +61,67 @@ const deps = {
 
 const ctrl = createController(deps);
 
-// ---- happy path ----------------------------------------------------------
+// ---- happy path ------------------------------------------------------------
 const gif = imgWith('http://x/a.gif');
 await ctrl.processImage(gif);
 assert.equal(overlays, 1, 'overlay created');
 assert.equal(controls, 1, 'controls mounted');
 assert.equal(ctrl.instances.size, 1, 'instance registered');
 
-// ---- de-duplication ------------------------------------------------------
+// ---- de-duplication --------------------------------------------------------
 await ctrl.processImage(gif);
 assert.equal(overlays, 1, 'same element not processed twice');
 assert.equal(ctrl.instances.size, 1);
 
-// ---- single-frame GIF is skipped ----------------------------------------
+// ---- single-frame image is skipped ----------------------------------------
 frameCount = 1;
 await ctrl.processImage(imgWith('http://x/single.gif'));
-assert.equal(ctrl.instances.size, 1, 'single-frame GIF gets no controls');
+assert.equal(ctrl.instances.size, 1, 'single-frame image gets no controls');
 assert.equal(overlays, 1);
 
-// ---- per-element teardown ------------------------------------------------
+// ---- per-element teardown --------------------------------------------------
 ctrl.teardown(gif);
 assert.equal(destroyed, 1, 'overlay destroyed');
 assert.equal(unmounted, 1, 'controls unmounted');
 assert.equal(ctrl.instances.size, 0);
 
-// ---- discover() scans the DOM, ignoring non-GIFs -------------------------
+// ---- discover() scans the DOM, ignoring non-candidates --------------------
 frameCount = 3;
 document.body.append(
   imgWith('http://x/1.gif'),
-  imgWith('http://x/2.gif'),
+  imgWith('http://x/2.webp'),
   imgWith('http://x/3.png'),
 );
 ctrl.discover(document);
 await flush();
-assert.equal(ctrl.instances.size, 2, 'two GIFs discovered, PNG ignored');
+assert.equal(ctrl.instances.size, 2, 'GIF and WebP discovered, PNG ignored');
 
-// ---- global teardown -----------------------------------------------------
+// ---- global teardown -------------------------------------------------------
 ctrl.teardownAll();
 assert.equal(ctrl.instances.size, 0, 'everything torn down');
 
-// ---- reconcile() tears down players whose <img> left the DOM (issue 13) --
+// ---- reconcile() tears down players whose <img> left the DOM (issue 13) ---
 const live = imgWith('http://x/live.gif');
 document.body.appendChild(live);
 await ctrl.processImage(live);
-assert.equal(ctrl.instances.size, 1, 'connected GIF enhanced');
+assert.equal(ctrl.instances.size, 1, 'connected image enhanced');
 
 const destroyedBefore = destroyed;
 live.remove();
 ctrl.reconcile();
-assert.equal(ctrl.instances.size, 0, 'reconcile tore down the removed GIF');
+assert.equal(ctrl.instances.size, 0, 'reconcile tore down the removed image');
 assert.equal(destroyed, destroyedBefore + 1, 'overlay destroyed on reconcile');
 
-// ---- observe() reconciles removals automatically (debounced) -------------
+// ---- observe() reconciles removals automatically (debounced) ---------------
 const stop = ctrl.observe(document);
 const watched = imgWith('http://x/watched.gif');
 document.body.appendChild(watched);
 await ctrl.processImage(watched);
-assert.equal(ctrl.instances.size, 1, 'watched GIF enhanced');
+assert.equal(ctrl.instances.size, 1, 'watched image enhanced');
 
 watched.remove();
 await flush(); // let the observer's microtask-coalesced reconcile run
-assert.equal(ctrl.instances.size, 0, 'observer tore down the removed GIF');
+assert.equal(ctrl.instances.size, 0, 'observer tore down the removed image');
 
 // After stopping, removals are no longer auto-reconciled.
 stop();
@@ -125,7 +133,7 @@ await flush();
 assert.equal(ctrl.instances.size, 1, 'no teardown once the observer is stopped');
 ctrl.teardownAll();
 
-// ---- pick-mode state machine --------------------------------------------
+// ---- pick-mode state machine -----------------------------------------------
 const docEl = document.documentElement;
 
 enterPickMode();
@@ -135,23 +143,21 @@ assert.equal(docEl.style.cursor, 'crosshair', 'pick mode sets crosshair cursor')
 document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
 assert.notEqual(docEl.style.cursor, 'crosshair', 'Escape exits pick mode');
 
-// Clicking a non-GIF cancels too.
+// Clicking a non-candidate cancels too.
 enterPickMode();
 assert.equal(docEl.style.cursor, 'crosshair');
 const notAGif = document.createElement('div');
 document.body.appendChild(notAGif);
 notAGif.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
-assert.notEqual(docEl.style.cursor, 'crosshair', 'clicking a non-GIF exits pick mode');
+assert.notEqual(docEl.style.cursor, 'crosshair', 'clicking a non-candidate exits pick mode');
 
 exitPickMode(); // no-op if already exited
 
-// ---- standalone GIF: toolbar toggles directly (ImageDocument) ------------
-// Firefox renders a directly-opened .gif as an ImageDocument: contentType
-// 'image/gif', body is a single <img>. A toolbar click toggles that one GIF via
-// enhanceStandaloneGif() instead of entering pick mode. It returns true on such
-// a document (caller skips pick mode), false otherwise. We stub the controller
-// so the real decode/overlay aren't needed, and fake document.contentType
-// (read-only in jsdom) per case.
+// ---- standalone image: toolbar toggles directly (ImageDocument) ------------
+// Firefox renders a directly-opened .gif/.webp as an ImageDocument: contentType
+// 'image/gif' or 'image/webp', body is a single <img>. A toolbar click toggles
+// that image via enhanceStandaloneImage() instead of entering pick mode.
+// Returns true on such a document (caller skips pick mode), false otherwise.
 const setContentType = (value: string) =>
   Object.defineProperty(document, 'contentType', { value, configurable: true });
 
@@ -174,30 +180,41 @@ const standaloneTarget = {
 setContentType('text/html');
 document.body.innerHTML = '';
 document.body.appendChild(imgWith('http://x/page.gif'));
-assert.equal(enhanceStandaloneGif(standaloneTarget), false, 'normal page → not handled');
+assert.equal(enhanceStandaloneImage(standaloneTarget), false, 'normal page → not handled');
 assert.equal(standalonePicked, null, 'normal page is not auto-enhanced');
 
 // Standalone GIF document: first click enhances the single <img>.
 setContentType('image/gif');
 document.body.innerHTML = '';
-const standalone = imgWith('http://x/standalone.gif');
-document.body.appendChild(standalone);
-assert.equal(enhanceStandaloneGif(standaloneTarget), true, 'standalone GIF → handled');
+const standaloneGif = imgWith('http://x/standalone.gif');
+document.body.appendChild(standaloneGif);
+assert.equal(enhanceStandaloneImage(standaloneTarget), true, 'standalone GIF → handled');
 await flush();
-assert.equal(standalonePicked, standalone, 'first toolbar click enhances the GIF');
+assert.equal(standalonePicked, standaloneGif, 'first toolbar click enhances the GIF');
 
 // Second click toggles it back off (tears down).
-assert.equal(enhanceStandaloneGif(standaloneTarget), true, 'still handled');
-assert.equal(standaloneTorndown, standalone, 'second toolbar click tears it down');
+assert.equal(enhanceStandaloneImage(standaloneTarget), true, 'still handled');
+assert.equal(standaloneTorndown, standaloneGif, 'second toolbar click tears it down');
 
-// Defensive: an image document with a non-GIF img is still "handled" (no pick
-// mode on an image page) but enhances nothing.
+// Standalone WebP document.
+setContentType('image/webp');
+document.body.innerHTML = '';
+standalonePicked = null;
+standaloneInstances.clear();
+const standaloneWebP = imgWith('http://x/standalone.webp');
+document.body.appendChild(standaloneWebP);
+assert.equal(enhanceStandaloneImage(standaloneTarget), true, 'standalone WebP → handled');
+await flush();
+assert.equal(standalonePicked, standaloneWebP, 'standalone WebP enhanced');
+
+// Defensive: an image document with a non-candidate img is still "handled"
+// (no pick mode on an image page) but enhances nothing.
 setContentType('image/gif');
 document.body.innerHTML = '';
 standalonePicked = null;
 document.body.appendChild(imgWith('http://x/not.png'));
-assert.equal(enhanceStandaloneGif(standaloneTarget), true, 'image doc → handled');
-assert.equal(standalonePicked, null, 'non-GIF in an image document is ignored');
+assert.equal(enhanceStandaloneImage(standaloneTarget), true, 'image doc → handled');
+assert.equal(standalonePicked, null, 'non-candidate in an image document is ignored');
 
 setContentType('text/html');
 document.body.innerHTML = '';

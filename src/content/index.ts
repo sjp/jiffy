@@ -1,9 +1,10 @@
-// Content-script entry + per-GIF pipeline (issue 11 / PRD §2, §10.6).
+// Content-script entry + per-image pipeline (issue 11 / PRD §2, §10.6).
 //
-// For each animated GIF on the page we run: fetch bytes (issue 06) → decode
-// (issue 03) → engine (issue 04) → overlay canvas (issue 05) → controls (07–10),
-// tracking every instance so it can be torn down cleanly. One engine + overlay +
-// controls per GIF; a decode failure on one GIF must not break the others.
+// For each animated image (GIF or WebP) on the page we run: fetch bytes
+// (issue 06) → decode (issue 03) → engine (issue 04) → overlay canvas (issue 05)
+// → controls (07–10), tracking every instance so it can be torn down cleanly.
+// One engine + overlay + controls per image; a decode failure on one must not
+// break the others.
 //
 // The pipeline's collaborators are injected (createController) so the discovery /
 // registry / teardown logic is unit-testable headless without a real canvas or
@@ -56,10 +57,10 @@ export interface Controller {
   readonly instances: ReadonlyMap<HTMLImageElement, Instance>;
 }
 
-/** True if the image's resolved URL looks like a GIF. */
-export function isGifCandidate(img: HTMLImageElement): boolean {
+/** True if the image's resolved URL looks like an animated GIF or WebP. */
+export function isAnimatedCandidate(img: HTMLImageElement): boolean {
   const url = img.currentSrc || img.src;
-  return /\.gif(?:[?#]|$)/i.test(url);
+  return /\.(gif|webp)(?:[?#]|$)/i.test(url);
 }
 
 export function createController(deps: PipelineDeps): Controller {
@@ -83,7 +84,7 @@ export function createController(deps: PipelineDeps): Controller {
       instances.set(img, { engine, overlay, teardownControls });
     } catch (err) {
       // One bad GIF shouldn't break the rest.
-      console.debug('[jiffy] skipping GIF', img.currentSrc || img.src, err);
+      console.debug('[jiffy] skipping image', img.currentSrc || img.src, err);
     } finally {
       pending.delete(img);
     }
@@ -91,7 +92,7 @@ export function createController(deps: PipelineDeps): Controller {
 
   function discover(root: ParentNode = document): void {
     for (const img of root.querySelectorAll<HTMLImageElement>('img')) {
-      if (isGifCandidate(img)) void processImage(img);
+      if (isAnimatedCandidate(img)) void processImage(img);
     }
   }
 
@@ -193,7 +194,7 @@ function onPickClick(event: MouseEvent): void {
   event.preventDefault();
   event.stopPropagation();
   exitPickMode();
-  if (!img || !isGifCandidate(img)) return; // clicked elsewhere → just cancel
+  if (!img || !isAnimatedCandidate(img)) return; // clicked elsewhere → just cancel
   if (controller.instances.has(img)) controller.teardown(img);
   else void controller.processImage(img);
 }
@@ -203,25 +204,27 @@ function onPickKey(event: KeyboardEvent): void {
 }
 
 /**
- * Handle a toolbar click on a standalone GIF (top-level navigation to a .gif
- * renders as an ImageDocument: a generated page whose body is a single <img>).
- * There's exactly one unambiguous target, so toggle it directly — enhance it, or
- * tear it down if already enhanced — instead of entering crosshair pick mode.
+ * Handle a toolbar click on a standalone animated image (top-level navigation to
+ * a .gif or .webp renders as an ImageDocument: a generated page whose body is a
+ * single <img>). There's exactly one unambiguous target, so toggle it directly —
+ * enhance it, or tear it down if already enhanced — instead of entering pick mode.
  *
- * Returns `true` when this is a standalone GIF document (caller should skip pick
- * mode), `false` on a normal page so the caller falls back to pick mode. Guarded
- * by content type so it never fires on pages that merely contain GIFs.
+ * Returns `true` when this is a standalone animated-image document (caller should
+ * skip pick mode), `false` on a normal page so the caller falls back to pick mode.
+ * Guarded by content type so it never fires on pages that merely contain images.
  */
-export function enhanceStandaloneGif(
+export function enhanceStandaloneImage(
   target: Pick<Controller, 'processImage' | 'teardown' | 'instances'> = controller,
 ): boolean {
-  if (typeof document === 'undefined' || document.contentType !== 'image/gif') return false;
+  if (typeof document === 'undefined') return false;
+  const ct = document.contentType;
+  if (ct !== 'image/gif' && ct !== 'image/webp') return false;
   const img = document.querySelector('img');
-  if (img && isGifCandidate(img)) {
+  if (img && isAnimatedCandidate(img)) {
     if (target.instances.has(img)) target.teardown(img);
     else void target.processImage(img);
   }
-  return true; // a standalone GIF document — handled here, don't enter pick mode
+  return true; // a standalone image document — handled here, don't enter pick mode
 }
 
 /** Bootstrap the toolbar-driven trigger. Returns a teardown for SPA cleanup (issue 13). */
@@ -234,7 +237,7 @@ export function init(): () => void {
     // Toolbar click. On a standalone GIF (opened directly) there's exactly one
     // unambiguous target, so toggle it straight away; otherwise fall back to
     // on-demand pick mode so the user chooses which GIF on the page to enhance.
-    if (isPickGifRequest(message) && !enhanceStandaloneGif()) enterPickMode();
+    if (isPickGifRequest(message) && !enhanceStandaloneImage()) enterPickMode();
     return undefined;
   };
   browser.runtime.onMessage.addListener(onMessage);
