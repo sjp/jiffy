@@ -89,7 +89,7 @@ export interface Controller {
  */
 export function isAnimatedCandidate(img: HTMLImageElement): boolean {
   const url = img.currentSrc || img.src;
-  return /\.(gif|webp|png|avif)(?:[?#]|$)/i.test(url);
+  return /\.(gif|webp|a?png|avif)(?:[?#]|$)/i.test(url);
 }
 
 export function createController(deps: PipelineDeps): Controller {
@@ -293,7 +293,7 @@ export function enhanceStandaloneImage(
 ): boolean {
   if (typeof document === 'undefined') return false;
   const ct = document.contentType;
-  if (ct !== 'image/gif' && ct !== 'image/webp' && ct !== 'image/png' && ct !== 'image/avif')
+  if (ct !== 'image/gif' && ct !== 'image/webp' && ct !== 'image/png' && ct !== 'image/apng' && ct !== 'image/avif')
     return false;
   const img = document.querySelector('img');
   if (img && isAnimatedCandidate(img)) {

@@ -29,6 +29,10 @@ assert.equal(isAnimatedCandidate(imgWith('http://x/a.png')), true, 'png candidat
 assert.equal(isAnimatedCandidate(imgWith('http://x/a.PNG')), true, 'png case-insensitive');
 assert.equal(isAnimatedCandidate(imgWith('http://x/a.png?v=2')), true, 'png query string');
 assert.equal(isAnimatedCandidate(imgWith('http://x/a.pngx')), false, 'png no false positive');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.apng')), true, 'apng candidate');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.APNG')), true, 'apng case-insensitive');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.apng?v=2')), true, 'apng query string');
+assert.equal(isAnimatedCandidate(imgWith('http://x/a.apngx')), false, 'apng no false positive');
 assert.equal(isAnimatedCandidate(imgWith('http://x/a.gifx')), false, 'no false positive');
 // WebP
 assert.equal(isAnimatedCandidate(imgWith('http://x/a.webp')), true);
@@ -213,6 +217,17 @@ document.body.appendChild(standaloneWebP);
 assert.equal(enhanceStandaloneImage(standaloneTarget), true, 'standalone WebP → handled');
 await flush();
 assert.equal(standalonePicked, standaloneWebP, 'standalone WebP enhanced');
+
+// Standalone APNG document.
+setContentType('image/apng');
+document.body.innerHTML = '';
+standalonePicked = null;
+standaloneInstances.clear();
+const standaloneApng = imgWith('http://x/standalone.apng');
+document.body.appendChild(standaloneApng);
+assert.equal(enhanceStandaloneImage(standaloneTarget), true, 'standalone APNG → handled');
+await flush();
+assert.equal(standalonePicked, standaloneApng, 'standalone APNG enhanced');
 
 // Defensive: an image document with a non-candidate img is still "handled"
 // (no pick mode on an image page) but enhances nothing.
