@@ -12,7 +12,7 @@
     "persistent": false
   },
   "action": {
-    "default_title": "Jiffy — select a GIF to control",
+    "default_title": "Jiffy — pause & scrub animated images",
     "default_popup": "popup.html",
     "default_icon": {
       "48": "icons/icon.svg",

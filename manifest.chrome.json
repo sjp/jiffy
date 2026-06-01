@@ -11,7 +11,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Jiffy — select a GIF to control",
+    "default_title": "Jiffy — pause & scrub animated images",
     "default_popup": "popup.html",
     "default_icon": {
       "48": "icons/icon-48.png",
