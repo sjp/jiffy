@@ -1,4 +1,4 @@
-// Animated PNG (APNG) decoder (issue 03 extension — same engine shape as GIF/WebP).
+// Animated PNG (APNG) decoder — same engine shape as GIF/WebP.
 //
 // APNG extends PNG with three extra chunk types:
 //   acTL  Animation Control: num_frames, num_plays

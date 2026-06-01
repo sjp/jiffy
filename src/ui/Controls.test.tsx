@@ -1,4 +1,4 @@
-// Component test for <Controls> (issue 08), rendered in jsdom via the esbuild
+// Component test for <Controls>, rendered in jsdom via the esbuild
 // test runner. `act` (from preact, no extra dep) flushes renders + effects so
 // assertions see the updated DOM. The engine uses an injected clock so no real
 // rAF runs.
@@ -53,7 +53,7 @@ act(() => prev!.click());
 assert.equal(engine.state.index, 0, 'prev steps back');
 assert.match(text(), /1 \/ 3/, 'readout back to 1 / 3');
 
-// ---- keyboard shortcuts (issue 12) ---------------------------------------
+// ---- keyboard shortcuts --------------------------------------------------
 // Shortcuts are scoped to the focusable bar (not document), so they only fire
 // when the controls have focus. Space toggles + preventDefaults (no page
 // scroll); arrows step. State starts paused on frame 1 after the steps above.

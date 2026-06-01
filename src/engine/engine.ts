@@ -1,5 +1,5 @@
-// Playback engine — state + rAF loop + commands, DOM/UI-agnostic (issue 04 /
-// PRD §8). This is "video semantics over a frame sequence": given the decoded
+// Playback engine — state + rAF loop + commands, DOM/UI-agnostic. This is
+// "video semantics over a frame sequence": given the decoded
 // frames[] (each with an end-of-frame cumulative `time`) and a `duration`, the
 // engine owns a current position and a requestAnimationFrame loop that advances
 // it as wall-clock time passes, notifying subscribers so the UI can reflect
@@ -9,7 +9,7 @@ import type { Engine, EngineState, Frame } from './types';
 /**
  * Clock + frame-scheduler abstraction. Defaults wrap `performance.now()` and
  * `requestAnimationFrame`; tests inject a fake clock to drive the loop
- * deterministically (PRD §10.2).
+ * deterministically.
  */
 export interface EngineClock {
   now(): number;

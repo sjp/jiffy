@@ -1,4 +1,4 @@
-// Headless unit test for the playback engine (issue 04 / PRD §10.2).
+// Headless unit test for the playback engine.
 //
 // Run: `npm test`. The engine's clock is injected, so we drive the rAF loop
 // deterministically with a fake clock — no real requestAnimationFrame needed.

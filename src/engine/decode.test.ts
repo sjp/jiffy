@@ -1,4 +1,4 @@
-// Headless smoke test for the decode + precompute module (issue 03).
+// Headless smoke test for the decode + precompute module.
 //
 // Run: `npm test` (→ node --experimental-strip-types src/engine/decode.test.ts).
 //
@@ -7,7 +7,7 @@
 // the *bookkeeping* — frame count, monotonic cumulative-time array, duration,
 // delay clamping, and the disposal control flow — on a real GIF decoded by
 // gifuct-js, but not actual pixel output (which needs a real canvas). Pixel
-// correctness is best verified manually in the browser (issue 05 onward).
+// correctness is best verified manually in the browser.
 
 import assert from 'node:assert/strict';
 
@@ -109,7 +109,7 @@ assert.equal(duration, 200, 'duration');
 // Every frame carries a (shimmed) full-canvas bitmap.
 for (const f of frames) assert.ok(f.bitmap, 'frame has a bitmap');
 
-// ---- non-animated bytes throw a typed error (issue #4) -------------------
+// ---- non-animated bytes throw a typed error ------------------------------
 // Bytes matching no animated sniffer and lacking a GIF signature must throw
 // NotAnimatedError (not parseGIF's opaque failure) so the content script can
 // say "Not an animated image" rather than a generic error.

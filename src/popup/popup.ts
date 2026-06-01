@@ -1,4 +1,4 @@
-// Toolbar popup (issue 11 trigger). Its single button tells the active tab's
+// Toolbar popup. Its single button tells the active tab's
 // content script to enter "pick a GIF" mode, then closes the popup. Messaging to
 // the tab is covered by the extension's host permissions (no extra permission).
 import type { PickGifRequest } from '../messages';

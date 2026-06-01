@@ -1,4 +1,4 @@
-// Headless tests for the content-script glue (issue 11): animated-image
+// Headless tests for the content-script glue: animated-image
 // detection (GIF + WebP), the per-image pipeline, de-duplication, single-frame
 // skip, and teardown. The pipeline collaborators are stubbed (real decode/overlay
 // need a canvas), so we exercise the registry/teardown orchestration in jsdom.
@@ -111,7 +111,7 @@ assert.equal(ctrl.instances.size, 3, 'multiple images enhanced');
 ctrl.teardownAll();
 assert.equal(ctrl.instances.size, 0, 'everything torn down');
 
-// ---- reconcile() tears down players whose <img> left the DOM (issue 13) ---
+// ---- reconcile() tears down players whose <img> left the DOM ---------------
 const live = imgWith('http://x/live.gif');
 document.body.appendChild(live);
 await ctrl.processImage(live);

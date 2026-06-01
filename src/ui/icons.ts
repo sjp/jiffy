@@ -1,10 +1,10 @@
-// Inlined player-control SVG glyphs (issue 07 / PRD §6). We borrow simple inline
-// icons rather than pulling in an icon package — the content script injects into
+// Inlined player-control SVG glyphs. We borrow simple inline icons rather than
+// pulling in an icon package — the content script injects into
 // every matching page, so bundle size matters. Built with Preact's `h` (no JSX)
 // so this stays a plain `.ts` module per the project structure.
 //
 // Icons are decorative: `aria-hidden` + `focusable="false"`, leaving the
-// accessible name to the enclosing <button> (issue 08).
+// accessible name to the enclosing <button>.
 import { h } from 'preact';
 import type { ComponentChildren, VNode } from 'preact';
 
@@ -50,7 +50,7 @@ export const StepForwardIcon = ({ size = 16 }: IconProps): VNode =>
 export const CloseIcon = ({ size = 16 }: IconProps): VNode =>
   glyph(size, h('path', { d: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z' }));
 
-// Six-dot "grip" affordance for the drag handle (issue: movable controls). Two
+// Six-dot "grip" affordance for the drag handle. Two
 // columns of three dots — the conventional cue that an element can be dragged.
 export const GripIcon = ({ size = 16 }: IconProps): VNode =>
   glyph(

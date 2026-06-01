@@ -1,4 +1,4 @@
-// Animated WebP decoder (issue 03 / PRD §3 – format-agnostic engine input).
+// Animated WebP decoder.
 //
 // Animated WebP uses a RIFF container with ANMF chunks for each frame. Each
 // frame's VP8/VP8L bitstream is extracted, wrapped in a minimal standalone WebP

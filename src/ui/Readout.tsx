@@ -1,4 +1,4 @@
-// Frame/time readout (PRD §8). Pure presentational: props in, text out — no
+// Frame/time readout. Pure presentational: props in, text out — no
 // engine access of its own (<Controls> passes the snapshot fields down).
 
 export interface ReadoutProps {

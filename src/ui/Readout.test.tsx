@@ -1,4 +1,4 @@
-// Component test for <Readout> (issue 10): props-driven frame/time text.
+// Component test for <Readout>: props-driven frame/time text.
 import '../test/setup-dom.ts';
 import assert from 'node:assert/strict';
 import { render } from 'preact';

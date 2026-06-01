@@ -1,6 +1,6 @@
-// Content-side client for the background GIF fetch (issue 06; wired in issue 11).
-// Prefer `img.currentSrc` over `img.src` at the call site for srcset/lazy images
-// (PRD §3) — this helper just takes the resolved URL.
+// Content-side client for the background GIF fetch. Prefer `img.currentSrc`
+// over `img.src` at the call site for srcset/lazy images — this helper just
+// takes the resolved URL.
 import type { FetchGifRequest, FetchGifResponse } from '../messages';
 
 /** Ask the background script for a GIF's bytes; throws on a typed error. */

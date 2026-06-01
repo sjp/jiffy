@@ -1,19 +1,19 @@
-// Shadow root + Preact render of the controls UI (issue 07 / PRD §7).
+// Shadow root + Preact render of the controls UI.
 //
 // Creates a host element near the <img>, attaches a shadow root (clean two-way
 // CSS + event boundary), installs the adopted stylesheet, and renders <Controls>
 // bound to the engine. Preact attaches real DOM listeners inside the shadow tree
-// (no synthetic event system), so events work across the boundary (PRD §7).
+// (no synthetic event system), so events work across the boundary.
 import { render } from 'preact';
 import type { Engine } from '../engine/types';
 import { Controls } from '../ui/Controls';
 import controlsCss from '../ui/controls.css';
 
-// Above the overlay canvas (issue 05) so the bar is clickable over the frame.
+// Above the overlay canvas so the bar is clickable over the frame.
 const HOST_Z_INDEX = '2147483647';
 const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
 // Keep at least this much of the bar on screen when clamping a drag, so it can
-// never be lost entirely off the viewport edge (issue #8).
+// never be lost entirely off the viewport edge.
 const MIN_VISIBLE_PX = 24;
 
 /**
@@ -36,8 +36,8 @@ export function mountControls(img: HTMLImageElement, engine: Engine, onClose: ()
   style.textContent = controlsCss;
   shadow.appendChild(style);
 
-  // User drag offset (issue: movable controls), in page pixels, relative to the
-  // default anchored spot. Lives for the lifetime of this mount so the bar stays
+  // User drag offset, in page pixels, relative to the default anchored spot.
+  // Lives for the lifetime of this mount so the bar stays
   // where the user dropped it across scroll/resize re-anchoring (per-session).
   let userDx = 0;
   let userDy = 0;
@@ -46,7 +46,7 @@ export function mountControls(img: HTMLImageElement, engine: Engine, onClose: ()
   // user drag offset so a moved bar tracks the image as the page scrolls. The
   // final position is clamped so at least MIN_VISIBLE_PX of the bar stays within
   // the viewport — a drag (or the image scrolling away) can't strand it off-screen
-  // with no way back (issue #8). The bar's own size comes from offset* (the host
+  // with no way back. The bar's own size comes from offset* (the host
   // is laid out by the time reposition first runs, after the Preact render).
   const reposition = (): void => {
     const rect = img.getBoundingClientRect();
@@ -65,7 +65,7 @@ export function mountControls(img: HTMLImageElement, engine: Engine, onClose: ()
     host.style.top = `${clampedTop + window.scrollY}px`;
   };
 
-  // Snap back to the default anchored position (double-click the grip, issue #8).
+  // Snap back to the default anchored position (double-click the grip).
   const resetPosition = (): void => {
     userDx = 0;
     userDy = 0;

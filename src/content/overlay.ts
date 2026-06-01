@@ -1,8 +1,7 @@
-// Canvas-over-img overlay: positioning + scroll/resize sync + blit (issue 05 /
-// PRD §5).
+// Canvas-over-img overlay: positioning + scroll/resize sync + blit.
 //
 // We deliberately do NOT swap the <img> for a <canvas> — swapping breaks
-// selectors, intrinsic sizing and object-fit (PRD §5). Instead the <img> stays
+// selectors, intrinsic sizing and object-fit. Instead the <img> stays
 // in place (preserving layout + styling) and an absolutely-positioned canvas is
 // laid exactly over its box, covering it, and we drive that canvas from the
 // engine's current frame.
@@ -14,7 +13,7 @@ export interface Overlay {
   destroy(): void;
 }
 
-// Sit above page content but leave headroom for the controls host (issues 07+).
+// Sit above page content but leave headroom for the controls host.
 const OVERLAY_Z_INDEX = '2147483646';
 
 /**
@@ -45,8 +44,8 @@ const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
 
 /**
  * Position a canvas exactly over `img` and blit the engine's current frame,
- * keeping the canvas synced on scroll/resize. `frames` is the decoded sequence
- * (issue 03); the canvas drawing buffer is set to the GIF's native resolution.
+ * keeping the canvas synced on scroll/resize. The canvas drawing buffer is set
+ * to the GIF's native resolution.
  */
 export function createOverlay(
   img: HTMLImageElement,
@@ -64,7 +63,7 @@ export function createOverlay(
   // Base styling. The display box (CSS width/height) is set per-reposition.
   // Copying the img's object-fit/position lets the canvas — a replaced element
   // whose intrinsic size is its buffer — reproduce the page's fit/crop intent
-  // natively (PRD §5).
+  // natively.
   const computed = getComputedStyle(img);
   Object.assign(canvas.style, {
     position: 'absolute',

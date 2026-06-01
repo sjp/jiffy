@@ -1,4 +1,4 @@
-// Shared engine types — the central engine↔UI contract (PRD §8).
+// Shared engine types — the central engine↔UI contract.
 
 /**
  * Floor for per-frame delays, in ms. Frame delays are unreliable across all the
@@ -39,7 +39,7 @@ export interface Engine {
   subscribe(fn: (s: EngineState) => void): () => void;
 }
 
-/** Output of the decode + precompute step (issue 03). */
+/** Output of the decode + precompute step. */
 export interface DecodeResult {
   frames: Frame[];
   duration: number;

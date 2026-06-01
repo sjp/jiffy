@@ -1,8 +1,6 @@
-/* Adopted stylesheet for the controls bar (issue 07). Injected into the shadow
-   root so host-page CSS can't reach in and our rules can't leak out (PRD §7).
-   :host is the shadow host element; all selectors below match only inside the
-   shadow tree. The bar, buttons, scrubber and readout are fleshed out in
-   issues 08–10. */
+/* Adopted stylesheet for the controls bar. Injected into the shadow root so
+   host-page CSS can't reach in and our rules can't leak out. :host is the
+   shadow host element; all selectors below match only inside the shadow tree. */
 
 :host {
   all: initial; /* neutralise inherited host-page styles */

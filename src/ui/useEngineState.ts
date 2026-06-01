@@ -1,4 +1,4 @@
-// Engine → UI binding hook (issue 07 / PRD §8).
+// Engine → UI binding hook.
 //
 // Subscribes a component to the engine and returns the latest EngineState
 // snapshot, re-rendering on every change and unsubscribing on unmount. The UI

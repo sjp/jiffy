@@ -1,4 +1,4 @@
-// Headless unit test for the GIF fetch messaging contract (issue 06).
+// Headless unit test for the GIF fetch messaging contract.
 // Run: `npm test`. `fetch` is stubbed so no network is touched.
 
 import assert from 'node:assert/strict';
@@ -74,7 +74,7 @@ const failed = await handleFetchGif('http://example.com/a.gif');
 assert.equal(failed.ok, false, 'network failure');
 assert.equal(failed.ok ? '' : failed.error, 'network down', 'error message preserved');
 
-// ---- disallowed scheme is refused without fetching (issue #9) ------------
+// ---- disallowed scheme is refused without fetching -----------------------
 stub(async () => fakeResponse({ bytes: new Uint8Array([1]) }));
 fetchCalls = 0;
 const fileUrl = await handleFetchGif('file:///etc/passwd');
@@ -87,7 +87,7 @@ assert.equal(garbage.ok, false, 'unparseable URL refused');
 const dataUrl = await handleFetchGif('data:image/gif;base64,AAAA');
 assert.equal(dataUrl.ok, true, 'data: scheme allowed');
 
-// ---- size cap: declared Content-Length over the limit (issue #9) ---------
+// ---- size cap: declared Content-Length over the limit --------------------
 stub(async () => fakeResponse({ bytes: new Uint8Array([1, 2, 3]), contentLength: 9_999_999 }));
 const tooBigHeader = await handleFetchGif('http://example.com/huge.gif', { maxBytes: 100 });
 assert.equal(tooBigHeader.ok, false, 'oversized Content-Length rejected');

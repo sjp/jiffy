@@ -1,14 +1,13 @@
-// gifuct-js wrapper + precompute to full-canvas bitmaps (issue 03 / PRD §3–§4).
+// gifuct-js wrapper + precompute to full-canvas bitmaps.
 //
 // Bytes in, frames out — zero playback/DOM awareness. Each raw GIF frame is a
 // (possibly partial) patch governed by a disposal method; we composite every
 // frame ONCE, up front, into a full-canvas ImageBitmap and record a cumulative
 // time array. That precompute is what makes step *and* seek O(1) at playback
-// time instead of replaying from a keyframe (PRD §4).
+// time instead of replaying from a keyframe.
 //
-// Memory tradeoff (known, deferred — PRD §4): N frames → N full-resolution
-// bitmaps held in memory. Fine for typical GIFs. The patches + keyframe-index
-// fallback for very large GIFs lives in issue 14; start with the simple version.
+// Memory tradeoff (known, deferred): N frames → N full-resolution bitmaps held
+// in memory. Fine for typical GIFs.
 
 import { parseGIF, decompressFrames } from "gifuct-js";
 import type { FrameDims } from "gifuct-js";
@@ -21,7 +20,7 @@ import { decodeAvif, isAnimatedAvif } from "./decodeAvif";
  * Thrown when the bytes aren't an animated image we can control — none of the
  * format sniffers match (a static PNG/WebP/AVIF, a non-image error page, …). The
  * content script distinguishes this from genuine fetch/decode failures so it can
- * tell the user "Not an animated image" rather than a generic error (issue #4).
+ * tell the user "Not an animated image" rather than a generic error.
  */
 export class NotAnimatedError extends Error {
   constructor(message = "not an animated image") {
@@ -87,7 +86,7 @@ function copyPatchInto(dest: Uint8ClampedArray, patch: Uint8ClampedArray): void 
 }
 
 /**
- * Delay clamp (PRD §4). GIF delays are unreliable — `0`/`1` centiseconds are
+ * Delay clamp. GIF delays are unreliable — `0`/`1` centiseconds are
  * common and browsers historically clamp to a floor — so we clamp ourselves so
  * the timeline matches user expectation. gifuct-js already normalises `delay`
  * to milliseconds, so `toMs` is the identity here. Floor is shared (engine/types).
@@ -105,8 +104,8 @@ const DISPOSAL_RESTORE_PREVIOUS = 3;
  * Decode GIF bytes into pre-composited full-canvas frames + total duration.
  *
  * Time convention: `frames[i].time` is the cumulative ms at which frame `i`
- * **ends** (end-of-frame), so `duration` equals the final frame's `time`
- * (PRD §4/§8). The array is monotonically increasing by construction.
+ * **ends** (end-of-frame), so `duration` equals the final frame's `time`.
+ * The array is monotonically increasing by construction.
  *
  * Uses `OffscreenCanvas` + `createImageBitmap`, so it runs headless (no page
  * DOM) and is unit-testable.
@@ -136,7 +135,7 @@ export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
 
   // Disposal bookkeeping carried from the PREVIOUS frame — disposal is applied
   // before drawing the *next* patch (off-by-one here is the classic source of
-  // garbage frames, PRD §3).
+  // garbage frames).
   let prevDisposalType = 0;
   let prevDims: FrameDims | null = null;
   // Canvas snapshot saved before a restore-to-previous frame is drawn.

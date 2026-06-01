@@ -1,5 +1,5 @@
 // Minimal type declaration for gifuct-js, which ships without its own types.
-// Covers the surface consumed by the decode module (issue 03). Expand as needed.
+// Covers the surface consumed by the decode module. Expand as needed.
 declare module 'gifuct-js' {
   export interface FrameDims {
     top: number;

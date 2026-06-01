@@ -1,4 +1,4 @@
-// Animated AVIF decoder — WebCodecs ImageDecoder strategy (issue 03 extension).
+// Animated AVIF decoder — WebCodecs ImageDecoder strategy.
 //
 // AVIF wraps AV1 bitstreams in the ISOBMFF container. Real animated AVIFs are
 // inter-coded: every frame after the first references earlier frames, so a single

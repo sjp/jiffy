@@ -1,5 +1,5 @@
 // Background event page — fetches cross-origin GIF bytes using host permissions,
-// which a content script (or bookmarklet) could not (PRD §2, §3). The fetch
+// which a content script (or bookmarklet) could not. The fetch
 // contract + logic live in ./messages; this file just wires it onto the runtime.
 import { handleFetchGif, isFetchGifRequest } from './messages';
 
@@ -15,7 +15,7 @@ browser.runtime.onMessage.addListener((message) => {
 });
 
 // Disable the toolbar button on pages where the content script can't run, so the
-// popup can't get into a dead state where its only action is a no-op (issue #3).
+// popup can't get into a dead state where its only action is a no-op.
 // Content scripts (matched on <all_urls>) only inject on http(s) pages; privileged
 // pages (about:*, view-source:, the add-ons gallery, the PDF viewer, …) get no
 // receiver. With our <all_urls> host permission, `tab.url` is populated for pages

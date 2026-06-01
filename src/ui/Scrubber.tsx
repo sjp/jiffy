@@ -1,5 +1,5 @@
-// Seek scrubber — a native <input type="range"> driven by TIME, not frame index
-// (PRD §8). Driving by time gives smooth seeking across uneven GIF delays;
+// Seek scrubber — a native <input type="range"> driven by TIME, not frame index.
+// Driving by time gives smooth seeking across uneven GIF delays;
 // `engine.seekToTime` snaps to the correct frame internally, while frame-stepping
 // stays exact via the buttons. Pure/presentational: props + callbacks only.
 

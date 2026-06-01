@@ -1,4 +1,4 @@
-// Shared messaging contract for cross-origin GIF fetching (issue 06 / PRD §3).
+// Shared messaging contract for cross-origin GIF fetching.
 //
 // A content script has an <img>, not raw bytes, and same-origin `fetch` is
 // blocked by CORS for cross-origin images. The background script — granted
@@ -31,7 +31,7 @@ export function isFetchGifRequest(message: unknown): message is FetchGifRequest 
 }
 
 /**
- * Popup → content script: enter "pick a GIF" mode (issue 11 trigger). Sent when
+ * Popup → content script: enter "pick a GIF" mode. Sent when
  * the user clicks the toolbar popup's button; the content script then enhances
  * the next GIF they click.
  */
@@ -48,7 +48,7 @@ export function isPickGifRequest(message: unknown): message is PickGifRequest {
   );
 }
 
-// Fetch hardening (issue #9). The URL is attacker-influenced (the page supplies
+// Fetch hardening. The URL is attacker-influenced (the page supplies
 // the <img> src the user clicks), so bound the request: restrict the scheme, cap
 // the size (the whole body is buffered then structured-cloned across the message
 // boundary — an unbounded image risks OOM/jank), and time it out so a hung request

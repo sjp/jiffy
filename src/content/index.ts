@@ -1,21 +1,19 @@
-// Content-script entry + per-image pipeline (issue 11 / PRD §2, §10.6).
+// Content-script entry + per-image pipeline.
 //
-// For each animated image (GIF or WebP) on the page we run: fetch bytes
-// (issue 06) → decode (issue 03) → engine (issue 04) → overlay canvas (issue 05)
-// → controls (07–10), tracking every instance so it can be torn down cleanly.
-// One engine + overlay + controls per image; a decode failure on one must not
-// break the others.
+// For each animated image on the page we run: fetch bytes → decode → engine
+// → overlay canvas → controls, tracking every instance so it can be torn down
+// cleanly. One engine + overlay + controls per image; a decode failure on one
+// must not break the others.
 //
 // The pipeline's collaborators are injected (createController) so the discovery /
 // registry / teardown logic is unit-testable headless without a real canvas or
 // the background channel.
 //
-// Issue 13 adds DOM-lifecycle reconciliation: a debounced MutationObserver tears
-// down a GIF's player when its <img> leaves the document (lazy unmount, SPA route
-// change), reusing the idempotent registry + teardown so no rAF loop, listener or
-// bitmap leaks. Because discovery is ON-DEMAND (the user picks GIFs via the
-// popup), the observer does NOT auto-enhance inserted GIFs — it only reconciles
-// removals.
+// DOM-lifecycle reconciliation: a debounced MutationObserver tears down a GIF's
+// player when its <img> leaves the document (lazy unmount, SPA route change),
+// reusing the idempotent registry + teardown so no rAF loop, listener or bitmap
+// leaks. Because discovery is ON-DEMAND (the user picks GIFs via the popup), the
+// observer does NOT auto-enhance inserted GIFs — it only reconciles removals.
 import { decode, NotAnimatedError } from '../engine/decode';
 import { createEngine } from '../engine/engine';
 import { createOverlay, type Overlay } from './overlay';
@@ -27,7 +25,7 @@ import type { DecodeResult, Engine, Frame } from '../engine/types';
 
 /**
  * Outcomes of running an image through the pipeline, reported to an optional
- * callback so the content script can surface feedback (issues #4/#5):
+ * callback so the content script can surface feedback:
  *   loading       — fetch/decode started (show a transient "Loading…")
  *   ready         — overlay mounted, controls live (clear the loading message)
  *   not-animated  — single-frame or no animated sniffer matched
@@ -70,11 +68,11 @@ export interface Controller {
   teardown(img: HTMLImageElement): void;
   /** Tear down everything. */
   teardownAll(): void;
-  /** Tear down any instance whose <img> has left the document (issue 13). */
+  /** Tear down any instance whose <img> has left the document. */
   reconcile(): void;
-  /** Watch `target` and reconcile removals (debounced); returns a stop fn (issue 13). */
+  /** Watch `target` and reconcile removals (debounced); returns a stop fn. */
   observe(target?: Node): () => void;
-  /** Live registry (exposed for issue 13 + tests). */
+  /** Live registry (exposed for tests). */
   readonly instances: ReadonlyMap<HTMLImageElement, Instance>;
 }
 
@@ -85,7 +83,7 @@ export interface Controller {
  * extensions) is *expected* to frequently be a non-animated false positive — the
  * vast majority of PNGs are static, not APNG. The authority is the byte-sniff in
  * `decode()`, which throws `NotAnimatedError` for static bytes; that surfaces as a
- * "Not an animated image" toast (issue #4) so a false positive is no longer silent.
+ * "Not an animated image" toast so a false positive is no longer silent.
  */
 export function isAnimatedCandidate(img: HTMLImageElement): boolean {
   const url = img.currentSrc || img.src;
@@ -203,7 +201,7 @@ export const controller = createController({
   mountControls,
 });
 
-// Discovery scope (PRD §12): ON-DEMAND via the toolbar popup. The popup's
+// Discovery scope: ON-DEMAND via the toolbar popup. The popup's
 // "Select a GIF" button sends PICK_GIF to this content script, which enters a
 // one-shot "pick mode": the next click on a GIF candidate enhances it (or tears
 // it down if already enhanced); Esc or clicking elsewhere cancels. Only GIFs the
@@ -305,7 +303,7 @@ export function enhanceStandaloneImage(
   return true; // a standalone image document — handled here, don't enter pick mode
 }
 
-/** Bootstrap the toolbar-driven trigger. Returns a teardown for SPA cleanup (issue 13). */
+/** Bootstrap the toolbar-driven trigger. Returns a teardown for SPA cleanup. */
 export function init(): () => void {
   // Guard so importing this module headlessly (tests) doesn't touch `browser`.
   if (typeof browser === 'undefined' || !browser.runtime?.onMessage) {
@@ -320,7 +318,7 @@ export function init(): () => void {
   };
   browser.runtime.onMessage.addListener(onMessage);
   // Keep the player set in sync with the live DOM: tear down players whose GIF
-  // was removed (lazy unmount / SPA navigation) so nothing leaks (issue 13).
+  // was removed (lazy unmount / SPA navigation) so nothing leaks.
   const stopObserving = controller.observe();
   return () => {
     browser.runtime.onMessage.removeListener(onMessage);

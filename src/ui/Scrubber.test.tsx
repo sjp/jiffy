@@ -1,4 +1,4 @@
-// Tests for the Scrubber (issue 09): time-driven seek + pause-while-dragging.
+// Tests for the Scrubber: time-driven seek + pause-while-dragging.
 // Part A exercises the Scrubber's props/callbacks in isolation; Part B drives it
 // through <Controls> to verify pause-on-drag + resume-on-release against a real
 // engine. jsdom's PointerEvent is patchy, so we dispatch plain `window.Event`s of

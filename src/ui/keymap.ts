@@ -1,10 +1,9 @@
-// Keyboard shortcuts (issue 12). Kept as a pure-ish function of (key, engine) so
-// it can be unit-tested without rendering and reused by the controls container.
+// Keyboard shortcuts. Kept as a pure-ish function of (key, engine) so it can
+// be unit-tested without rendering and reused by the controls container.
 //
 // Scoped to focus by design: the only caller attaches this to the controls'
 // `onKeyDown`, never to `window`/`document`, so two controlled GIFs on a page
-// don't both respond to one keypress and normal typing in inputs is unaffected
-// (PRD §6, §10.7).
+// don't both respond to one keypress and normal typing in inputs is unaffected.
 import type { Engine } from '../engine/types';
 
 /**
