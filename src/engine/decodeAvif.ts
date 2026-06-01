@@ -13,19 +13,19 @@
 // decodeWebP/decodeApng do: that approach only works for all-intra AVIF (rare in
 // the wild) and produces undecodable inter-frames. ImageDecoder sidesteps both
 // the container parsing and the AV1 decoding.
-//
-// Availability: ImageDecoder ships in Chromium and Safari; Firefox does not yet
-// support it in stable. When it's unavailable decodeAvif throws, and the content
-// pipeline (which catches per-image decode failures) simply leaves the image as
-// the browser's own native AVIF animation — no jiffy controls, but no breakage.
 
-import { MIN_DELAY_MS, type DecodeResult, type Frame } from './types';
+import { MIN_DELAY_MS, type DecodeResult, type Frame } from "./types";
 
 // Fallback per-frame delay when the decoder reports no per-frame duration.
 const DEFAULT_DELAY_MS = 100;
 
 function readCC(v: Uint8Array, offset: number): string {
-  return String.fromCharCode(v[offset]!, v[offset + 1]!, v[offset + 2]!, v[offset + 3]!);
+  return String.fromCharCode(
+    v[offset]!,
+    v[offset + 1]!,
+    v[offset + 2]!,
+    v[offset + 3]!,
+  );
 }
 
 /**
@@ -37,34 +37,39 @@ function readCC(v: Uint8Array, offset: number): string {
 export function isAnimatedAvif(bytes: ArrayBuffer): boolean {
   if (bytes.byteLength < 16) return false;
   const v = new Uint8Array(bytes);
-  if (readCC(v, 4) !== 'ftyp') return false;
-  const ftypSize = Math.min(new DataView(bytes, 0, 4).getUint32(0, false), bytes.byteLength);
-  if (readCC(v, 8) === 'avis') return true; // major brand
+  if (readCC(v, 4) !== "ftyp") return false;
+  const ftypSize = Math.min(
+    new DataView(bytes, 0, 4).getUint32(0, false),
+    bytes.byteLength,
+  );
+  if (readCC(v, 8) === "avis") return true; // major brand
   // Compatible brands: 4-byte tags from offset 16 to the end of the ftyp box.
   for (let o = 16; o + 4 <= ftypSize; o += 4) {
-    if (readCC(v, o) === 'avis') return true;
+    if (readCC(v, o) === "avis") return true;
   }
   return false;
 }
 
 /** True if the runtime can decode AVIF frames via WebCodecs ImageDecoder. */
 export function canDecodeAvif(): boolean {
-  return typeof ImageDecoder !== 'undefined';
+  return typeof ImageDecoder !== "undefined";
 }
 
 /** Decode an animated AVIF into pre-composited full-canvas frames + duration. */
 export async function decodeAvif(bytes: ArrayBuffer): Promise<DecodeResult> {
   if (!canDecodeAvif()) {
-    throw new Error('decodeAvif: WebCodecs ImageDecoder is unavailable in this browser');
+    throw new Error(
+      "decodeAvif: WebCodecs ImageDecoder is unavailable in this browser",
+    );
   }
 
-  const decoder = new ImageDecoder({ data: bytes, type: 'image/avif' });
+  const decoder = new ImageDecoder({ data: bytes, type: "image/avif" });
   try {
     await decoder.tracks.ready;
     const track = decoder.tracks.selectedTrack;
-    if (!track) throw new Error('decodeAvif: no image track');
+    if (!track) throw new Error("decodeAvif: no image track");
     const frameCount = track.frameCount;
-    if (!frameCount) throw new Error('decodeAvif: zero frames');
+    if (!frameCount) throw new Error("decodeAvif: zero frames");
 
     // Canvas is sized from the first decoded frame's display dimensions.
     let canvas: OffscreenCanvas | null = null;
@@ -73,13 +78,16 @@ export async function decodeAvif(bytes: ArrayBuffer): Promise<DecodeResult> {
     let elapsed = 0;
 
     for (let i = 0; i < frameCount; i++) {
-      const { image } = await decoder.decode({ frameIndex: i, completeFramesOnly: true });
+      const { image } = await decoder.decode({
+        frameIndex: i,
+        completeFramesOnly: true,
+      });
       // VideoFrame.duration is microseconds; read it before closing the frame.
       const durationUs = image.duration;
       if (!ctx) {
         canvas = new OffscreenCanvas(image.displayWidth, image.displayHeight);
-        ctx = canvas.getContext('2d', { willReadFrequently: true });
-        if (!ctx) throw new Error('decodeAvif: failed to acquire 2D context');
+        ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) throw new Error("decodeAvif: failed to acquire 2D context");
       }
       // Each ImageDecoder frame is already fully composited, so just clear and
       // draw it whole (clear so any transparency copies rather than blends).
@@ -87,10 +95,15 @@ export async function decodeAvif(bytes: ArrayBuffer): Promise<DecodeResult> {
       ctx.drawImage(image, 0, 0);
       image.close(); // release the VideoFrame's backing memory promptly
 
-      const durationMs = durationUs != null ? durationUs / 1000 : DEFAULT_DELAY_MS;
+      const durationMs =
+        durationUs != null ? durationUs / 1000 : DEFAULT_DELAY_MS;
       const delay = Math.max(Math.round(durationMs), MIN_DELAY_MS);
       elapsed += delay;
-      frames.push({ bitmap: await createImageBitmap(canvas!), time: elapsed, delay });
+      frames.push({
+        bitmap: await createImageBitmap(canvas!),
+        time: elapsed,
+        delay,
+      });
     }
 
     return { frames, duration: elapsed };

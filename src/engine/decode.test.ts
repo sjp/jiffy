@@ -9,7 +9,7 @@
 // gifuct-js, but not actual pixel output (which needs a real canvas). Pixel
 // correctness is best verified manually in the browser.
 
-import assert from 'node:assert/strict';
+import assert from "node:assert/strict";
 
 // ---- minimal canvas shim -------------------------------------------------
 
@@ -18,7 +18,7 @@ class FakeImageData {
   width: number;
   height: number;
   constructor(a: Uint8ClampedArray | number, b: number, c?: number) {
-    if (typeof a === 'number') {
+    if (typeof a === "number") {
       this.width = a;
       this.height = b;
       this.data = new Uint8ClampedArray(a * b * 4);
@@ -67,7 +67,7 @@ g.ImageData = FakeImageData;
 g.OffscreenCanvas = FakeOffscreenCanvas;
 g.createImageBitmap = async () => ({ close() {} });
 
-const { decode, NotAnimatedError } = await import('./decode.ts');
+const { decode, NotAnimatedError } = await import("./decode.ts");
 
 // ---- a real, hand-built 2-frame GIF --------------------------------------
 // 2×1, 2-colour (black/white). Frame 0 = [black, white], frame 1 = [white,
@@ -92,22 +92,22 @@ const { frames, duration } = await decode(
   GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength),
 );
 
-assert.equal(frames.length, 2, 'frame count');
+assert.equal(frames.length, 2, "frame count");
 
 // gifuct normalises delay (10cs → 100ms); clamp leaves it ≥ 20ms.
-assert.equal(frames[0]!.delay, 100, 'frame 0 delay (ms)');
-assert.equal(frames[1]!.delay, 100, 'frame 1 delay (ms)');
+assert.equal(frames[0]!.delay, 100, "frame 0 delay (ms)");
+assert.equal(frames[1]!.delay, 100, "frame 1 delay (ms)");
 
 // End-of-frame cumulative convention: monotonically increasing.
-assert.equal(frames[0]!.time, 100, 'frame 0 cumulative time');
-assert.equal(frames[1]!.time, 200, 'frame 1 cumulative time');
-assert.ok(frames[1]!.time > frames[0]!.time, 'time array is monotonic');
+assert.equal(frames[0]!.time, 100, "frame 0 cumulative time");
+assert.equal(frames[1]!.time, 200, "frame 1 cumulative time");
+assert.ok(frames[1]!.time > frames[0]!.time, "time array is monotonic");
 
 // duration == final cumulative time.
-assert.equal(duration, 200, 'duration');
+assert.equal(duration, 200, "duration");
 
 // Every frame carries a (shimmed) full-canvas bitmap.
-for (const f of frames) assert.ok(f.bitmap, 'frame has a bitmap');
+for (const f of frames) assert.ok(f.bitmap, "frame has a bitmap");
 
 // ---- non-animated bytes throw a typed error ------------------------------
 // Bytes matching no animated sniffer and lacking a GIF signature must throw
@@ -117,7 +117,11 @@ const notAnimated = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // a PNG signature
 await assert.rejects(
   () => decode(notAnimated.buffer.slice(0)),
   (err: unknown) => err instanceof NotAnimatedError,
-  'non-animated bytes throw NotAnimatedError',
+  "non-animated bytes throw NotAnimatedError",
 );
 
-console.log('decode.test: OK — %d frames, duration %dms', frames.length, duration);
+console.log(
+  "decode.test: OK — %d frames, duration %dms",
+  frames.length,
+  duration,
+);

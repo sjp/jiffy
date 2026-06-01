@@ -4,7 +4,7 @@
 // engine owns a current position and a requestAnimationFrame loop that advances
 // it as wall-clock time passes, notifying subscribers so the UI can reflect
 // state. The UI never touches rAF.
-import type { Engine, EngineState, Frame } from './types';
+import type { Engine, EngineState, Frame } from "./types";
 
 /**
  * Clock + frame-scheduler abstraction. Defaults wrap `performance.now()` and

@@ -1,9 +1,7 @@
 // Background event page — fetches cross-origin GIF bytes using host permissions,
 // which a content script (or bookmarklet) could not. The fetch
 // contract + logic live in ./messages; this file just wires it onto the runtime.
-import { handleFetchGif, isFetchGifRequest } from './messages';
-
-console.debug('[jiffy] background script loaded');
+import { handleFetchGif, isFetchGifRequest } from "./messages";
 
 // Register at the top level so Firefox's MV3 event page re-registers the
 // listener every time it wakes. Returning a Promise keeps the message channel
@@ -25,7 +23,10 @@ function isControllable(url: string | undefined): boolean {
   return url != null && /^https?:/i.test(url);
 }
 
-async function syncActionState(tabId: number, url: string | undefined): Promise<void> {
+async function syncActionState(
+  tabId: number,
+  url: string | undefined,
+): Promise<void> {
   try {
     if (isControllable(url)) {
       await browser.action.enable(tabId);
@@ -40,7 +41,7 @@ async function syncActionState(tabId: number, url: string | undefined): Promise<
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   // React to navigations: `changeInfo.url` on SPA/address-bar changes, and the
   // `loading` status (with `tab.url`) for full document loads.
-  if (changeInfo.url != null || changeInfo.status === 'loading') {
+  if (changeInfo.url != null || changeInfo.status === "loading") {
     void syncActionState(tabId, changeInfo.url ?? tab.url);
   }
 });

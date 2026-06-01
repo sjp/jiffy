@@ -19,13 +19,15 @@
 //   0 SOURCE  all components (incl. alpha) overwrite — clear-then-draw
 //   1 OVER    alpha-blend onto canvas (drawImage default / source-over)
 
-import { MIN_DELAY_MS, type DecodeResult, type Frame } from './types';
+import { MIN_DELAY_MS, type DecodeResult, type Frame } from "./types";
 
-const PNG_SIG = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+const PNG_SIG = new Uint8Array([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+]);
 
 const DISPOSE_OP_BACKGROUND = 1;
-const DISPOSE_OP_PREVIOUS   = 2;
-const BLEND_OP_SOURCE       = 0;
+const DISPOSE_OP_PREVIOUS = 2;
+const BLEND_OP_SOURCE = 0;
 
 // ---- CRC-32 (ISO 3309 polynomial) -----------------------------------------
 // Required for writing valid IDAT chunks in reconstructed per-frame PNGs.
@@ -34,22 +36,23 @@ const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
     let c = n;
-    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
     t[n] = c;
   }
   return t;
 })();
 
 function crc32(data: Uint8Array): number {
-  let c = 0xFFFFFFFF;
-  for (let i = 0; i < data.length; i++) c = CRC_TABLE[(c ^ data[i]!) & 0xFF]! ^ (c >>> 8);
-  return (c ^ 0xFFFFFFFF) >>> 0;
+  let c = 0xffffffff;
+  for (let i = 0; i < data.length; i++)
+    c = CRC_TABLE[(c ^ data[i]!) & 0xff]! ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
 }
 
 // Build a PNG chunk: [length BE][type][data][crc(type+data) BE]
 function makeChunk(type: string, data: Uint8Array): Uint8Array {
   const out = new Uint8Array(12 + data.length);
-  const dv  = new DataView(out.buffer);
+  const dv = new DataView(out.buffer);
   dv.setUint32(0, data.length, false);
   for (let i = 0; i < 4; i++) out[4 + i] = type.charCodeAt(i);
   out.set(data, 8);
@@ -70,32 +73,33 @@ function readChunkType(buf: ArrayBuffer, byteOffset: number): string {
 }
 
 interface FcTLInfo {
-  width:     number;
-  height:    number;
-  x:         number;
-  y:         number;
-  delayMs:   number;
+  width: number;
+  height: number;
+  x: number;
+  y: number;
+  delayMs: number;
   disposeOp: number;
-  blendOp:   number;
-  payloads:  Uint8Array[]; // accumulated (fdAT seq-num stripped) or IDAT payloads
+  blendOp: number;
+  payloads: Uint8Array[]; // accumulated (fdAT seq-num stripped) or IDAT payloads
 }
 
 function parseApng(buf: ArrayBuffer): {
-  canvasWidth:  number;
+  canvasWidth: number;
   canvasHeight: number;
-  ihdrData:     Uint8Array; // 13-byte IHDR payload for reuse in frame blobs
-  plte:         Uint8Array | null;
-  trns:         Uint8Array | null;
-  bkgd:         Uint8Array | null;
-  frames:       FcTLInfo[];
+  ihdrData: Uint8Array; // 13-byte IHDR payload for reuse in frame blobs
+  plte: Uint8Array | null;
+  trns: Uint8Array | null;
+  bkgd: Uint8Array | null;
+  frames: FcTLInfo[];
 } {
-  if (buf.byteLength < 8) throw new Error('decodeApng: buffer too short');
+  if (buf.byteLength < 8) throw new Error("decodeApng: buffer too short");
   const sigView = new Uint8Array(buf, 0, 8);
   for (let i = 0; i < 8; i++) {
-    if (sigView[i] !== PNG_SIG[i]) throw new Error('decodeApng: not a PNG file');
+    if (sigView[i] !== PNG_SIG[i])
+      throw new Error("decodeApng: not a PNG file");
   }
 
-  let canvasWidth  = 0;
+  let canvasWidth = 0;
   let canvasHeight = 0;
   let ihdrData: Uint8Array | null = null;
   let plte: Uint8Array | null = null;
@@ -110,70 +114,66 @@ function parseApng(buf: ArrayBuffer): {
   let offset = 8;
   while (offset + 12 <= buf.byteLength) {
     const dataLen = readU32BE(buf, offset);
-    const type    = readChunkType(buf, offset + 4);
+    const type = readChunkType(buf, offset + 4);
     const dataOff = offset + 8;
     // Skip the 4-byte CRC — we don't validate on parse (same as GIF/WebP decoders).
     offset += 12 + dataLen;
 
-    if (type === 'IHDR') {
-      canvasWidth  = readU32BE(buf, dataOff);
+    if (type === "IHDR") {
+      canvasWidth = readU32BE(buf, dataOff);
       canvasHeight = readU32BE(buf, dataOff + 4);
-      ihdrData     = new Uint8Array(buf, dataOff, dataLen).slice();
-
-    } else if (type === 'PLTE') {
+      ihdrData = new Uint8Array(buf, dataOff, dataLen).slice();
+    } else if (type === "PLTE") {
       plte = new Uint8Array(buf, dataOff, dataLen).slice();
-
-    } else if (type === 'tRNS') {
+    } else if (type === "tRNS") {
       trns = new Uint8Array(buf, dataOff, dataLen).slice();
-
-    } else if (type === 'bKGD') {
+    } else if (type === "bKGD") {
       bkgd = new Uint8Array(buf, dataOff, dataLen).slice();
-
-    } else if (type === 'acTL') {
+    } else if (type === "acTL") {
       // num_frames / num_plays are informational; we rely on fcTL/fdAT structure.
-
-    } else if (type === 'fcTL') {
+    } else if (type === "fcTL") {
       if (pendingFcTL) frames.push(pendingFcTL);
-      const dv       = new DataView(buf, dataOff, dataLen);
+      const dv = new DataView(buf, dataOff, dataLen);
       const delayNum = dv.getUint16(20, false);
       const delayDen = dv.getUint16(22, false);
       if (!idatSeen) fcTLBeforeIdat = true;
       pendingFcTL = {
-        width:     dv.getUint32(4,  false),
-        height:    dv.getUint32(8,  false),
-        x:         dv.getUint32(12, false),
-        y:         dv.getUint32(16, false),
-        delayMs:   Math.round((delayNum / (delayDen || 100)) * 1000),
+        width: dv.getUint32(4, false),
+        height: dv.getUint32(8, false),
+        x: dv.getUint32(12, false),
+        y: dv.getUint32(16, false),
+        delayMs: Math.round((delayNum / (delayDen || 100)) * 1000),
         disposeOp: dv.getUint8(24),
-        blendOp:   dv.getUint8(25),
-        payloads:  [],
+        blendOp: dv.getUint8(25),
+        payloads: [],
       };
-
-    } else if (type === 'IDAT') {
+    } else if (type === "IDAT") {
       idatSeen = true;
       // If a fcTL preceded the first IDAT, these bytes are frame 0's pixel data.
       // Otherwise this IDAT is the default/fallback image for non-APNG viewers.
       if (fcTLBeforeIdat && pendingFcTL) {
-        pendingFcTL.payloads.push(new Uint8Array(buf, dataOff, dataLen).slice());
+        pendingFcTL.payloads.push(
+          new Uint8Array(buf, dataOff, dataLen).slice(),
+        );
       }
-
-    } else if (type === 'fdAT') {
+    } else if (type === "fdAT") {
       // First 4 bytes are the sequence number — strip them.
       if (pendingFcTL && dataLen > 4) {
         pendingFcTL.payloads.push(
           new Uint8Array(buf, dataOff + 4, dataLen - 4).slice(),
         );
       }
-
-    } else if (type === 'IEND') {
+    } else if (type === "IEND") {
       if (pendingFcTL) frames.push(pendingFcTL);
       break;
     }
   }
 
-  if (!ihdrData)       throw new Error('decodeApng: missing IHDR chunk');
-  if (!canvasWidth || !canvasHeight) throw new Error('decodeApng: zero canvas dimensions');
-  if (frames.length === 0) throw new Error('decodeApng: no animation frames found');
+  if (!ihdrData) throw new Error("decodeApng: missing IHDR chunk");
+  if (!canvasWidth || !canvasHeight)
+    throw new Error("decodeApng: zero canvas dimensions");
+  if (frames.length === 0)
+    throw new Error("decodeApng: no animation frames found");
 
   return { canvasWidth, canvasHeight, ihdrData, plte, trns, bkgd, frames };
 }
@@ -182,16 +182,16 @@ function parseApng(buf: ArrayBuffer): {
 // for createImageBitmap. Uses the frame's own dimensions (from fcTL) so the
 // browser decodes just the sub-image; we composite it at (frame.x, frame.y).
 function makeFrameBlob(
-  frame:    FcTLInfo,
+  frame: FcTLInfo,
   ihdrData: Uint8Array, // parent image's 13-byte IHDR payload
-  plte:     Uint8Array | null,
-  trns:     Uint8Array | null,
+  plte: Uint8Array | null,
+  trns: Uint8Array | null,
 ): Blob {
   // Replace canvas dimensions with this frame's dimensions; all other IHDR
   // fields (bit depth, color type, compression, filter, interlace) are kept.
   const frameIhdr = ihdrData.slice();
   const dv = new DataView(frameIhdr.buffer, frameIhdr.byteOffset);
-  dv.setUint32(0, frame.width,  false);
+  dv.setUint32(0, frame.width, false);
   dv.setUint32(4, frame.height, false);
 
   // Concatenate all payloads (from one or more fdAT/IDAT chunks) into one IDAT.
@@ -199,19 +199,22 @@ function makeFrameBlob(
   for (const p of frame.payloads) totalLen += p.length;
   const idatPayload = new Uint8Array(totalLen);
   let off = 0;
-  for (const p of frame.payloads) { idatPayload.set(p, off); off += p.length; }
+  for (const p of frame.payloads) {
+    idatPayload.set(p, off);
+    off += p.length;
+  }
 
   const parts = [
     PNG_SIG,
-    makeChunk('IHDR', frameIhdr),
-    ...(plte ? [makeChunk('PLTE', plte)] : []),
-    ...(trns ? [makeChunk('tRNS', trns)] : []),
-    makeChunk('IDAT', idatPayload),
-    makeChunk('IEND', new Uint8Array(0)),
+    makeChunk("IHDR", frameIhdr),
+    ...(plte ? [makeChunk("PLTE", plte)] : []),
+    ...(trns ? [makeChunk("tRNS", trns)] : []),
+    makeChunk("IDAT", idatPayload),
+    makeChunk("IEND", new Uint8Array(0)),
   ];
   // TypeScript 6 narrows Uint8Array<ArrayBufferLike> which isn't assignable to
   // BlobPart's ArrayBufferView<ArrayBuffer>; all chunks here use fresh ArrayBuffers.
-  return new Blob(parts as unknown as BlobPart[], { type: 'image/png' });
+  return new Blob(parts as unknown as BlobPart[], { type: "image/png" });
 }
 
 // ---- Public API -----------------------------------------------------------
@@ -229,12 +232,12 @@ export function isAnimatedPng(bytes: ArrayBuffer): boolean {
   let offset = 8;
   while (offset + 12 <= bytes.byteLength) {
     const dataLen = readU32BE(bytes, offset);
-    const type    = readChunkType(bytes, offset + 4);
-    if (type === 'acTL') {
+    const type = readChunkType(bytes, offset + 4);
+    if (type === "acTL") {
       if (bytes.byteLength < offset + 12) return false;
       return readU32BE(bytes, offset + 8) > 1; // num_frames > 1
     }
-    if (type === 'IDAT' || type === 'IEND') return false;
+    if (type === "IDAT" || type === "IEND") return false;
     offset += 12 + dataLen;
   }
   return false;
@@ -242,19 +245,26 @@ export function isAnimatedPng(bytes: ArrayBuffer): boolean {
 
 /** Decode an animated PNG into pre-composited full-canvas frames + total duration. */
 export async function decodeApng(bytes: ArrayBuffer): Promise<DecodeResult> {
-  const { canvasWidth, canvasHeight, ihdrData, plte, trns, bkgd, frames: rawFrames } =
-    parseApng(bytes);
+  const {
+    canvasWidth,
+    canvasHeight,
+    ihdrData,
+    plte,
+    trns,
+    bkgd,
+    frames: rawFrames,
+  } = parseApng(bytes);
 
   const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
-  const ctx    = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) throw new Error('decodeApng: failed to acquire 2D context');
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("decodeApng: failed to acquire 2D context");
 
   // Seed the canvas with the declared background colour (bKGD chunk) so that
   // transparent frame areas match what the browser shows for the native <img>.
   // bKGD channel values are depth-scaled; shift down to 8-bit.
   if (bkgd) {
     const colorType = ihdrData[9]!;
-    const bitDepth  = ihdrData[8]!;
+    const bitDepth = ihdrData[8]!;
     const shift = bitDepth > 8 ? bitDepth - 8 : 0;
     const dv = new DataView(bkgd.buffer, bkgd.byteOffset);
     let bgCss: string | null = null;
@@ -303,18 +313,21 @@ export async function decodeApng(bytes: ArrayBuffer): Promise<DecodeResult> {
     }
 
     // 3. Decode frame sub-image via browser-native PNG.
-    const frameBmp = await createImageBitmap(makeFrameBlob(rf, ihdrData, plte, trns));
+    const frameBmp = await createImageBitmap(
+      makeFrameBlob(rf, ihdrData, plte, trns),
+    );
 
     // 4. Composite at frame position.
     //    BLEND_OP_SOURCE: clear first so transparent pixels copy (not blend).
     //    BLEND_OP_OVER:   drawImage alone is source-over / alpha-blend.
-    if (rf.blendOp === BLEND_OP_SOURCE) ctx.clearRect(rf.x, rf.y, rf.width, rf.height);
+    if (rf.blendOp === BLEND_OP_SOURCE)
+      ctx.clearRect(rf.x, rf.y, rf.width, rf.height);
     ctx.drawImage(frameBmp, rf.x, rf.y);
     frameBmp.close();
 
     // 5. Snapshot full composited canvas → ready-to-blit bitmap.
     const bitmap = await createImageBitmap(canvas);
-    const delay  = Math.max(rf.delayMs, MIN_DELAY_MS);
+    const delay = Math.max(rf.delayMs, MIN_DELAY_MS);
     elapsed += delay;
     frames.push({ bitmap, time: elapsed, delay });
 

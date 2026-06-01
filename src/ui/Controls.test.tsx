@@ -2,16 +2,20 @@
 // test runner. `act` (from preact, no extra dep) flushes renders + effects so
 // assertions see the updated DOM. The engine uses an injected clock so no real
 // rAF runs.
-import '../test/setup-dom.ts';
-import assert from 'node:assert/strict';
-import { render } from 'preact';
-import { act } from 'preact/test-utils';
-import { Controls } from './Controls.tsx';
-import { createEngine, type EngineClock } from '../engine/engine.ts';
+import "../test/setup-dom.ts";
+import assert from "node:assert/strict";
+import { render } from "preact";
+import { act } from "preact/test-utils";
+import { Controls } from "./Controls.tsx";
+import { createEngine, type EngineClock } from "../engine/engine.ts";
 
 // Clock whose scheduled callback never fires: play() flips `playing` but the
 // loop never advances, keeping the test deterministic.
-const clock: EngineClock = { now: () => 0, schedule: () => 1, cancel: () => {} };
+const clock: EngineClock = {
+  now: () => 0,
+  schedule: () => 1,
+  cancel: () => {},
+};
 
 const frames = [
   { bitmap: {}, time: 100, delay: 100 },
@@ -20,68 +24,80 @@ const frames = [
 ] as never;
 const engine = createEngine(frames, 300, clock);
 
-const container = document.createElement('div');
+const container = document.createElement("div");
 document.body.appendChild(container);
 
 act(() => {
   render(<Controls engine={engine} />, container);
 });
 
-const buttons = () => Array.from(container.querySelectorAll('button'));
-assert.equal(buttons().length, 3, 'prev / play-pause / next');
+const buttons = () => Array.from(container.querySelectorAll("button"));
+assert.equal(buttons().length, 3, "prev / play-pause / next");
 
 const [prev, toggle, next] = buttons();
-const text = () => container.textContent ?? '';
+const text = () => container.textContent ?? "";
 
 // Initial: paused, frame 1 of 3.
-assert.equal(toggle!.getAttribute('aria-label'), 'Play', 'starts paused');
-assert.match(text(), /1 \/ 3/, 'readout shows 1 / 3');
+assert.equal(toggle!.getAttribute("aria-label"), "Play", "starts paused");
+assert.match(text(), /1 \/ 3/, "readout shows 1 / 3");
 
 // Toggle → plays; icon/label reflects state via the subscription.
 act(() => toggle!.click());
-assert.equal(engine.state.playing, true, 'clicking toggle plays');
-assert.equal(toggle!.getAttribute('aria-label'), 'Pause', 'icon reflects playing');
+assert.equal(engine.state.playing, true, "clicking toggle plays");
+assert.equal(
+  toggle!.getAttribute("aria-label"),
+  "Pause",
+  "icon reflects playing",
+);
 
 // Next → steps one frame and pauses (stepping is exact + paused).
 act(() => next!.click());
-assert.equal(engine.state.index, 1, 'next steps one frame');
-assert.equal(engine.state.playing, false, 'stepping pauses');
-assert.match(text(), /2 \/ 3/, 'readout updates to 2 / 3');
+assert.equal(engine.state.index, 1, "next steps one frame");
+assert.equal(engine.state.playing, false, "stepping pauses");
+assert.match(text(), /2 \/ 3/, "readout updates to 2 / 3");
 
 // Prev → steps back.
 act(() => prev!.click());
-assert.equal(engine.state.index, 0, 'prev steps back');
-assert.match(text(), /1 \/ 3/, 'readout back to 1 / 3');
+assert.equal(engine.state.index, 0, "prev steps back");
+assert.match(text(), /1 \/ 3/, "readout back to 1 / 3");
 
 // ---- keyboard shortcuts --------------------------------------------------
 // Shortcuts are scoped to the focusable bar (not document), so they only fire
 // when the controls have focus. Space toggles + preventDefaults (no page
 // scroll); arrows step. State starts paused on frame 1 after the steps above.
-const bar = container.querySelector('.bar') as HTMLElement;
-assert.equal(bar.tabIndex, 0, 'controls bar is focusable');
+const bar = container.querySelector(".bar") as HTMLElement;
+assert.equal(bar.tabIndex, 0, "controls bar is focusable");
 
 const press = (key: string) => {
-  const event = new window.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+  const event = new window.KeyboardEvent("keydown", {
+    key,
+    bubbles: true,
+    cancelable: true,
+  });
   act(() => {
     bar.dispatchEvent(event);
   });
   return event;
 };
 
-const space = press(' ');
-assert.equal(engine.state.playing, true, 'Space toggles play');
-assert.equal(space.defaultPrevented, true, 'Space is preventDefault-ed (no page scroll)');
+const space = press(" ");
+assert.equal(engine.state.playing, true, "Space toggles play");
+assert.equal(
+  space.defaultPrevented,
+  true,
+  "Space is preventDefault-ed (no page scroll)",
+);
 
-press('ArrowRight');
-assert.equal(engine.state.index, 1, 'ArrowRight steps forward');
-assert.equal(engine.state.playing, false, 'stepping pauses');
+press("ArrowRight");
+assert.equal(engine.state.index, 1, "ArrowRight steps forward");
+assert.equal(engine.state.playing, false, "stepping pauses");
 
-press('ArrowLeft');
-assert.equal(engine.state.index, 0, 'ArrowLeft steps back');
+press("ArrowLeft");
+assert.equal(engine.state.index, 0, "ArrowLeft steps back");
 
 // Unrelated keys are left for the page/browser.
-const other = press('a');
-assert.equal(other.defaultPrevented, false, 'unrelated keys are not consumed');
+const other = press("a");
+assert.equal(other.defaultPrevented, false, "unrelated keys are not consumed");
 
 render(null, container);
-console.log('Controls.test: OK');
+console.log("Controls.test: OK");

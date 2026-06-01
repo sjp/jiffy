@@ -18,7 +18,7 @@
     "jsxImportSource": "preact",
 
     /* Ambient types: the Firefox WebExtension `browser.*` API (used from issue 02/04 on). */
-    "types": ["firefox-webext-browser"],
+    "types": ["firefox-webext-browser", "node"],
 
     /* Strictness — enabled from the start; retrofitting later is painful. */
     "strict": true,
@@ -26,6 +26,7 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedIndexedAccess": true,
+    "erasableSyntaxOnly": true,
     "forceConsistentCasingInFileNames": true,
 
     "skipLibCheck": true

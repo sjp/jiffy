@@ -11,7 +11,7 @@
 
 /** Content → background: please fetch this GIF's bytes. */
 export interface FetchGifRequest {
-  readonly type: 'FETCH_GIF';
+  readonly type: "FETCH_GIF";
   readonly url: string;
 }
 
@@ -21,12 +21,14 @@ export type FetchGifResponse =
   | { readonly ok: false; readonly error: string };
 
 /** Narrow an untyped incoming message to a `FetchGifRequest`. */
-export function isFetchGifRequest(message: unknown): message is FetchGifRequest {
+export function isFetchGifRequest(
+  message: unknown,
+): message is FetchGifRequest {
   return (
-    typeof message === 'object' &&
+    typeof message === "object" &&
     message !== null &&
-    (message as { type?: unknown }).type === 'FETCH_GIF' &&
-    typeof (message as { url?: unknown }).url === 'string'
+    (message as { type?: unknown }).type === "FETCH_GIF" &&
+    typeof (message as { url?: unknown }).url === "string"
   );
 }
 
@@ -36,15 +38,15 @@ export function isFetchGifRequest(message: unknown): message is FetchGifRequest 
  * the next GIF they click.
  */
 export interface PickGifRequest {
-  readonly type: 'PICK_GIF';
+  readonly type: "PICK_GIF";
 }
 
 /** Narrow an untyped incoming message to a `PickGifRequest`. */
 export function isPickGifRequest(message: unknown): message is PickGifRequest {
   return (
-    typeof message === 'object' &&
+    typeof message === "object" &&
     message !== null &&
-    (message as { type?: unknown }).type === 'PICK_GIF'
+    (message as { type?: unknown }).type === "PICK_GIF"
   );
 }
 
@@ -57,7 +59,7 @@ const MAX_BYTES = 50 * 1024 * 1024; // 50 MB
 const FETCH_TIMEOUT_MS = 30_000;
 // data: is allowed so pages that inline an animated image as a data URI still work;
 // everything else (file:, blob:, ftp:, …) is refused.
-const ALLOWED_SCHEMES = new Set(['http:', 'https:', 'data:']);
+const ALLOWED_SCHEMES = new Set(["http:", "https:", "data:"]);
 
 function isAllowedUrl(url: string): boolean {
   try {
@@ -73,10 +75,14 @@ function isAllowedUrl(url: string): boolean {
  * (and catches servers that omit or understate Content-Length). Falls back to
  * buffering when the response exposes no readable stream.
  */
-async function readCapped(response: Response, maxBytes: number): Promise<ArrayBuffer> {
+async function readCapped(
+  response: Response,
+  maxBytes: number,
+): Promise<ArrayBuffer> {
   if (!response.body) {
     const buf = await response.arrayBuffer();
-    if (buf.byteLength > maxBytes) throw new Error(`Image exceeds ${maxBytes} byte limit`);
+    if (buf.byteLength > maxBytes)
+      throw new Error(`Image exceeds ${maxBytes} byte limit`);
     return buf;
   }
   const reader = response.body.getReader();
@@ -110,29 +116,38 @@ async function readCapped(response: Response, maxBytes: number): Promise<ArrayBu
  */
 export async function handleFetchGif(
   url: string,
-  { maxBytes = MAX_BYTES, timeoutMs = FETCH_TIMEOUT_MS }: { maxBytes?: number; timeoutMs?: number } = {},
+  {
+    maxBytes = MAX_BYTES,
+    timeoutMs = FETCH_TIMEOUT_MS,
+  }: { maxBytes?: number; timeoutMs?: number } = {},
 ): Promise<FetchGifResponse> {
   if (!isAllowedUrl(url)) {
-    return { ok: false, error: 'Refusing to fetch a non-http(s)/data URL' };
+    return { ok: false, error: "Refusing to fetch a non-http(s)/data URL" };
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) {
-      return { ok: false, error: `HTTP ${response.status} ${response.statusText}` };
+      return {
+        ok: false,
+        error: `HTTP ${response.status} ${response.statusText}`,
+      };
     }
     // Reject early when the server declares an oversized body, before reading it.
-    const declared = Number(response.headers.get('content-length'));
+    const declared = Number(response.headers.get("content-length"));
     if (Number.isFinite(declared) && declared > maxBytes) {
       return { ok: false, error: `Image exceeds ${maxBytes} byte limit` };
     }
     return { ok: true, data: await readCapped(response, maxBytes) };
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
+    if (err instanceof DOMException && err.name === "AbortError") {
       return { ok: false, error: `Fetch timed out after ${timeoutMs}ms` };
     }
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   } finally {
     clearTimeout(timer);
   }

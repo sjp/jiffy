@@ -4,13 +4,13 @@
 // CSS + event boundary), installs the adopted stylesheet, and renders <Controls>
 // bound to the engine. Preact attaches real DOM listeners inside the shadow tree
 // (no synthetic event system), so events work across the boundary.
-import { render } from 'preact';
-import type { Engine } from '../engine/types';
-import { Controls } from '../ui/Controls';
-import controlsCss from '../ui/controls.css';
+import { render } from "preact";
+import type { Engine } from "../engine/types";
+import { Controls } from "../ui/Controls";
+import controlsCss from "../ui/controls.css";
 
 // Above the overlay canvas so the bar is clickable over the frame.
-const HOST_Z_INDEX = '2147483647';
+const HOST_Z_INDEX = "2147483647";
 const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
 // Keep at least this much of the bar on screen when clamping a drag, so it can
 // never be lost entirely off the viewport edge.
@@ -20,19 +20,23 @@ const MIN_VISIBLE_PX = 24;
  * Mount the controls in a shadow root anchored to `img`. Returns a teardown
  * function that unmounts Preact, detaches listeners, and removes the host.
  */
-export function mountControls(img: HTMLImageElement, engine: Engine, onClose: () => void): () => void {
-  const host = document.createElement('div');
-  host.style.position = 'absolute';
+export function mountControls(
+  img: HTMLImageElement,
+  engine: Engine,
+  onClose: () => void,
+): () => void {
+  const host = document.createElement("div");
+  host.style.position = "absolute";
   host.style.zIndex = HOST_Z_INDEX;
   document.body.appendChild(host);
 
-  const shadow = host.attachShadow({ mode: 'open' });
+  const shadow = host.attachShadow({ mode: "open" });
   // Inject CSS via a <style> element rather than a constructable stylesheet:
   // in a Firefox content script `new CSSStyleSheet()` is a sandbox-realm object
   // and `shadow` is a page-realm Xray node, so `adoptedStyleSheets = [sheet]`
   // throws "Accessing from Xray wrapper is not supported". A <style> node is a
   // plain page-realm element with string content, so it crosses no boundary.
-  const style = document.createElement('style');
+  const style = document.createElement("style");
   style.textContent = controlsCss;
   shadow.appendChild(style);
 
@@ -59,8 +63,14 @@ export function mountControls(img: HTMLImageElement, engine: Engine, onClose: ()
     const vpTop = rect.top + rect.height - 8 - h + userDy;
     const marginX = Math.min(MIN_VISIBLE_PX, w);
     const marginY = Math.min(MIN_VISIBLE_PX, h);
-    const clampedLeft = Math.min(Math.max(vpLeft, marginX - w), window.innerWidth - marginX);
-    const clampedTop = Math.min(Math.max(vpTop, marginY - h), window.innerHeight - marginY);
+    const clampedLeft = Math.min(
+      Math.max(vpLeft, marginX - w),
+      window.innerWidth - marginX,
+    );
+    const clampedTop = Math.min(
+      Math.max(vpTop, marginY - h),
+      window.innerHeight - marginY,
+    );
     host.style.left = `${clampedLeft + window.scrollX}px`;
     host.style.top = `${clampedTop + window.scrollY}px`;
   };
@@ -93,18 +103,18 @@ export function mountControls(img: HTMLImageElement, engine: Engine, onClose: ()
       // The capture is auto-released on pointerup, but release explicitly to
       // mirror the setPointerCapture in this handler and keep the pairing obvious.
       grip.releasePointerCapture?.(event.pointerId);
-      grip.removeEventListener('pointermove', onMove as EventListener);
-      grip.removeEventListener('pointerup', onUp as EventListener);
-      grip.removeEventListener('pointercancel', onUp as EventListener);
+      grip.removeEventListener("pointermove", onMove as EventListener);
+      grip.removeEventListener("pointerup", onUp as EventListener);
+      grip.removeEventListener("pointercancel", onUp as EventListener);
     };
-    grip.addEventListener('pointermove', onMove as EventListener);
-    grip.addEventListener('pointerup', onUp as EventListener);
-    grip.addEventListener('pointercancel', onUp as EventListener);
+    grip.addEventListener("pointermove", onMove as EventListener);
+    grip.addEventListener("pointerup", onUp as EventListener);
+    grip.addEventListener("pointercancel", onUp as EventListener);
   };
 
   // Render into a dedicated mount point so Preact's diffing never touches the
   // sibling <style> node.
-  const mountPoint = document.createElement('div');
+  const mountPoint = document.createElement("div");
   shadow.appendChild(mountPoint);
   render(
     <Controls
@@ -127,15 +137,15 @@ export function mountControls(img: HTMLImageElement, engine: Engine, onClose: ()
   };
 
   reposition();
-  window.addEventListener('scroll', schedule, SCROLL_OPTS);
-  window.addEventListener('resize', schedule, { passive: true });
+  window.addEventListener("scroll", schedule, SCROLL_OPTS);
+  window.addEventListener("resize", schedule, { passive: true });
   const resizeObserver = new ResizeObserver(schedule);
   resizeObserver.observe(img);
 
   return () => {
     render(null, mountPoint);
-    window.removeEventListener('scroll', schedule, SCROLL_OPTS);
-    window.removeEventListener('resize', schedule);
+    window.removeEventListener("scroll", schedule, SCROLL_OPTS);
+    window.removeEventListener("resize", schedule);
     resizeObserver.disconnect();
     host.remove();
   };

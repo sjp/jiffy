@@ -70,7 +70,10 @@ const unwrapXray = <T>(value: T): T =>
  */
 let setWorksAcrossRealm: boolean | undefined;
 
-function copyPatchInto(dest: Uint8ClampedArray, patch: Uint8ClampedArray): void {
+function copyPatchInto(
+  dest: Uint8ClampedArray,
+  patch: Uint8ClampedArray,
+): void {
   if (setWorksAcrossRealm !== false) {
     try {
       dest.set(patch);
@@ -112,7 +115,7 @@ const DISPOSAL_RESTORE_PREVIOUS = 3;
  */
 export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
   if (isAnimatedWebP(bytes)) return decodeWebP(bytes);
-  if (isAnimatedPng(bytes))  return decodeApng(bytes);
+  if (isAnimatedPng(bytes)) return decodeApng(bytes);
   if (isAnimatedAvif(bytes)) return decodeAvif(bytes);
   // No animated sniffer matched and it isn't a GIF: a static image (or not an
   // image at all). Throw a typed error rather than letting parseGIF fail opaquely

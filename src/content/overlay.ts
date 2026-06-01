@@ -5,7 +5,7 @@
 // in place (preserving layout + styling) and an absolutely-positioned canvas is
 // laid exactly over its box, covering it, and we drive that canvas from the
 // engine's current frame.
-import type { Engine, Frame } from '../engine/types';
+import type { Engine, Frame } from "../engine/types";
 
 export interface Overlay {
   canvas: HTMLCanvasElement;
@@ -14,7 +14,7 @@ export interface Overlay {
 }
 
 // Sit above page content but leave headroom for the controls host.
-const OVERLAY_Z_INDEX = '2147483646';
+const OVERLAY_Z_INDEX = "2147483646";
 
 /**
  * Walk up the DOM from `el` and return the first non-transparent background
@@ -30,12 +30,12 @@ function getEffectiveBgColor(el: Element): string {
     // can't be flattened to a single colour. Bail to '' so the canvas stays
     // transparent and the real background shows through, rather than compositing
     // the GIF over a wrong opaque colour found further up the tree.
-    if (style.backgroundImage !== 'none') return '';
+    if (style.backgroundImage !== "none") return "";
     const color = style.backgroundColor;
-    if (color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') return color;
+    if (color !== "rgba(0, 0, 0, 0)" && color !== "transparent") return color;
     node = node.parentElement;
   }
-  return '';
+  return "";
 }
 
 // scroll/resize listener options — captured so nested scroll containers also
@@ -52,7 +52,7 @@ export function createOverlay(
   engine: Engine,
   frames: Frame[],
 ): Overlay {
-  const canvas = document.createElement('canvas');
+  const canvas = document.createElement("canvas");
 
   // Drawing buffer = GIF native pixel size (device pixels). The composited
   // bitmaps are full-canvas at native resolution, so frame 0 carries the size.
@@ -66,12 +66,12 @@ export function createOverlay(
   // natively.
   const computed = getComputedStyle(img);
   Object.assign(canvas.style, {
-    position: 'absolute',
-    margin: '0',
-    padding: '0',
-    border: '0',
-    boxSizing: 'border-box',
-    pointerEvents: 'none', // don't intercept page interaction
+    position: "absolute",
+    margin: "0",
+    padding: "0",
+    border: "0",
+    boxSizing: "border-box",
+    pointerEvents: "none", // don't intercept page interaction
     zIndex: OVERLAY_Z_INDEX,
     objectFit: computed.objectFit,
     objectPosition: computed.objectPosition,
@@ -82,11 +82,11 @@ export function createOverlay(
   // The canvas covers the img entirely; hide the original so transparent canvas
   // regions show the page background rather than the underlying image.
   const savedOpacity = img.style.opacity;
-  img.style.opacity = '0';
+  img.style.opacity = "0";
 
   document.body.appendChild(canvas);
 
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext("2d");
 
   /** Lay the canvas over the img's current border-box, in page coordinates. */
   const reposition = (): void => {
@@ -125,8 +125,8 @@ export function createOverlay(
   const unsubscribe = engine.subscribe((s) => draw(s.index));
 
   // Keep synced with scroll, viewport resize, and img box changes.
-  window.addEventListener('scroll', scheduleReposition, SCROLL_OPTS);
-  window.addEventListener('resize', scheduleReposition, { passive: true });
+  window.addEventListener("scroll", scheduleReposition, SCROLL_OPTS);
+  window.addEventListener("resize", scheduleReposition, { passive: true });
   const resizeObserver = new ResizeObserver(scheduleReposition);
   resizeObserver.observe(img);
 
@@ -138,8 +138,8 @@ export function createOverlay(
       // active, this clobbers that newer value with the one captured at mount.
       img.style.opacity = savedOpacity;
       unsubscribe();
-      window.removeEventListener('scroll', scheduleReposition, SCROLL_OPTS);
-      window.removeEventListener('resize', scheduleReposition);
+      window.removeEventListener("scroll", scheduleReposition, SCROLL_OPTS);
+      window.removeEventListener("resize", scheduleReposition);
       resizeObserver.disconnect();
       canvas.remove();
     },

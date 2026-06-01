@@ -5,11 +5,11 @@
 // We copy jsdom's window globals that Node doesn't already define (skipping
 // existing ones like `navigator`, which is read-only in modern Node), then force
 // `window`/`document` onto globalThis.
-import { JSDOM } from 'jsdom';
+import { JSDOM } from "jsdom";
 
-const dom = new JSDOM('<!DOCTYPE html><body></body>', {
+const dom = new JSDOM("<!DOCTYPE html><body></body>", {
   pretendToBeVisual: true, // provides requestAnimationFrame
-  url: 'http://localhost/',
+  url: "http://localhost/",
 });
 
 const { window } = dom;

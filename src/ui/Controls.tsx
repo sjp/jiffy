@@ -1,13 +1,20 @@
 // <Controls> — the control bar and the ONLY component that talks to the engine.
 // It subscribes via useEngineState and dispatches engine commands; children
 // (Scrubber, Readout) are pure props+callbacks.
-import { useRef } from 'preact/hooks';
-import type { Engine } from '../engine/types';
-import { useEngineState } from './useEngineState';
-import { CloseIcon, GripIcon, PauseIcon, PlayIcon, StepBackIcon, StepForwardIcon } from './icons';
-import { Scrubber } from './Scrubber';
-import { Readout } from './Readout';
-import { handleControlKey } from './keymap';
+import { useRef } from "preact/hooks";
+import type { Engine } from "../engine/types";
+import { useEngineState } from "./useEngineState";
+import {
+  CloseIcon,
+  GripIcon,
+  PauseIcon,
+  PlayIcon,
+  StepBackIcon,
+  StepForwardIcon,
+} from "./icons";
+import { Scrubber } from "./Scrubber";
+import { Readout } from "./Readout";
+import { handleControlKey } from "./keymap";
 
 /** Props for the top-level controls component. */
 export interface ControlsProps {
@@ -26,8 +33,14 @@ export interface ControlsProps {
 }
 
 /** Top-level controls bar. */
-export function Controls({ engine, onDragStart, onResetPosition, onClose }: ControlsProps) {
-  const { playing, index, frameCount, currentTime, duration } = useEngineState(engine);
+export function Controls({
+  engine,
+  onDragStart,
+  onResetPosition,
+  onClose,
+}: ControlsProps) {
+  const { playing, index, frameCount, currentTime, duration } =
+    useEngineState(engine);
 
   // With a single frame there's nothing to play or step through. At the ends we
   // let the engine clamp rather than disabling the buttons, so they don't
@@ -78,7 +91,7 @@ export function Controls({ engine, onDragStart, onResetPosition, onClose }: Cont
       <button
         type="button"
         class="icon"
-        aria-label={playing ? 'Pause' : 'Play'}
+        aria-label={playing ? "Pause" : "Play"}
         aria-pressed={playing}
         disabled={!steppable}
         onClick={() => engine.toggle()}

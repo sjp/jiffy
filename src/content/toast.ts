@@ -13,7 +13,7 @@
 // shadow can't adopt). Position is `fixed` to the viewport (click coords are
 // viewport-relative) and pointer-events are off so the toast never eats clicks.
 
-const HOST_Z_INDEX = '2147483647';
+const HOST_Z_INDEX = "2147483647";
 
 const TOAST_CSS = `
   .toast {
@@ -39,21 +39,21 @@ export interface Toast {
 
 /** Show a toast anchored at viewport coordinates `clientX`/`clientY`. */
 export function showToast(clientX: number, clientY: number): Toast {
-  const host = document.createElement('div');
-  host.style.position = 'fixed';
+  const host = document.createElement("div");
+  host.style.position = "fixed";
   host.style.left = `${clientX}px`;
   host.style.top = `${clientY}px`;
   host.style.zIndex = HOST_Z_INDEX;
-  host.style.pointerEvents = 'none';
+  host.style.pointerEvents = "none";
   document.body.appendChild(host);
 
-  const shadow = host.attachShadow({ mode: 'open' });
-  const style = document.createElement('style');
+  const shadow = host.attachShadow({ mode: "open" });
+  const style = document.createElement("style");
   style.textContent = TOAST_CSS;
   shadow.appendChild(style);
 
-  const box = document.createElement('div');
-  box.className = 'toast';
+  const box = document.createElement("div");
+  box.className = "toast";
   shadow.appendChild(box);
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -70,7 +70,8 @@ export function showToast(clientX: number, clientY: number): Toast {
     if (removed) return;
     box.textContent = text;
     if (timer != null) clearTimeout(timer);
-    timer = autoDismissMs != null ? setTimeout(dismiss, autoDismissMs) : undefined;
+    timer =
+      autoDismissMs != null ? setTimeout(dismiss, autoDismissMs) : undefined;
   };
 
   return { set, dismiss };

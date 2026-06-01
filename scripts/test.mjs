@@ -8,15 +8,15 @@
 //
 //   node scripts/test.mjs
 
-import * as esbuild from 'esbuild';
-import { readdirSync, rmSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import * as esbuild from "esbuild";
+import { readdirSync, rmSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const srcDir = path.join(root, 'src');
-const outdir = path.join(root, 'node_modules/.cache/jiffy-tests');
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const srcDir = path.join(root, "src");
+const outdir = path.join(root, "node_modules/.cache/jiffy-tests");
 
 /** Recursively collect every *.test.ts / *.test.tsx under src/. */
 function findTests(dir) {
@@ -31,7 +31,7 @@ function findTests(dir) {
 
 const tests = findTests(srcDir).sort();
 if (tests.length === 0) {
-  console.log('[jiffy] no test files found');
+  console.log("[jiffy] no test files found");
   process.exit(0);
 }
 
@@ -42,21 +42,21 @@ await esbuild.build({
   outdir,
   outbase: srcDir,
   bundle: true,
-  packages: 'external', // resolve preact/jsdom/gifuct-js from node_modules at runtime
-  platform: 'node',
-  format: 'esm',
-  sourcemap: 'inline',
-  jsx: 'automatic',
-  jsxImportSource: 'preact',
-  loader: { '.css': 'text' },
-  logLevel: 'warning',
+  packages: "external", // resolve preact/jsdom/gifuct-js from node_modules at runtime
+  platform: "node",
+  format: "esm",
+  sourcemap: "inline",
+  jsx: "automatic",
+  jsxImportSource: "preact",
+  loader: { ".css": "text" },
+  logLevel: "warning",
 });
 
 let failures = 0;
 for (const test of tests) {
-  const rel = path.relative(srcDir, test).replace(/\.tsx?$/, '.js');
+  const rel = path.relative(srcDir, test).replace(/\.tsx?$/, ".js");
   const bundled = path.join(outdir, rel);
-  const result = spawnSync(process.execPath, [bundled], { stdio: 'inherit' });
+  const result = spawnSync(process.execPath, [bundled], { stdio: "inherit" });
   if (result.status !== 0) {
     failures++;
     console.error(`[jiffy] FAILED: ${path.relative(root, test)}`);
