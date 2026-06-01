@@ -17,6 +17,22 @@ export interface Overlay {
 // Sit above page content but leave headroom for the controls host (issues 07+).
 const OVERLAY_Z_INDEX = '2147483646';
 
+/**
+ * Walk up the DOM from `el` and return the first non-transparent background
+ * colour found. The canvas is inserted into document.body, so its transparent
+ * pixels reveal the body background rather than the img's container background;
+ * applying the effective colour as the canvas's CSS background-color corrects this.
+ */
+function getEffectiveBgColor(el: Element): string {
+  let node: Element | null = el;
+  while (node) {
+    const color = getComputedStyle(node).backgroundColor;
+    if (color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') return color;
+    node = node.parentElement;
+  }
+  return '';
+}
+
 // scroll/resize listener options — captured so nested scroll containers also
 // trigger a reposition. The same object is handed to removeEventListener.
 const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
@@ -55,6 +71,7 @@ export function createOverlay(
     objectFit: computed.objectFit,
     objectPosition: computed.objectPosition,
     opacity: computed.opacity,
+    backgroundColor: getEffectiveBgColor(img),
   });
 
   // The canvas covers the img entirely; hide the original so transparent canvas

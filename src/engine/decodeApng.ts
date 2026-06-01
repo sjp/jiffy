@@ -87,6 +87,7 @@ function parseApng(buf: ArrayBuffer): {
   ihdrData:     Uint8Array; // 13-byte IHDR payload for reuse in frame blobs
   plte:         Uint8Array | null;
   trns:         Uint8Array | null;
+  bkgd:         Uint8Array | null;
   frames:       FcTLInfo[];
 } {
   if (buf.byteLength < 8) throw new Error('decodeApng: buffer too short');
@@ -100,6 +101,7 @@ function parseApng(buf: ArrayBuffer): {
   let ihdrData: Uint8Array | null = null;
   let plte: Uint8Array | null = null;
   let trns: Uint8Array | null = null;
+  let bkgd: Uint8Array | null = null;
   const frames: FcTLInfo[] = [];
   let pendingFcTL: FcTLInfo | null = null;
   // True once we've seen a fcTL before the first IDAT — means IDAT is frame 0.
@@ -124,6 +126,9 @@ function parseApng(buf: ArrayBuffer): {
 
     } else if (type === 'tRNS') {
       trns = new Uint8Array(buf, dataOff, dataLen).slice();
+
+    } else if (type === 'bKGD') {
+      bkgd = new Uint8Array(buf, dataOff, dataLen).slice();
 
     } else if (type === 'acTL') {
       // num_frames / num_plays are informational; we rely on fcTL/fdAT structure.
@@ -171,7 +176,7 @@ function parseApng(buf: ArrayBuffer): {
   if (!canvasWidth || !canvasHeight) throw new Error('decodeApng: zero canvas dimensions');
   if (frames.length === 0) throw new Error('decodeApng: no animation frames found');
 
-  return { canvasWidth, canvasHeight, ihdrData, plte, trns, frames };
+  return { canvasWidth, canvasHeight, ihdrData, plte, trns, bkgd, frames };
 }
 
 // Wrap a single frame's pixel data in a minimal self-contained PNG suitable
@@ -238,12 +243,42 @@ export function isAnimatedPng(bytes: ArrayBuffer): boolean {
 
 /** Decode an animated PNG into pre-composited full-canvas frames + total duration. */
 export async function decodeApng(bytes: ArrayBuffer): Promise<DecodeResult> {
-  const { canvasWidth, canvasHeight, ihdrData, plte, trns, frames: rawFrames } =
+  const { canvasWidth, canvasHeight, ihdrData, plte, trns, bkgd, frames: rawFrames } =
     parseApng(bytes);
 
   const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
   const ctx    = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) throw new Error('decodeApng: failed to acquire 2D context');
+
+  // Seed the canvas with the declared background colour (bKGD chunk) so that
+  // transparent frame areas match what the browser shows for the native <img>.
+  // bKGD channel values are depth-scaled; shift down to 8-bit.
+  if (bkgd) {
+    const colorType = ihdrData[9]!;
+    const bitDepth  = ihdrData[8]!;
+    const shift = bitDepth > 8 ? bitDepth - 8 : 0;
+    const dv = new DataView(bkgd.buffer, bkgd.byteOffset);
+    let bgCss: string | null = null;
+    if (colorType === 0 || colorType === 4) {
+      // Greyscale (± alpha): single 16-bit sample.
+      const v = dv.getUint16(0, false) >> shift;
+      bgCss = `rgb(${v},${v},${v})`;
+    } else if (colorType === 2 || colorType === 6) {
+      // Truecolor (± alpha): three 16-bit samples.
+      const r = dv.getUint16(0, false) >> shift;
+      const g = dv.getUint16(2, false) >> shift;
+      const b = dv.getUint16(4, false) >> shift;
+      bgCss = `rgb(${r},${g},${b})`;
+    } else if (colorType === 3 && plte) {
+      // Indexed: single byte palette index.
+      const i = bkgd[0]! * 3;
+      bgCss = `rgb(${plte[i]},${plte[i + 1]},${plte[i + 2]})`;
+    }
+    if (bgCss) {
+      ctx.fillStyle = bgCss;
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    }
+  }
 
   const frames: Frame[] = [];
   let elapsed = 0;

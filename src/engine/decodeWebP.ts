@@ -146,6 +146,13 @@ export async function decodeWebP(bytes: ArrayBuffer): Promise<DecodeResult> {
   const [r, g, b, a] = bgRGBA;
   const bgCss = `rgba(${r},${g},${b},${a / 255})`;
 
+  // Seed the canvas with the declared background colour so that transparent
+  // frame areas match what the browser shows for the native <img>.
+  if (a > 0) {
+    ctx.fillStyle = bgCss;
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+  }
+
   const frames: Frame[] = [];
   let elapsed = 0;
   let prev: RawFrame | null = null;
