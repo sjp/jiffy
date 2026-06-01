@@ -16,6 +16,14 @@ export interface Overlay {
 // Sit above page content but leave headroom for the controls host.
 const OVERLAY_Z_INDEX = "2147483646";
 
+// Signatures of the transparency backdrop browsers paint on a transparent image
+// in a top-level image document, so we can preserve it (see getEffectiveBgColor):
+//   Firefox — a chrome:// noise PNG over a grey base (background: hsl(0,0%,90%) url(...))
+//   Chrome  — the bare grey base colour (background-color: hsl(0,0%,90%))
+// IMAGEDOC_BACKDROP is hsl(0,0%,90%) as getComputedStyle normalises it.
+const IMAGEDOC_NOISE = "imagedoc-lightnoise";
+const IMAGEDOC_BACKDROP = "rgb(230, 230, 230)";
+
 /**
  * Walk up the DOM from `el` and return the first non-transparent background
  * colour found. The canvas is inserted into document.body, so its transparent
@@ -26,6 +34,20 @@ function getEffectiveBgColor(el: Element): string {
   let node: Element | null = el;
   while (node) {
     const style = getComputedStyle(node);
+    // A directly-opened transparent image renders as a top-level image document
+    // whose UA sheet paints a light backdrop on the <img> itself (see the
+    // IMAGEDOC_* constants for the Firefox/Chrome signatures). We hide that <img>,
+    // so without preserving it the backdrop is lost and transparent frames fall
+    // through to the bare page. Firefox's noise PNG can't be loaded from a content
+    // script, but the shared flat grey base is a faithful stand-in — adopt that
+    // rather than bailing below on Firefox's background-image.
+    if (
+      node === el &&
+      (style.backgroundImage.includes(IMAGEDOC_NOISE) ||
+        style.backgroundColor === IMAGEDOC_BACKDROP)
+    ) {
+      return style.backgroundColor;
+    }
     // Any ancestor with a background-image (gradient, texture; body/html included)
     // can't be flattened to a single colour. Bail to '' so the canvas stays
     // transparent and the real background shows through, rather than compositing
