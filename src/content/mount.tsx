@@ -12,6 +12,9 @@ import controlsCss from '../ui/controls.css';
 // Above the overlay canvas (issue 05) so the bar is clickable over the frame.
 const HOST_Z_INDEX = '2147483647';
 const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
+// Keep at least this much of the bar on screen when clamping a drag, so it can
+// never be lost entirely off the viewport edge (issue #8).
+const MIN_VISIBLE_PX = 24;
 
 /**
  * Mount the controls in a shadow root anchored to `img`. Returns a teardown
@@ -40,12 +43,33 @@ export function mountControls(img: HTMLImageElement, engine: Engine, onClose: ()
   let userDy = 0;
 
   // Pin the bar to the bottom-left of the img box, in page coordinates, plus any
-  // user drag offset so a moved bar tracks the image as the page scrolls.
+  // user drag offset so a moved bar tracks the image as the page scrolls. The
+  // final position is clamped so at least MIN_VISIBLE_PX of the bar stays within
+  // the viewport — a drag (or the image scrolling away) can't strand it off-screen
+  // with no way back (issue #8). The bar's own size comes from offset* (the host
+  // is laid out by the time reposition first runs, after the Preact render).
   const reposition = (): void => {
     const rect = img.getBoundingClientRect();
-    host.style.left = `${rect.left + window.scrollX + 8 + userDx}px`;
-    host.style.top = `${rect.top + window.scrollY + rect.height - 8 + userDy}px`;
-    host.style.transform = 'translateY(-100%)';
+    const w = host.offsetWidth;
+    const h = host.offsetHeight;
+    // Default anchor (viewport coords): bottom-left inside the image, + user drag.
+    // `top` is the bar's top edge, so we subtract its height from the bottom anchor
+    // instead of relying on a CSS translate (which clamping would have to undo).
+    const vpLeft = rect.left + 8 + userDx;
+    const vpTop = rect.top + rect.height - 8 - h + userDy;
+    const marginX = Math.min(MIN_VISIBLE_PX, w);
+    const marginY = Math.min(MIN_VISIBLE_PX, h);
+    const clampedLeft = Math.min(Math.max(vpLeft, marginX - w), window.innerWidth - marginX);
+    const clampedTop = Math.min(Math.max(vpTop, marginY - h), window.innerHeight - marginY);
+    host.style.left = `${clampedLeft + window.scrollX}px`;
+    host.style.top = `${clampedTop + window.scrollY}px`;
+  };
+
+  // Snap back to the default anchored position (double-click the grip, issue #8).
+  const resetPosition = (): void => {
+    userDx = 0;
+    userDy = 0;
+    reposition();
   };
 
   // Begin dragging the bar from the grip handle. Tracks the pointer on `window`
@@ -79,7 +103,15 @@ export function mountControls(img: HTMLImageElement, engine: Engine, onClose: ()
   // sibling <style> node.
   const mountPoint = document.createElement('div');
   shadow.appendChild(mountPoint);
-  render(<Controls engine={engine} onDragStart={beginDrag} onClose={onClose} />, mountPoint);
+  render(
+    <Controls
+      engine={engine}
+      onDragStart={beginDrag}
+      onResetPosition={resetPosition}
+      onClose={onClose}
+    />,
+    mountPoint,
+  );
 
   let scheduled = false;
   const schedule = (): void => {

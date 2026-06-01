@@ -27,14 +27,11 @@ function getEffectiveBgColor(el: Element): string {
   let node: Element | null = el;
   while (node) {
     const style = getComputedStyle(node);
-    // body/html background-images are already visible through the canvas (which lives in body),
-    // so applying a flat colour on top would hide them.
-    if (
-      style.backgroundImage !== 'none' &&
-      (node === document.body || node === document.documentElement)
-    ) {
-      return '';
-    }
+    // Any ancestor with a background-image (gradient, texture; body/html included)
+    // can't be flattened to a single colour. Bail to '' so the canvas stays
+    // transparent and the real background shows through, rather than compositing
+    // the GIF over a wrong opaque colour found further up the tree.
+    if (style.backgroundImage !== 'none') return '';
     const color = style.backgroundColor;
     if (color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') return color;
     node = node.parentElement;

@@ -258,12 +258,18 @@ export function exitPickMode(): void {
 
 function onPickClick(event: MouseEvent): void {
   const img = (event.target as Element | null)?.closest('img') as HTMLImageElement | null;
-  // Consume the click that ends pick mode so it doesn't reach the page (e.g. a
-  // link wrapping the GIF), then leave pick mode regardless of the target.
+  // Cancelling on a non-candidate (empty space, a link, a non-animated image):
+  // just leave pick mode and let the click behave normally — don't swallow it,
+  // so a link still navigates and a button still presses.
+  if (!img || !isAnimatedCandidate(img)) {
+    exitPickMode();
+    return;
+  }
+  // Landing on a candidate: consume the click so it doesn't reach the page (e.g.
+  // a link wrapping the GIF), then enhance it (or toggle it back off).
   event.preventDefault();
   event.stopPropagation();
   exitPickMode();
-  if (!img || !isAnimatedCandidate(img)) return; // clicked elsewhere → just cancel
   if (controller.instances.has(img)) controller.teardown(img);
   else void controller.processImage(img, toastReporter(event.clientX, event.clientY));
 }

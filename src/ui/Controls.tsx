@@ -22,12 +22,14 @@ export interface ControlsProps {
    * — e.g. in component tests — the grip is not rendered.
    */
   onDragStart?: (event: PointerEvent) => void;
+  /** Double-click the move handle to snap the bar back to its default position. */
+  onResetPosition?: () => void;
   /** Called when the user clicks the close button; tears down the player. */
   onClose?: () => void;
 }
 
 /** Top-level controls bar. */
-export function Controls({ engine, onDragStart, onClose }: ControlsProps) {
+export function Controls({ engine, onDragStart, onResetPosition, onClose }: ControlsProps) {
   const { playing, index, frameCount, currentTime, duration } = useEngineState(engine);
 
   // With a single frame there's nothing to play or step through. At the ends we
@@ -58,8 +60,9 @@ export function Controls({ engine, onDragStart, onClose }: ControlsProps) {
           class="grip"
           role="button"
           aria-label="Move controls"
-          title="Drag to move"
+          title="Drag to move · double-click to reset"
           onPointerDown={(event) => onDragStart(event)}
+          onDblClick={() => onResetPosition?.()}
         >
           <GripIcon />
         </div>
