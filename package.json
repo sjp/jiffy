@@ -5,8 +5,11 @@
   "type": "module",
   "description": "Firefox extension that gives animated GIFs video-like playback controls (play, pause, frame-step, seek).",
   "scripts": {
-    "build": "node scripts/build.mjs",
-    "dev": "node scripts/build.mjs --watch",
+    "build": "node scripts/build.mjs --firefox && node scripts/build.mjs --chrome",
+    "build:firefox": "node scripts/build.mjs --firefox",
+    "build:chrome": "node scripts/build.mjs --chrome",
+    "dev:firefox": "node scripts/build.mjs --firefox --watch",
+    "dev:chrome": "node scripts/build.mjs --chrome --watch",
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test.mjs"
   },

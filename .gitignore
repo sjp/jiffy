@@ -86,6 +86,10 @@ out
 dist
 .output
 
+# Extension build output
+dist-firefox
+dist-chrome
+
 # Gatsby files
 .cache/
 # Comment in the public line in if your project uses Gatsby and not Next.js
