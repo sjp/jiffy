@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'release/*'
+      - "release/*"
 
 permissions:
   contents: write
@@ -26,19 +26,22 @@ jobs:
       - run: npm test
 
       - run: npm run build
+        env:
+          # Stamp the release tag into the built manifests (build.mjs strips the
+          # "release/" prefix). e.g. tag release/1.2.0 → manifest version 1.2.0.
+          JIFFY_VERSION: ${{ github.ref_name }}
 
       - run: npm run pack
 
-      - name: Upload Firefox extension
-        uses: actions/upload-artifact@v4
-        with:
-          name: jiffy-firefox-${{ github.ref_name }}
-          path: jiffy-firefox.zip
-          if-no-files-found: error
-
-      - name: Upload Chrome extension
-        uses: actions/upload-artifact@v4
-        with:
-          name: jiffy-chrome-${{ github.ref_name }}
-          path: jiffy-chrome.zip
-          if-no-files-found: error
+      # Attach the packaged extensions to a permanent GitHub Release (CI
+      # artifacts expire). The tag already exists — it triggered this run — so
+      # `gh release create` just publishes against it. Uses the built-in gh CLI
+      # and GITHUB_TOKEN rather than a third-party action.
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            jiffy-firefox.zip jiffy-chrome.zip \
+            --title "${{ github.ref_name }}" \
+            --generate-notes

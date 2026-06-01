@@ -50,11 +50,7 @@ for (const [key, expected] of cases) {
   const { engine, calls } = makeEngine();
   const handled = handleControlKey(key, engine);
   assert.equal(handled, true, `"${key}" is reported handled`);
-  assert.deepEqual(
-    calls,
-    [expected],
-    `"${key}" maps to exactly ${expected}`,
-  );
+  assert.deepEqual(calls, [expected], `"${key}" maps to exactly ${expected}`);
 }
 
 // ---- unrelated keys are not handled and touch the engine not at all -------

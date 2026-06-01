@@ -2,7 +2,7 @@
 
 A browser extension that gives animated GIFs, WebP, APNG, and AVIF images video-like playback controls: play, pause, frame-step, and seek.
 
-Works in **Firefox** (130+) and **Chrome** (120+).
+Works in **Firefox** (140+) and **Chrome** (120+).
 
 ## How it works
 
@@ -12,25 +12,25 @@ On pages that are a standalone animated image (e.g. navigating directly to a `.g
 
 ### Controls
 
-| Control | Action |
-|---|---|
+| Control            | Action                                    |
+| ------------------ | ----------------------------------------- |
 | ◀ / ▶ step buttons | Previous / next frame (pauses if playing) |
-| Play / Pause | Toggle playback |
-| Scrubber | Click or drag to seek |
-| Grip handle | Drag to reposition the control bar |
-| Double-click grip | Snap bar back to default position |
-| Close (✕) | Remove controls and free memory |
+| Play / Pause       | Toggle playback                           |
+| Scrubber           | Click or drag to seek                     |
+| Grip handle        | Drag to reposition the control bar        |
+| Double-click grip  | Snap bar back to default position         |
+| Close (✕)          | Remove controls and free memory           |
 
 ### Keyboard shortcuts
 
 Focus the control bar (click it or Tab to it), then:
 
-| Key | Action |
-|---|---|
-| `Space` | Play / Pause |
+| Key       | Action                        |
+| --------- | ----------------------------- |
+| `Space`   | Play / Pause                  |
 | `←` / `→` | Step one frame back / forward |
-| `Home` | Jump to first frame |
-| `End` | Jump to last frame |
+| `Home`    | Jump to first frame           |
+| `End`     | Jump to last frame            |
 
 Shortcuts are scoped to the focused control bar — they won't fire on other GIFs on the same page or interfere with text inputs.
 

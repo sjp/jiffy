@@ -23,8 +23,16 @@ jobs:
 
       - run: npm run typecheck
 
+      - run: npm run format:check
+
+      - run: npm run lint:js
+
       - run: npm test
 
       - run: npm run build:firefox
+
+      # Lint the built Firefox extension against AMO's rules (errors fail the
+      # job; warnings are reported). Needs dist-firefox/, so it runs after build.
+      - run: npm run lint
 
       - run: npm run build:chrome

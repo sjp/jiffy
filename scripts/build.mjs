@@ -11,12 +11,33 @@
 //   node scripts/build.mjs --chrome  --watch  Chrome  dev (rebuild on change)
 
 import * as esbuild from "esbuild";
-import { access, cp, mkdir, rm } from "node:fs/promises";
+import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const watch = process.argv.includes("--watch");
+
+// Version stamped into the built manifest. CI passes the release tag via
+// JIFFY_VERSION (e.g. "release/1.2.0" or "1.2.0"); local builds fall back to
+// package.json. This keeps the committed manifests on a static placeholder so
+// they never drift, and makes the release tag the single source of truth.
+const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
+const version = resolveVersion(process.env.JIFFY_VERSION, pkg.version);
+
+function resolveVersion(envVersion, fallback) {
+  const raw = (envVersion ?? "").trim().replace(/^release\//, "") || fallback;
+  // Chrome requires 1–4 dot-separated integers; Firefox is looser but accepts
+  // this shape, so validate against the stricter rule for both.
+  if (!/^\d+(\.\d+){0,3}$/.test(raw)) {
+    console.error(
+      `[jiffy] error: invalid extension version ${JSON.stringify(raw)} ` +
+        `(expected 1–4 dot-separated integers, e.g. 1.2.0)`,
+    );
+    process.exit(1);
+  }
+  return raw;
+}
 
 const isFirefox = process.argv.includes("--firefox");
 const isChrome = process.argv.includes("--chrome");
@@ -43,12 +64,18 @@ const exists = async (p) => {
   }
 };
 
-// Copy manifest.<browser>.json + everything under public/ into the output dir.
+// Copy manifest.<browser>.json + everything under public/ into the output dir,
+// stamping the resolved version into the manifest as it's written.
 // Tolerant of missing sources so the build works before those assets exist.
 async function copyStatic() {
   await mkdir(outdir, { recursive: true });
   if (await exists(manifestSrc)) {
-    await cp(manifestSrc, path.join(outdir, "manifest.json"));
+    const manifest = JSON.parse(await readFile(manifestSrc, "utf8"));
+    manifest.version = version;
+    await writeFile(
+      path.join(outdir, "manifest.json"),
+      JSON.stringify(manifest, null, 2) + "\n",
+    );
   }
   const publicDir = path.join(root, "public");
   if (await exists(publicDir)) {

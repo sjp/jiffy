@@ -12,7 +12,12 @@
   gap: 8px;
   box-sizing: border-box;
   padding: 6px 10px;
-  font: 12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  font:
+    12px/1.4 system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    sans-serif;
   color: #fff;
   background: rgba(17, 17, 17, 0.82);
   border-radius: 8px;

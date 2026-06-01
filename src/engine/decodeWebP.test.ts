@@ -99,11 +99,21 @@ assert.equal(isAnimatedWebP(new ArrayBuffer(0)), false, "empty buffer");
 assert.equal(isAnimatedWebP(new ArrayBuffer(20)), false, "too short (< 21)");
 
 // Right length but not a RIFF container.
-const notRiff = cat([fourCC("XXXX"), u32le(0), fourCC("WEBP"), new Array(9).fill(0)]);
+const notRiff = cat([
+  fourCC("XXXX"),
+  u32le(0),
+  fourCC("WEBP"),
+  new Array(9).fill(0),
+]);
 assert.equal(isAnimatedWebP(ab(notRiff)), false, "not RIFF");
 
 // RIFF but not WEBP.
-const notWebp = cat([fourCC("RIFF"), u32le(0), fourCC("XXXX"), new Array(9).fill(0)]);
+const notWebp = cat([
+  fourCC("RIFF"),
+  u32le(0),
+  fourCC("XXXX"),
+  new Array(9).fill(0),
+]);
 assert.equal(isAnimatedWebP(ab(notWebp)), false, "not WEBP");
 
 // RIFF/WEBP but the first chunk isn't VP8X.

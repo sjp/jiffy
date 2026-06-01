@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Firefox extension that gives animated GIFs video-like playback controls (play, pause, frame-step, seek).",
+  "description": "Browser extension (Firefox & Chrome) that gives animated GIFs, WebP, APNG & AVIF video-like playback controls (play, pause, frame-step, seek).",
   "scripts": {
     "build": "node scripts/build.mjs --firefox && node scripts/build.mjs --chrome",
     "build:firefox": "node scripts/build.mjs --firefox",
@@ -11,6 +11,10 @@
     "dev:firefox": "node scripts/build.mjs --firefox --watch",
     "dev:chrome": "node scripts/build.mjs --chrome --watch",
     "typecheck": "tsc --noEmit",
+    "lint": "web-ext lint -s dist-firefox/",
+    "lint:js": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "node scripts/test.mjs",
     "pack": "cd dist-firefox && zip -r ../jiffy-firefox.zip . && cd .. && cd dist-chrome && zip -r ../jiffy-chrome.zip ."
   },
@@ -19,11 +23,17 @@
     "preact": "^10.29.2"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/firefox-webext-browser": "^143.0.0",
     "@types/jsdom": "^28.0.3",
     "@types/node": "^25.9.1",
     "esbuild": "^0.28.0",
+    "eslint": "^9.39.4",
+    "globals": "^17.6.0",
     "jsdom": "^29.1.1",
-    "typescript": "^6.0.3"
+    "prettier": "^3.8.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.60.0",
+    "web-ext": "^10.3.0"
   }
 }
