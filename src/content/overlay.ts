@@ -134,6 +134,9 @@ export function createOverlay(
   return {
     canvas,
     destroy() {
+      // Restore the inline opacity we hid the img with on mount. Accepted edge
+      // case: if the page mutated the img's inline opacity while the player was
+      // active, this clobbers that newer value with the one captured at mount.
       img.style.opacity = savedOpacity;
       unsubscribe();
       window.removeEventListener('scroll', scheduleReposition, SCROLL_OPTS);

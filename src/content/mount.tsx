@@ -90,6 +90,9 @@ export function mountControls(img: HTMLImageElement, engine: Engine, onClose: ()
       reposition();
     };
     const onUp = (): void => {
+      // The capture is auto-released on pointerup, but release explicitly to
+      // mirror the setPointerCapture in this handler and keep the pairing obvious.
+      grip.releasePointerCapture?.(event.pointerId);
       grip.removeEventListener('pointermove', onMove as EventListener);
       grip.removeEventListener('pointerup', onUp as EventListener);
       grip.removeEventListener('pointercancel', onUp as EventListener);

@@ -19,10 +19,9 @@
 //   0 SOURCE  all components (incl. alpha) overwrite — clear-then-draw
 //   1 OVER    alpha-blend onto canvas (drawImage default / source-over)
 
-import type { DecodeResult, Frame } from './types';
+import { MIN_DELAY_MS, type DecodeResult, type Frame } from './types';
 
 const PNG_SIG = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
-const MIN_DELAY_MS = 20;
 
 const DISPOSE_OP_BACKGROUND = 1;
 const DISPOSE_OP_PREVIOUS   = 2;

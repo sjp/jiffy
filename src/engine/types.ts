@@ -1,5 +1,13 @@
 // Shared engine types — the central engine↔UI contract (PRD §8).
 
+/**
+ * Floor for per-frame delays, in ms. Frame delays are unreliable across all the
+ * formats we decode — `0`/`1` are common and browsers historically clamp to a
+ * floor — so every decoder clamps to this shared value. Keeping it in one place
+ * stops the floor drifting between GIF/WebP/APNG/AVIF.
+ */
+export const MIN_DELAY_MS = 20;
+
 /** A pre-composited, ready-to-blit full-canvas frame. */
 export interface Frame {
   bitmap: ImageBitmap;

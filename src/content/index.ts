@@ -66,8 +66,6 @@ function closeFrames(frames: Frame[]): void {
 export interface Controller {
   /** Process one image through the pipeline (de-duplicated). */
   processImage(img: HTMLImageElement, onStatus?: StatusFn): Promise<void>;
-  /** Find and process all candidate GIFs under `root`. */
-  discover(root?: ParentNode): void;
   /** Tear down a single image's instance. */
   teardown(img: HTMLImageElement): void;
   /** Tear down everything. */
@@ -80,7 +78,15 @@ export interface Controller {
   readonly instances: ReadonlyMap<HTMLImageElement, Instance>;
 }
 
-/** True if the image's resolved URL looks like an animated GIF, WebP, APNG or AVIF. */
+/**
+ * True if the image's resolved URL looks like an animated GIF, WebP, APNG or AVIF.
+ *
+ * This is only a coarse pre-filter on the extension. A `.png` (or any of these
+ * extensions) is *expected* to frequently be a non-animated false positive — the
+ * vast majority of PNGs are static, not APNG. The authority is the byte-sniff in
+ * `decode()`, which throws `NotAnimatedError` for static bytes; that surfaces as a
+ * "Not an animated image" toast (issue #4) so a false positive is no longer silent.
+ */
 export function isAnimatedCandidate(img: HTMLImageElement): boolean {
   const url = img.currentSrc || img.src;
   return /\.(gif|webp|png|avif)(?:[?#]|$)/i.test(url);
@@ -125,12 +131,6 @@ export function createController(deps: PipelineDeps): Controller {
       if (pending.has(img)) onStatus?.(err instanceof NotAnimatedError ? 'not-animated' : 'error');
     } finally {
       pending.delete(img);
-    }
-  }
-
-  function discover(root: ParentNode = document): void {
-    for (const img of root.querySelectorAll<HTMLImageElement>('img')) {
-      if (isAnimatedCandidate(img)) void processImage(img);
     }
   }
 
@@ -191,7 +191,7 @@ export function createController(deps: PipelineDeps): Controller {
     };
   }
 
-  return { processImage, discover, teardown, teardownAll, reconcile, observe, instances };
+  return { processImage, teardown, teardownAll, reconcile, observe, instances };
 }
 
 /** Default wiring used when running as the actual content script. */

@@ -10,9 +10,8 @@
 //   ANMF flags byte, bit 0 (Disposal):  0 = leave canvas,  1 = fill rect with bg
 //   ANMF flags byte, bit 1 (Blending):  0 = alpha-blend,   1 = overwrite
 
-import type { DecodeResult, Frame } from './types';
+import { MIN_DELAY_MS, type DecodeResult, type Frame } from './types';
 
-const MIN_DELAY_MS = 20;
 const DISPOSAL_BACKGROUND = 0x01;
 const BLENDING_OVERWRITE  = 0x02;
 

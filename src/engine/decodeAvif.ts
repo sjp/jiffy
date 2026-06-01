@@ -19,9 +19,8 @@
 // pipeline (which catches per-image decode failures) simply leaves the image as
 // the browser's own native AVIF animation — no jiffy controls, but no breakage.
 
-import type { DecodeResult, Frame } from './types';
+import { MIN_DELAY_MS, type DecodeResult, type Frame } from './types';
 
-const MIN_DELAY_MS = 20;
 // Fallback per-frame delay when the decoder reports no per-frame duration.
 const DEFAULT_DELAY_MS = 100;
 

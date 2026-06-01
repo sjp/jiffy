@@ -1,8 +1,7 @@
 // Headless tests for the content-script glue (issue 11): animated-image
 // detection (GIF + WebP), the per-image pipeline, de-duplication, single-frame
 // skip, and teardown. The pipeline collaborators are stubbed (real decode/overlay
-// need a canvas), so we exercise the discovery/registry/teardown orchestration
-// in jsdom.
+// need a canvas), so we exercise the registry/teardown orchestration in jsdom.
 import '../test/setup-dom.ts';
 import assert from 'node:assert/strict';
 import {
@@ -98,18 +97,13 @@ assert.equal(unmounted, 1, 'controls unmounted');
 assert.equal(ctrl.instances.size, 0);
 assert.equal(closedBitmaps, 3, "torn-down instance's frame bitmaps are closed");
 
-// ---- discover() scans the DOM, ignoring non-candidates --------------------
+// ---- multiple instances + global teardown ---------------------------------
 frameCount = 3;
-document.body.append(
-  imgWith('http://x/1.gif'),
-  imgWith('http://x/2.webp'),
-  imgWith('http://x/3.png'),
-);
-ctrl.discover(document);
-await flush();
-assert.equal(ctrl.instances.size, 3, 'GIF, WebP, and PNG discovered');
+await ctrl.processImage(imgWith('http://x/1.gif'));
+await ctrl.processImage(imgWith('http://x/2.webp'));
+await ctrl.processImage(imgWith('http://x/3.png'));
+assert.equal(ctrl.instances.size, 3, 'multiple images enhanced');
 
-// ---- global teardown -------------------------------------------------------
 ctrl.teardownAll();
 assert.equal(ctrl.instances.size, 0, 'everything torn down');
 

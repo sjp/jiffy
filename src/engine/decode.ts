@@ -12,7 +12,7 @@
 
 import { parseGIF, decompressFrames } from "gifuct-js";
 import type { FrameDims } from "gifuct-js";
-import type { DecodeResult, Frame } from "./types";
+import { MIN_DELAY_MS, type DecodeResult, type Frame } from "./types";
 import { decodeWebP, isAnimatedWebP } from "./decodeWebP";
 import { decodeApng, isAnimatedPng } from "./decodeApng";
 import { decodeAvif, isAnimatedAvif } from "./decodeAvif";
@@ -63,24 +63,35 @@ const unwrapXray = <T>(value: T): T =>
  * the sandbox `globalThis` isn't the page realm, so it clones into the wrong
  * realm. The reliable bridge is an element-wise copy through unwrapped views:
  * it only ever touches numeric indices, never an object across the boundary.
+ *
+ * The realm boundary is a property of the environment, not of any individual
+ * frame, so we probe `.set` once and cache the result — otherwise Firefox would
+ * throw+catch on *every* patch of *every* GIF (the fast path never taken). Once
+ * we know `.set` is blocked, go straight to the element-wise copy.
  */
+let setWorksAcrossRealm: boolean | undefined;
+
 function copyPatchInto(dest: Uint8ClampedArray, patch: Uint8ClampedArray): void {
-  try {
-    dest.set(patch);
-  } catch {
-    const d = unwrapXray(dest);
-    const s = unwrapXray(patch);
-    for (let i = 0; i < s.length; i++) d[i] = s[i]!;
+  if (setWorksAcrossRealm !== false) {
+    try {
+      dest.set(patch);
+      setWorksAcrossRealm = true;
+      return;
+    } catch {
+      setWorksAcrossRealm = false;
+    }
   }
+  const d = unwrapXray(dest);
+  const s = unwrapXray(patch);
+  for (let i = 0; i < s.length; i++) d[i] = s[i]!;
 }
 
 /**
  * Delay clamp (PRD §4). GIF delays are unreliable — `0`/`1` centiseconds are
  * common and browsers historically clamp to a floor — so we clamp ourselves so
  * the timeline matches user expectation. gifuct-js already normalises `delay`
- * to milliseconds, so `toMs` is the identity here.
+ * to milliseconds, so `toMs` is the identity here. Floor is shared (engine/types).
  */
-const MIN_DELAY_MS = 20;
 const clampDelay = (ms: number): number => Math.max(ms, MIN_DELAY_MS);
 
 // GIF disposal methods (the GCE "disposal method" field):
