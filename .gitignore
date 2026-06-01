@@ -89,6 +89,8 @@ dist
 # Extension build output
 dist-firefox
 dist-chrome
+jiffy-firefox.zip
+jiffy-chrome.zip
 
 # Gatsby files
 .cache/

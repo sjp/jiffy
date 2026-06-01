@@ -11,7 +11,8 @@
     "dev:firefox": "node scripts/build.mjs --firefox --watch",
     "dev:chrome": "node scripts/build.mjs --chrome --watch",
     "typecheck": "tsc --noEmit",
-    "test": "node scripts/test.mjs"
+    "test": "node scripts/test.mjs",
+    "pack": "cd dist-firefox && zip -r ../jiffy-firefox.zip . && cd .. && cd dist-chrome && zip -r ../jiffy-chrome.zip ."
   },
   "dependencies": {
     "gifuct-js": "^2.1.2",
