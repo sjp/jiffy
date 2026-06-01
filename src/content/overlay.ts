@@ -54,6 +54,7 @@ export function createOverlay(
     zIndex: OVERLAY_Z_INDEX,
     objectFit: computed.objectFit,
     objectPosition: computed.objectPosition,
+    opacity: computed.opacity,
   });
 
   // The canvas covers the img entirely; hide the original so transparent canvas
