@@ -98,6 +98,17 @@ export function mountControls(
       userDx = baseDx + (e.clientX - startX);
       userDy = baseDy + (e.clientY - startY);
       reposition();
+      // Back-calculate from the clamped CSS position so userDx/userDy never
+      // accumulate past the clamp boundary. Without this, dragging into an edge
+      // and then back requires travelling the full over-drag distance before the
+      // bar visually responds, making it appear stuck.
+      const r = img.getBoundingClientRect();
+      const bh = host.offsetHeight;
+      userDx = parseFloat(host.style.left) - window.scrollX - r.left - 8;
+      userDy =
+        parseFloat(host.style.top) -
+        window.scrollY -
+        (r.top + r.height - 8 - bh);
     };
     const onUp = (): void => {
       // The capture is auto-released on pointerup, but release explicitly to
