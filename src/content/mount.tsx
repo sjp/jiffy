@@ -63,8 +63,15 @@ export function mountControls(
     const vpTop = rect.top + rect.height - 8 - h + userDy;
     const marginX = Math.min(MIN_VISIBLE_PX, w);
     const marginY = Math.min(MIN_VISIBLE_PX, h);
+    // The grip — the bar's only drag handle — sits at its LEFT edge, so the
+    // horizontal clamp must keep that left edge reachable. The old lower bound
+    // (marginX - w) let the left edge slide off-screen, leaving only the bar's
+    // right end visible and the grip stranded with no way to drag back. Bound the
+    // left edge to [0, innerWidth - marginX] instead: a hard left drag stops with
+    // the grip at the viewport edge; a right drag still leaves the grip-side
+    // marginX visible.
     const clampedLeft = Math.min(
-      Math.max(vpLeft, marginX - w),
+      Math.max(vpLeft, 0),
       window.innerWidth - marginX,
     );
     const clampedTop = Math.min(
