@@ -40,7 +40,7 @@ Shortcuts are scoped to the focused control bar — they won't fire on other GIF
 
 - **Node.js** 18+ (the devcontainer uses Node 24)
 - **npm** (included with Node)
-- **web-ext** (optional, for linting and packaging — installed automatically in the devcontainer)
+- **web-ext** (installed automatically as a dev dependency via `npm install`)
 
 ### Install dependencies
 
@@ -71,6 +71,15 @@ npm run dev:chrome
 ```sh
 npm run typecheck   # TypeScript type check (no emit)
 npm run test        # Unit tests
+```
+
+### Linting and formatting
+
+```sh
+npm run lint        # web-ext lint on dist-firefox/
+npm run lint:js     # ESLint
+npm run format      # Prettier (write)
+npm run format:check  # Prettier (check only)
 ```
 
 ## Loading the extension
@@ -104,15 +113,14 @@ Click the refresh icon on the extension card after each rebuild to reload it.
 ## Packaging
 
 ```sh
-# Firefox .zip (for AMO submission)
-web-ext build -s dist-firefox/ -a web-ext-artifacts/
-
-# Chrome: zip dist-chrome/ manually, or use the Chrome Web Store developer dashboard
+npm run pack
 ```
+
+Produces `jiffy-firefox.zip` and `jiffy-chrome.zip` in the repo root.
 
 ## Devcontainer
 
-The repo includes a VS Code devcontainer (`.devcontainer/`) based on the official `typescript-node:24` image. It pre-installs dependencies and `web-ext`. To use it, open the repo in VS Code and choose **Reopen in Container**.
+The repo includes a VS Code devcontainer (`.devcontainer/`) based on the official `typescript-node:24-trixie` image. It pre-installs dependencies (including `web-ext`). To use it, open the repo in VS Code and choose **Reopen in Container**.
 
 Note: `web-ext run` (which launches a browser) must be run on your host machine, not inside the container, since it needs access to a display.
 
