@@ -57,10 +57,10 @@ export interface Controller {
   readonly instances: ReadonlyMap<HTMLImageElement, Instance>;
 }
 
-/** True if the image's resolved URL looks like an animated GIF or WebP. */
+/** True if the image's resolved URL looks like an animated GIF, WebP, APNG or AVIF. */
 export function isAnimatedCandidate(img: HTMLImageElement): boolean {
   const url = img.currentSrc || img.src;
-  return /\.(gif|webp|png)(?:[?#]|$)/i.test(url);
+  return /\.(gif|webp|png|avif)(?:[?#]|$)/i.test(url);
 }
 
 export function createController(deps: PipelineDeps): Controller {
@@ -218,7 +218,8 @@ export function enhanceStandaloneImage(
 ): boolean {
   if (typeof document === 'undefined') return false;
   const ct = document.contentType;
-  if (ct !== 'image/gif' && ct !== 'image/webp' && ct !== 'image/png') return false;
+  if (ct !== 'image/gif' && ct !== 'image/webp' && ct !== 'image/png' && ct !== 'image/avif')
+    return false;
   const img = document.querySelector('img');
   if (img && isAnimatedCandidate(img)) {
     if (target.instances.has(img)) target.teardown(img);

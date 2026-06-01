@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Jiffy",
   "version": "0.0.0",
-  "description": "Give animated GIFs video-like playback controls: play, pause, frame-step, and seek.",
+  "description": "Give animated GIFs, WebP, APNG & AVIF video-like playback controls: play, pause, frame-step, and seek.",
   "icons": {
     "48": "icons/icon.svg",
     "96": "icons/icon.svg"
