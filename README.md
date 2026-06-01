@@ -34,36 +34,6 @@ Focus the control bar (click it or Tab to it), then:
 
 Shortcuts are scoped to the focused control bar — they won't fire on other GIFs on the same page or interfere with text inputs.
 
-## Architecture
-
-```
-src/
-  background.ts         # Background service worker (toolbar click → content script)
-  messages.ts           # Typed message definitions between background and content
-  popup/                # Toolbar popup UI
-  content/
-    index.ts            # Content script entry: pick mode, SPA lifecycle, MutationObserver
-    fetchGif.ts         # Fetches image bytes via the background channel
-    overlay.ts          # Canvas overlay composited over the <img>
-    mount.tsx           # Mounts the Preact controls bar, drag-to-reposition logic
-    toast.ts            # Transient feedback messages (Loading…, errors)
-  engine/
-    decode.ts           # Format dispatcher (GIF / WebP / APNG / AVIF)
-    decodeApng.ts       # APNG decoder
-    decodeAvif.ts       # AVIF decoder (via ImageDecoder API)
-    decodeWebP.ts       # Animated WebP decoder
-    engine.ts           # rAF-driven playback engine (play, pause, step, seek)
-    types.ts            # Shared Frame / Engine / EngineState types
-  ui/
-    Controls.tsx        # Top-level control bar component (Preact)
-    Scrubber.tsx        # Timeline scrubber
-    Readout.tsx         # Frame / time counter
-    controls.css        # Styles (loaded as an adopted CSSStyleSheet)
-    icons.ts            # SVG icon components
-    keymap.ts           # Keyboard shortcut handler
-    useEngineState.ts   # Preact hook that subscribes to engine state
-```
-
 ## Development
 
 ### Prerequisites
