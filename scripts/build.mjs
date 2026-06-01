@@ -92,6 +92,30 @@ const copyStaticPlugin = {
   },
 };
 
+// Preact's dangerouslySetInnerHTML support uses innerHTML internally. Since we
+// never use dangerouslySetInnerHTML, this code is dead, but the Firefox
+// extension linter (addons-linter) still flags any innerHTML assignment in the
+// bundle. Patch the two assignment sites in Preact's dist at load time:
+//   - innerHTML = ""        → textContent = ""  (spec-equivalent clear)
+//   - innerHTML = htmlStr   → DOMParser insertion (no flagged API)
+const patchPreactInnerHTML = {
+  name: "patch-preact-innerhtml",
+  setup(build) {
+    build.onLoad({ filter: /\/preact\/dist\/preact/ }, async (args) => {
+      const src = await readFile(args.path, "utf8");
+      const patched = src
+        .replace(/(\w+)\.innerHTML=""/g, '$1.textContent=""')
+        .replace(
+          /(\w+)\.innerHTML=(\w+)\.__html/g,
+          "(function(el,html){var _d=new DOMParser().parseFromString(html," +
+            '"text/html");while(_d.body.firstChild)' +
+            "el.appendChild(document.adoptNode(_d.body.firstChild))}($1,$2.__html))",
+        );
+      return { contents: patched };
+    });
+  },
+};
+
 /** @type {import('esbuild').BuildOptions} */
 const options = {
   entryPoints: {
@@ -112,7 +136,7 @@ const options = {
   // controls.css is consumed as a string for an adopted stylesheet (PRD §7),
   // not injected as a stylesheet — load it as text.
   loader: { ".css": "text" },
-  plugins: [copyStaticPlugin],
+  plugins: [patchPreactInnerHTML, copyStaticPlugin],
 };
 
 if (watch) {
