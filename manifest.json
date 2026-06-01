@@ -30,7 +30,7 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "jiffy@sjp.co.nz",
-      "strict_min_version": "115.0"
+      "strict_min_version": "130.0"
     }
   }
 }
