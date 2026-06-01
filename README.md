@@ -2,7 +2,7 @@
 
 A browser extension that gives animated GIFs, WebP, APNG, and AVIF images video-like playback controls: play, pause, frame-step, and seek.
 
-Works in **Firefox** (140+) and **Chrome** (120+).
+Works in **Firefox** (142+) and **Chrome** (120+).
 
 ## How it works
 
