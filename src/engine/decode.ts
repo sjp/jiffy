@@ -18,6 +18,33 @@ import { decodeApng, isAnimatedPng } from "./decodeApng";
 import { decodeAvif, isAnimatedAvif } from "./decodeAvif";
 
 /**
+ * Thrown when the bytes aren't an animated image we can control — none of the
+ * format sniffers match (a static PNG/WebP/AVIF, a non-image error page, …). The
+ * content script distinguishes this from genuine fetch/decode failures so it can
+ * tell the user "Not an animated image" rather than a generic error (issue #4).
+ */
+export class NotAnimatedError extends Error {
+  constructor(message = "not an animated image") {
+    super(message);
+    this.name = "NotAnimatedError";
+  }
+}
+
+/** True if the bytes start with a GIF signature ("GIF87a" / "GIF89a"). */
+function isGif(bytes: ArrayBuffer): boolean {
+  if (bytes.byteLength < 6) return false;
+  const b = new Uint8Array(bytes, 0, 6);
+  return (
+    b[0] === 0x47 && // G
+    b[1] === 0x49 && // I
+    b[2] === 0x46 && // F
+    b[3] === 0x38 && // 8
+    (b[4] === 0x37 || b[4] === 0x39) && // 7 | 9
+    b[5] === 0x61 // a
+  );
+}
+
+/**
  * Firefox content scripts run in a sandbox realm while the `OffscreenCanvas`
  * pixel buffer lives in the page realm, exposed through an Xray wrapper.
  * `.wrappedJSObject` returns the underlying page-realm object; on Chrome / Node
@@ -77,6 +104,10 @@ export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
   if (isAnimatedWebP(bytes)) return decodeWebP(bytes);
   if (isAnimatedPng(bytes))  return decodeApng(bytes);
   if (isAnimatedAvif(bytes)) return decodeAvif(bytes);
+  // No animated sniffer matched and it isn't a GIF: a static image (or not an
+  // image at all). Throw a typed error rather than letting parseGIF fail opaquely
+  // on non-GIF bytes, so the content script can surface "Not an animated image".
+  if (!isGif(bytes)) throw new NotAnimatedError();
   const gif = parseGIF(bytes);
   // `true` → build per-frame RGBA `patch` arrays for us.
   const rawFrames = decompressFrames(gif, true);

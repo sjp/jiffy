@@ -16,13 +16,25 @@
 // bitmap leaks. Because discovery is ON-DEMAND (the user picks GIFs via the
 // popup), the observer does NOT auto-enhance inserted GIFs — it only reconciles
 // removals.
-import { decode } from '../engine/decode';
+import { decode, NotAnimatedError } from '../engine/decode';
 import { createEngine } from '../engine/engine';
 import { createOverlay, type Overlay } from './overlay';
 import { mountControls } from './mount';
 import { fetchGifBytes } from './fetchGif';
+import { showToast } from './toast';
 import { isPickGifRequest } from '../messages';
 import type { DecodeResult, Engine, Frame } from '../engine/types';
+
+/**
+ * Outcomes of running an image through the pipeline, reported to an optional
+ * callback so the content script can surface feedback (issues #4/#5):
+ *   loading       — fetch/decode started (show a transient "Loading…")
+ *   ready         — overlay mounted, controls live (clear the loading message)
+ *   not-animated  — single-frame or no animated sniffer matched
+ *   error         — genuine fetch/decode failure
+ */
+export type ProcessStatus = 'loading' | 'ready' | 'not-animated' | 'error';
+type StatusFn = (status: ProcessStatus) => void;
 
 /** Collaborators for the per-GIF pipeline (injectable for tests). */
 export interface PipelineDeps {
@@ -53,7 +65,7 @@ function closeFrames(frames: Frame[]): void {
 
 export interface Controller {
   /** Process one image through the pipeline (de-duplicated). */
-  processImage(img: HTMLImageElement): Promise<void>;
+  processImage(img: HTMLImageElement, onStatus?: StatusFn): Promise<void>;
   /** Find and process all candidate GIFs under `root`. */
   discover(root?: ParentNode): void;
   /** Tear down a single image's instance. */
@@ -78,18 +90,25 @@ export function createController(deps: PipelineDeps): Controller {
   const instances = new Map<HTMLImageElement, Instance>();
   const pending = new Set<HTMLImageElement>();
 
-  async function processImage(img: HTMLImageElement): Promise<void> {
+  async function processImage(img: HTMLImageElement, onStatus?: StatusFn): Promise<void> {
     if (instances.has(img) || pending.has(img)) return; // never double-process
     pending.add(img);
+    onStatus?.('loading');
     try {
       const url = img.currentSrc || img.src;
       const bytes = await deps.fetchBytes(url);
       const { frames, duration } = await deps.decode(bytes);
 
-      // Bail if a single frame (nothing to control) or torn down mid-flight.
-      // The decoded frames are dropped here, so close their bitmaps first.
-      if (frames.length <= 1 || !pending.has(img)) {
+      // Torn down mid-flight (reconcile / teardownAll): drop the frames silently.
+      if (!pending.has(img)) {
         closeFrames(frames);
+        return;
+      }
+      // A single frame is nothing to control — same outcome the user cares about
+      // as a non-animated sniff: report it as not-animated, not a loaded player.
+      if (frames.length <= 1) {
+        closeFrames(frames);
+        onStatus?.('not-animated');
         return;
       }
 
@@ -97,9 +116,13 @@ export function createController(deps: PipelineDeps): Controller {
       const overlay = deps.createOverlay(img, engine, frames);
       const teardownControls = deps.mountControls(img, engine, () => teardown(img));
       instances.set(img, { engine, overlay, teardownControls, frames });
+      onStatus?.('ready');
     } catch (err) {
-      // One bad GIF shouldn't break the rest.
+      // One bad GIF shouldn't break the rest. Distinguish "not an animated image"
+      // (expected for static .png/.webp false positives) from a genuine failure
+      // so the feedback can be specific. Stay silent if torn down mid-flight.
       console.debug('[jiffy] skipping image', img.currentSrc || img.src, err);
+      if (pending.has(img)) onStatus?.(err instanceof NotAnimatedError ? 'not-animated' : 'error');
     } finally {
       pending.delete(img);
     }
@@ -188,6 +211,34 @@ export const controller = createController({
 let picking = false;
 let previousCursor = '';
 
+/**
+ * Build a status callback that drives a toast anchored at the given viewport
+ * point (issues #4/#5). The toast is created lazily on the first status so a
+ * no-op pick (e.g. clicking an already-handled image) leaves nothing on screen;
+ * the "Loading…" message clears when the overlay mounts, while the terminal
+ * messages auto-dismiss.
+ */
+function toastReporter(clientX: number, clientY: number): StatusFn {
+  let toast: ReturnType<typeof showToast> | null = null;
+  const ensure = () => (toast ??= showToast(clientX, clientY));
+  return (status) => {
+    switch (status) {
+      case 'loading':
+        ensure().set('Loading…');
+        break;
+      case 'ready':
+        toast?.dismiss();
+        break;
+      case 'not-animated':
+        ensure().set('Not an animated image', 2000);
+        break;
+      case 'error':
+        ensure().set("Couldn't load this image", 2500);
+        break;
+    }
+  };
+}
+
 export function enterPickMode(): void {
   if (picking) return;
   picking = true;
@@ -214,7 +265,7 @@ function onPickClick(event: MouseEvent): void {
   exitPickMode();
   if (!img || !isAnimatedCandidate(img)) return; // clicked elsewhere → just cancel
   if (controller.instances.has(img)) controller.teardown(img);
-  else void controller.processImage(img);
+  else void controller.processImage(img, toastReporter(event.clientX, event.clientY));
 }
 
 function onPickKey(event: KeyboardEvent): void {
@@ -241,7 +292,9 @@ export function enhanceStandaloneImage(
   const img = document.querySelector('img');
   if (img && isAnimatedCandidate(img)) {
     if (target.instances.has(img)) target.teardown(img);
-    else void target.processImage(img);
+    // No cursor here (toolbar click on a full-page image) — anchor feedback at the
+    // top-centre of the viewport.
+    else void target.processImage(img, toastReporter(window.innerWidth / 2, 56));
   }
   return true; // a standalone image document — handled here, don't enter pick mode
 }

@@ -67,7 +67,7 @@ g.ImageData = FakeImageData;
 g.OffscreenCanvas = FakeOffscreenCanvas;
 g.createImageBitmap = async () => ({ close() {} });
 
-const { decode } = await import('./decode.ts');
+const { decode, NotAnimatedError } = await import('./decode.ts');
 
 // ---- a real, hand-built 2-frame GIF --------------------------------------
 // 2×1, 2-colour (black/white). Frame 0 = [black, white], frame 1 = [white,
@@ -108,5 +108,16 @@ assert.equal(duration, 200, 'duration');
 
 // Every frame carries a (shimmed) full-canvas bitmap.
 for (const f of frames) assert.ok(f.bitmap, 'frame has a bitmap');
+
+// ---- non-animated bytes throw a typed error (issue #4) -------------------
+// Bytes matching no animated sniffer and lacking a GIF signature must throw
+// NotAnimatedError (not parseGIF's opaque failure) so the content script can
+// say "Not an animated image" rather than a generic error.
+const notAnimated = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // a PNG signature, no APNG chunks
+await assert.rejects(
+  () => decode(notAnimated.buffer.slice(0)),
+  (err: unknown) => err instanceof NotAnimatedError,
+  'non-animated bytes throw NotAnimatedError',
+);
 
 console.log('decode.test: OK — %d frames, duration %dms', frames.length, duration);
