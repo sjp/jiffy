@@ -38,6 +38,17 @@ interface Instance {
   engine: Engine;
   overlay: Overlay;
   teardownControls: () => void;
+  /** Composited frames owned by this instance; their bitmaps are closed on teardown. */
+  frames: Frame[];
+}
+
+/**
+ * Release the native/GPU memory backing decoded frame bitmaps. ImageBitmap.close()
+ * frees deterministically (rather than waiting for GC), so we call it on every
+ * teardown and on the decode early-return paths to avoid leaking full-res frames.
+ */
+function closeFrames(frames: Frame[]): void {
+  for (const frame of frames) frame.bitmap.close();
 }
 
 export interface Controller {
@@ -76,12 +87,16 @@ export function createController(deps: PipelineDeps): Controller {
       const { frames, duration } = await deps.decode(bytes);
 
       // Bail if a single frame (nothing to control) or torn down mid-flight.
-      if (frames.length <= 1 || !pending.has(img)) return;
+      // The decoded frames are dropped here, so close their bitmaps first.
+      if (frames.length <= 1 || !pending.has(img)) {
+        closeFrames(frames);
+        return;
+      }
 
       const engine = deps.createEngine(frames, duration);
       const overlay = deps.createOverlay(img, engine, frames);
       const teardownControls = deps.mountControls(img, engine, () => teardown(img));
-      instances.set(img, { engine, overlay, teardownControls });
+      instances.set(img, { engine, overlay, teardownControls, frames });
     } catch (err) {
       // One bad GIF shouldn't break the rest.
       console.debug('[jiffy] skipping image', img.currentSrc || img.src, err);
@@ -102,6 +117,8 @@ export function createController(deps: PipelineDeps): Controller {
     if (!instance) return;
     instance.overlay.destroy();
     instance.teardownControls();
+    // Overlay has stopped drawing, so freeing the frame bitmaps is now safe.
+    closeFrames(instance.frames);
     instances.delete(img);
   }
 
@@ -110,6 +127,7 @@ export function createController(deps: PipelineDeps): Controller {
     for (const instance of instances.values()) {
       instance.overlay.destroy();
       instance.teardownControls();
+      closeFrames(instance.frames);
     }
     instances.clear();
   }

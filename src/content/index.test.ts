@@ -44,11 +44,16 @@ let controls = 0;
 let destroyed = 0;
 let unmounted = 0;
 let frameCount = 3;
+let closedBitmaps = 0;
 
 const deps = {
   fetchBytes: async () => new ArrayBuffer(8),
   decode: async () => ({
-    frames: Array.from({ length: frameCount }, () => ({ bitmap: {}, time: 100, delay: 100 })),
+    frames: Array.from({ length: frameCount }, () => ({
+      bitmap: { close: () => closedBitmaps++ },
+      time: 100,
+      delay: 100,
+    })),
     duration: 100 * frameCount,
   }),
   createEngine: () => ({}),
@@ -78,15 +83,20 @@ assert.equal(ctrl.instances.size, 1);
 
 // ---- single-frame image is skipped ----------------------------------------
 frameCount = 1;
+closedBitmaps = 0;
 await ctrl.processImage(imgWith('http://x/single.gif'));
 assert.equal(ctrl.instances.size, 1, 'single-frame image gets no controls');
 assert.equal(overlays, 1);
+assert.equal(closedBitmaps, 1, 'bitmap of the skipped single-frame image is closed');
 
 // ---- per-element teardown --------------------------------------------------
+frameCount = 3;
+closedBitmaps = 0;
 ctrl.teardown(gif);
 assert.equal(destroyed, 1, 'overlay destroyed');
 assert.equal(unmounted, 1, 'controls unmounted');
 assert.equal(ctrl.instances.size, 0);
+assert.equal(closedBitmaps, 3, "torn-down instance's frame bitmaps are closed");
 
 // ---- discover() scans the DOM, ignoring non-candidates --------------------
 frameCount = 3;
