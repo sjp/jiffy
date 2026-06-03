@@ -99,3 +99,73 @@
 .readout .time {
   opacity: 0.7;
 }
+
+/* Settings cog + popover. The popover lives inside the bar so it inherits the
+   adopted stylesheet and rides along when the bar is dragged; .settings is its
+   positioning context. */
+.settings {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  min-width: 200px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+  background: rgba(17, 17, 17, 0.95);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.menu-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Full-width menu rows. This rule comes after `.bar button` so, at equal
+   specificity, it wins — overriding the compact 28x28 icon-button sizing. */
+.menu button {
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.menu-label {
+  flex: 0 1 auto;
+}
+
+.menu-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto; /* push current value + chevron to the right edge */
+  opacity: 0.7;
+}
+
+/* Fixed leading slot so checked and unchecked option rows stay aligned. */
+.menu-check {
+  display: inline-flex;
+  flex: 0 0 16px;
+  align-items: center;
+  justify-content: center;
+}
+
+.menu-back {
+  margin-bottom: 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0;
+  opacity: 0.85;
+}
+
+.menu-empty {
+  padding: 8px 10px;
+  opacity: 0.6;
+}

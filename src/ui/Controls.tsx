@@ -1,11 +1,12 @@
 // <Controls> — the control bar and the ONLY component that talks to the engine.
 // It subscribes via useEngineState and dispatches engine commands; children
 // (Scrubber, Readout) are pure props+callbacks.
-import { useRef } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { Engine } from "../engine/types";
 import { useEngineState } from "./useEngineState";
 import {
   CloseIcon,
+  CogIcon,
   GripIcon,
   PauseIcon,
   PlayIcon,
@@ -14,6 +15,9 @@ import {
 } from "./icons";
 import { Scrubber } from "./Scrubber";
 import { Readout } from "./Readout";
+import { SettingsMenu } from "./SettingsMenu";
+import { applySettings, DEFAULTS, SETTINGS_CONFIG } from "./settings";
+import type { Settings } from "./settings";
 import { handleControlKey } from "./keymap";
 
 /** Props for the top-level controls component. */
@@ -50,6 +54,46 @@ export function Controls({
   // Remember whether playback was running when a scrub began, to resume on release.
   const wasPlaying = useRef(false);
 
+  // Playback settings. Held locally (not persisted) so they reset to DEFAULTS
+  // every time the controls are re-mounted — i.e. when the overlay disappears.
+  const [settings, setSettings] = useState<Settings>(DEFAULTS);
+  // Single seam where settings drive the engine; re-applies on engine swap so a
+  // fresh player starts from defaults.
+  useEffect(() => {
+    applySettings(engine, settings);
+  }, [engine, settings]);
+
+  // Settings cog popover open/close. Refs let us anchor focus and detect
+  // outside clicks across the shadow boundary.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const cogRef = useRef<HTMLButtonElement>(null);
+
+  // Close on a click outside the cog/popover. composedPath() pierces the shadow
+  // boundary, so containment of our in-shadow nodes works from a document listener.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const wrapper = settingsRef.current;
+      if (wrapper && event.composedPath().includes(wrapper)) return;
+      setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    return () =>
+      document.removeEventListener("pointerdown", onPointerDown, true);
+  }, [menuOpen]);
+
+  // Move focus into the menu when it opens.
+  useEffect(() => {
+    if (!menuOpen) return;
+    settingsRef.current?.querySelector<HTMLElement>(".menu-row")?.focus();
+  }, [menuOpen]);
+
+  const closeMenu = (): void => {
+    setMenuOpen(false);
+    cogRef.current?.focus();
+  };
+
   return (
     // Focus-scoped keyboard shortcuts: the bar is focusable so
     // Space/arrows only drive *this* GIF when its controls have focus — no
@@ -59,6 +103,16 @@ export function Controls({
       class="bar"
       tabIndex={0}
       onKeyDown={(event) => {
+        // While the settings menu is open it owns keyboard input: Escape closes
+        // it (and returns focus to the cog); other keys are left for the menu
+        // rather than driving playback.
+        if (menuOpen) {
+          if (event.key === "Escape") {
+            closeMenu();
+            event.preventDefault();
+          }
+          return;
+        }
         if (handleControlKey(event.key, engine)) event.preventDefault();
       }}
     >
@@ -129,6 +183,31 @@ export function Controls({
         time={currentTime}
         duration={duration}
       />
+
+      <div class="settings" ref={settingsRef}>
+        <button
+          type="button"
+          class="icon"
+          ref={cogRef}
+          aria-label="Settings"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          <CogIcon />
+        </button>
+        {menuOpen && (
+          <div class="menu">
+            <SettingsMenu
+              config={SETTINGS_CONFIG}
+              settings={settings}
+              onChange={(id, value) =>
+                setSettings((prev) => ({ ...prev, [id]: value }))
+              }
+            />
+          </div>
+        )}
+      </div>
 
       {onClose && (
         <button

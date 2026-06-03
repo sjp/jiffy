@@ -32,7 +32,7 @@ act(() => {
 });
 
 const buttons = () => Array.from(container.querySelectorAll("button"));
-assert.equal(buttons().length, 3, "prev / play-pause / next");
+assert.equal(buttons().length, 4, "prev / play-pause / next / settings cog");
 
 const [prev, toggle, next] = buttons();
 const text = () => container.textContent ?? "";
@@ -98,6 +98,34 @@ assert.equal(engine.state.index, 0, "ArrowLeft steps back");
 // Unrelated keys are left for the page/browser.
 const other = press("a");
 assert.equal(other.defaultPrevented, false, "unrelated keys are not consumed");
+
+// ---- settings menu -------------------------------------------------------
+// The cog is always present; clicking it opens a popover menu, Escape closes it.
+const cog = buttons().find((b) => b.getAttribute("aria-label") === "Settings")!;
+assert.ok(cog, "settings cog button exists");
+assert.equal(
+  cog.getAttribute("aria-haspopup"),
+  "menu",
+  "cog advertises a menu",
+);
+assert.equal(cog.getAttribute("aria-expanded"), "false", "menu starts closed");
+assert.equal(
+  container.querySelector('[role="menu"]'),
+  null,
+  "no popover while closed",
+);
+
+act(() => cog.click());
+assert.equal(cog.getAttribute("aria-expanded"), "true", "cog click opens menu");
+assert.ok(container.querySelector('[role="menu"]'), "popover appears");
+
+press("Escape");
+assert.equal(cog.getAttribute("aria-expanded"), "false", "Escape closes menu");
+assert.equal(
+  container.querySelector('[role="menu"]'),
+  null,
+  "popover removed after Escape",
+);
 
 render(null, container);
 console.log("Controls.test: OK");
