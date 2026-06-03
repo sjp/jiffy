@@ -200,28 +200,31 @@ ctrl.reconcile();
 assert.equal(ctrl.instances.size, 0, "reconcile tore down the removed image");
 assert.equal(destroyed, destroyedBefore + 1, "overlay destroyed on reconcile");
 
-// ---- observe() reconciles removals automatically (debounced) ---------------
-const stop = ctrl.observe(document);
+// ---- the removal watcher auto-attaches while players are live --------------
+// No manual observe() call: enhancing an image must lazily start the watcher,
+// and a later removal is reconciled automatically (debounced via microtask).
 const watched = imgWith("http://x/watched.gif");
 document.body.appendChild(watched);
 await ctrl.processImage(watched);
 assert.equal(ctrl.instances.size, 1, "watched image enhanced");
 
 watched.remove();
-await flush(); // let the observer's microtask-coalesced reconcile run
-assert.equal(ctrl.instances.size, 0, "observer tore down the removed image");
+await flush(); // let the watcher's microtask-coalesced reconcile run
+assert.equal(ctrl.instances.size, 0, "watcher tore down the removed image");
 
-// After stopping, removals are no longer auto-reconciled.
-stop();
-const orphan = imgWith("http://x/orphan.gif");
-document.body.appendChild(orphan);
-await ctrl.processImage(orphan);
-orphan.remove();
+// The watcher detaches when the registry empties and re-attaches on the next
+// enhance, so the idle→active→idle→active cycle keeps reconciling removals.
+const again = imgWith("http://x/again.gif");
+document.body.appendChild(again);
+await ctrl.processImage(again);
+assert.equal(ctrl.instances.size, 1, "re-enhanced after going idle");
+
+again.remove();
 await flush();
 assert.equal(
   ctrl.instances.size,
-  1,
-  "no teardown once the observer is stopped",
+  0,
+  "watcher re-attached and reconciled the removal",
 );
 ctrl.teardownAll();
 

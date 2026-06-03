@@ -14,6 +14,8 @@
 // reusing the idempotent registry + teardown so no rAF loop, listener or bitmap
 // leaks. Because discovery is ON-DEMAND (the user picks GIFs via the popup), the
 // observer does NOT auto-enhance inserted GIFs — it only reconciles removals.
+// The observer is attached lazily — only while ≥1 player is live — so an idle
+// page (no GIF ever enhanced) carries zero observers and zero listeners.
 import { decode, NotAnimatedError } from "../engine/decode";
 import { createEngine } from "../engine/engine";
 import { createOverlay, type Overlay } from "./overlay";
@@ -78,8 +80,6 @@ export interface Controller {
   teardownAll(): void;
   /** Tear down any instance whose <img> has left the document. */
   reconcile(): void;
-  /** Watch `target` and reconcile removals (debounced); returns a stop fn. */
-  observe(target?: Node): () => void;
   /** Live registry (exposed for tests). */
   readonly instances: ReadonlyMap<HTMLImageElement, Instance>;
 }
@@ -101,6 +101,22 @@ export function isAnimatedCandidate(img: HTMLImageElement): boolean {
 export function createController(deps: PipelineDeps): Controller {
   const instances = new Map<HTMLImageElement, Instance>();
   const pending = new Set<HTMLImageElement>();
+
+  // DOM-removal watcher, lazily attached. The observer + popstate listener exist
+  // ONLY while at least one player is live: with an empty registry reconcile()
+  // has nothing to do, so on the overwhelming majority of pages — where the user
+  // never activates the extension — we install no MutationObserver and no
+  // listener at all. Started on the 0→1 instance transition, torn down on 1→0.
+  let stopWatcher: (() => void) | null = null;
+  const ensureWatching = (): void => {
+    if (!stopWatcher) stopWatcher = startWatcher();
+  };
+  const stopWatchingIfIdle = (): void => {
+    if (stopWatcher && instances.size === 0) {
+      stopWatcher();
+      stopWatcher = null;
+    }
+  };
 
   async function processImage(
     img: HTMLImageElement,
@@ -136,6 +152,7 @@ export function createController(deps: PipelineDeps): Controller {
         teardown(img),
       );
       instances.set(img, { engine, overlay, teardownControls, frames });
+      ensureWatching(); // first live player → start watching for DOM removals
       onStatus?.("ready");
     } catch (err) {
       // One bad GIF shouldn't break the rest. Distinguish "not an animated image"
@@ -158,6 +175,7 @@ export function createController(deps: PipelineDeps): Controller {
     // Overlay has stopped drawing, so freeing the frame bitmaps is now safe.
     closeFrames(instance.frames);
     instances.delete(img);
+    stopWatchingIfIdle(); // last player gone → detach the watcher
   }
 
   function teardownAll(): void {
@@ -168,6 +186,7 @@ export function createController(deps: PipelineDeps): Controller {
       closeFrames(instance.frames);
     }
     instances.clear();
+    stopWatchingIfIdle(); // registry emptied → detach the watcher
   }
 
   // Tear down players whose <img> is no longer in the document. Cheap (O(live
@@ -178,7 +197,9 @@ export function createController(deps: PipelineDeps): Controller {
     }
   }
 
-  function observe(target: Node = document): () => void {
+  // Attach the DOM-removal watcher and return a stop fn. Called lazily by
+  // ensureWatching() once a player is live — never on an idle page.
+  function startWatcher(): () => void {
     // Coalesce a burst of mutations (infinite scroll, an SPA swapping a whole
     // subtree) into a single reconcile on the next microtask.
     let scheduled = false;
@@ -194,7 +215,7 @@ export function createController(deps: PipelineDeps): Controller {
       typeof MutationObserver !== "undefined"
         ? new MutationObserver(schedule)
         : null;
-    observer?.observe(target, { childList: true, subtree: true });
+    observer?.observe(document, { childList: true, subtree: true });
     // SPA route changes can swap DOM via history navigation; reconcile then too.
     const onPopState = (): void => schedule();
     if (typeof window !== "undefined") {
@@ -208,7 +229,7 @@ export function createController(deps: PipelineDeps): Controller {
     };
   }
 
-  return { processImage, teardown, teardownAll, reconcile, observe, instances };
+  return { processImage, teardown, teardownAll, reconcile, instances };
 }
 
 /** Default wiring used when running as the actual content script. */
@@ -353,12 +374,12 @@ export function init(): () => void {
     return undefined;
   };
   browser.runtime.onMessage.addListener(onMessage);
-  // Keep the player set in sync with the live DOM: tear down players whose GIF
-  // was removed (lazy unmount / SPA navigation) so nothing leaks.
-  const stopObserving = controller.observe();
+  // The DOM-removal watcher that keeps the player set in sync with the live DOM
+  // is attached lazily by the controller once a GIF is actually enhanced, so an
+  // idle page installs nothing beyond this single message listener. teardownAll()
+  // below also detaches that watcher if one is active.
   return () => {
     browser.runtime.onMessage.removeListener(onMessage);
-    stopObserving();
     exitPickMode();
     controller.teardownAll();
   };
