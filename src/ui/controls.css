@@ -96,6 +96,14 @@
   white-space: nowrap;
 }
 
+/* Variable numbers (frame index, elapsed time) reserve their widest width via
+   an inline min-width (in ch, exact under tabular-nums) and sit right-aligned,
+   so the readout stays a constant width and the buttons to its right hold still. */
+.readout .num {
+  display: inline-block;
+  text-align: right;
+}
+
 .readout .time {
   opacity: 0.7;
 }
