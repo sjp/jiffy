@@ -207,11 +207,14 @@ const APNG = new Uint8Array([
   0x00, 0x00, 0x00, 0x00,
 ]);
 
-const { frames, duration } = await decodeApng(
+const { frames, duration, loops } = await decodeApng(
   APNG.buffer.slice(APNG.byteOffset, APNG.byteOffset + APNG.byteLength),
 );
 
 assert.equal(frames.length, 2, "frame count");
+
+// acTL num_plays is 0 (infinite) → loops.
+assert.equal(loops, true, "num_plays 0 (infinite) → loops");
 
 assert.equal(
   frames[0]!.delay,

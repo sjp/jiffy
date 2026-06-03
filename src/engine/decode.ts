@@ -125,6 +125,14 @@ export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
   // `true` → build per-frame RGBA `patch` arrays for us.
   const rawFrames = decompressFrames(gif, true);
 
+  // Loop setting from the NETSCAPE2.0 application extension. Its presence means
+  // the GIF repeats (count 0 = infinite, count N = N repeats); a GIF without it
+  // plays through once. gifuct keeps the extension as an `application` entry in
+  // the raw `gif.frames` (the decompressed `rawFrames` above hold only images).
+  const loops = (
+    gif.frames as ReadonlyArray<{ application?: { id?: string } }>
+  ).some((f) => f.application?.id === "NETSCAPE2.0");
+
   const { width, height } = gif.lsd;
 
   // Work canvas at the GIF's native (logical screen) resolution. The snapshots
@@ -204,5 +212,5 @@ export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
     prevDims = rf.dims;
   }
 
-  return { frames, duration: elapsed };
+  return { frames, duration: elapsed, loops };
 }

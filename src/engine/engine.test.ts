@@ -46,6 +46,7 @@ assert.deepEqual(engine.state, {
   frameCount: 2,
   currentTime: 0,
   duration: 200,
+  loop: true,
 });
 
 // ---- playback advances across frame boundaries + loops -------------------
@@ -116,5 +117,27 @@ unsubscribe();
 engine.play();
 engine.step(1);
 assert.equal(log.length, before, "no callbacks after unsubscribe");
+
+// ---- loop off: park on the last frame at the end instead of wrapping ------
+const once = createEngine(frames, 200, clock);
+assert.equal(once.state.loop, true, "loops by default");
+once.setLoop(false);
+assert.equal(once.state.loop, false, "setLoop(false) disables looping");
+
+t = 0;
+once.play();
+runTickAt(100); // into frame 1
+assert.equal(once.state.index, 1, "frame 1 at t=100");
+runTickAt(200); // reaches the end
+assert.equal(once.state.index, 1, "parks on the last frame (no wrap)");
+assert.equal(once.state.playing, false, "stops playing at the end");
+assert.equal(once.state.currentTime, 200, "clock parked at duration");
+
+// play() at the end replays from the start.
+t = 300;
+once.play();
+assert.equal(once.state.index, 0, "play() after end replays from frame 0");
+assert.equal(once.state.playing, true, "playing again after replay");
+once.pause();
 
 console.log("engine.test: OK");

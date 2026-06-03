@@ -134,9 +134,11 @@ g.ImageDecoder = FakeImageDecoder;
 
 assert.equal(canDecodeAvif(), true, "ImageDecoder present → can decode");
 
-const { frames, duration } = await decodeAvif(ab(avisMajor));
+const { frames, duration, loops } = await decodeAvif(ab(avisMajor));
 
 assert.equal(frames.length, 3, "frame count");
+// ImageDecoder doesn't expose loop count, so AVIF defaults to looping.
+assert.equal(loops, true, "AVIF defaults to looping (loop count unavailable)");
 assert.deepEqual(
   decodedIndexes,
   [0, 1, 2],

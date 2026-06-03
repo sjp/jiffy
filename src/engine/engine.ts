@@ -34,7 +34,8 @@ const defaultClock: EngineClock = {
  * Conventions:
  * - `step` **clamps** at both ends (stepping past the last frame stays on it).
  * - `play()` while on the last frame restarts from 0 (replay).
- * - Playback **loops**: the clock wraps modulo `duration`.
+ * - When `loop` is on (default) the clock wraps modulo `duration`; when off,
+ *   reaching the end parks on the last frame and pauses (video-style).
  */
 export function createEngine(
   frames: Frame[],
@@ -48,6 +49,9 @@ export function createEngine(
   let index = 0;
   let rafHandle: number | null = null;
   let lastTick = 0;
+  // Default on (preserves the historical always-loop behaviour); callers override
+  // via setLoop with the source's own loop setting.
+  let loop = true;
 
   const subscribers = new Set<(s: EngineState) => void>();
 
@@ -73,6 +77,7 @@ export function createEngine(
     frameCount,
     currentTime: position,
     duration,
+    loop,
   });
 
   const notify = (): void => {
@@ -89,7 +94,18 @@ export function createEngine(
 
     position += delta;
     if (duration > 0 && position >= duration) {
-      position %= duration; // loop
+      if (loop) {
+        position %= duration; // wrap and keep playing
+      } else {
+        // Looping off: park on the last frame and stop, like a video ending.
+        // play() restarts from 0, so the play button replays.
+        position = duration;
+        index = frameCount - 1;
+        playing = false;
+        stopLoop();
+        notify();
+        return;
+      }
     }
     const next = indexForTime(position);
     if (next !== index) {
@@ -151,6 +167,12 @@ export function createEngine(
     notify();
   };
 
+  const setLoop = (enabled: boolean): void => {
+    if (loop === enabled) return;
+    loop = enabled;
+    notify();
+  };
+
   const seekToTime = (t: number): void => {
     if (frameCount === 0) return;
     position = Math.min(Math.max(t, 0), duration);
@@ -176,6 +198,7 @@ export function createEngine(
     step,
     seekToTime,
     seekToIndex,
+    setLoop,
     subscribe,
   };
 }

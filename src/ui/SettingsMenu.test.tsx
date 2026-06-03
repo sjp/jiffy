@@ -1,6 +1,7 @@
-// Component test for <SettingsMenu>. Driven with a mock config so behaviour is
-// verifiable while SETTINGS_CONFIG is still empty. Same harness as the other UI
-// tests: jsdom + preact render/act, plain node:assert.
+// Component test for <SettingsMenu>. Driven with mock configs (options + toggle)
+// so the component's behaviour is verified independently of the live
+// SETTINGS_CONFIG. Same harness as the other UI tests: jsdom + preact
+// render/act, plain node:assert.
 import "../test/setup-dom.ts";
 import assert from "node:assert/strict";
 import { render } from "preact";
@@ -12,6 +13,7 @@ const config: SettingsEntry[] = [
   {
     id: "speed",
     label: "Speed",
+    kind: "options",
     default: 1,
     options: [
       { value: 0.5, label: "0.5×" },
@@ -89,6 +91,47 @@ const before = changes.length;
 act(() => back.click());
 assert.equal(rows().length, 1, "back returns to the main panel");
 assert.equal(changes.length, before, "back makes no changes");
+
+// ---- toggle entries flip in place (no sub-panel) -------------------------
+const toggleConfig: SettingsEntry[] = [
+  { id: "loop", label: "Loop", kind: "toggle", default: true },
+];
+let toggleSettings: Settings = { loop: true };
+const toggleChanges: Array<[string, SettingValue]> = [];
+const renderToggle = (): void => {
+  act(() => {
+    render(
+      <SettingsMenu
+        config={toggleConfig}
+        settings={toggleSettings}
+        onChange={(id, value) => {
+          toggleChanges.push([id, value]);
+          toggleSettings = { ...toggleSettings, [id]: value };
+        }}
+      />,
+      container,
+    );
+  });
+};
+
+renderToggle();
+const toggleRow = () =>
+  container.querySelector('[role="menuitemcheckbox"]') as HTMLElement;
+assert.ok(toggleRow(), "toggle renders as a menuitemcheckbox (no sub-panel)");
+assert.equal(
+  toggleRow().getAttribute("aria-checked"),
+  "true",
+  "starts checked",
+);
+
+act(() => toggleRow().click());
+assert.deepEqual(toggleChanges.at(-1), ["loop", false], "click flips to false");
+renderToggle();
+assert.equal(
+  toggleRow().getAttribute("aria-checked"),
+  "false",
+  "now unchecked",
+);
 
 render(null, container);
 console.log("SettingsMenu.test: OK");

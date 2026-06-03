@@ -112,7 +112,7 @@ export function createController(deps: PipelineDeps): Controller {
     try {
       const url = img.currentSrc || img.src;
       const bytes = await deps.fetchBytes(url);
-      const { frames, duration } = await deps.decode(bytes);
+      const { frames, duration, loops } = await deps.decode(bytes);
 
       // Torn down mid-flight (reconcile / teardownAll): drop the frames silently.
       if (!pending.has(img)) {
@@ -128,6 +128,9 @@ export function createController(deps: PipelineDeps): Controller {
       }
 
       const engine = deps.createEngine(frames, duration);
+      // Seed the loop setting from the source so the controls default matches how
+      // the image normally plays (e.g. a one-shot GIF starts with looping off).
+      engine.setLoop(loops);
       const overlay = deps.createOverlay(img, engine, frames);
       const teardownControls = deps.mountControls(img, engine, () =>
         teardown(img),

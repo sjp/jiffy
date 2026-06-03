@@ -119,6 +119,33 @@ act(() => cog.click());
 assert.equal(cog.getAttribute("aria-expanded"), "true", "cog click opens menu");
 assert.ok(container.querySelector('[role="menu"]'), "popover appears");
 
+// The Loop toggle drives the engine. It starts on (engine loops by default);
+// clicking it turns looping off, clicking again turns it back on.
+const loopToggle = () =>
+  container.querySelector('[role="menuitemcheckbox"]') as HTMLElement;
+assert.ok(loopToggle(), "menu has a Loop toggle");
+assert.equal(engine.state.loop, true, "engine loops by default");
+assert.equal(loopToggle().getAttribute("aria-checked"), "true", "toggle is on");
+
+act(() => loopToggle().click());
+assert.equal(
+  engine.state.loop,
+  false,
+  "toggling Loop off disables engine loop",
+);
+assert.equal(
+  loopToggle().getAttribute("aria-checked"),
+  "false",
+  "toggle is off",
+);
+
+act(() => loopToggle().click());
+assert.equal(
+  engine.state.loop,
+  true,
+  "toggling Loop on re-enables engine loop",
+);
+
 press("Escape");
 assert.equal(cog.getAttribute("aria-expanded"), "false", "Escape closes menu");
 assert.equal(

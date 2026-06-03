@@ -106,7 +106,10 @@ export async function decodeAvif(bytes: ArrayBuffer): Promise<DecodeResult> {
       });
     }
 
-    return { frames, duration: elapsed };
+    // WebCodecs ImageDecoder doesn't expose the container's loop count, so we
+    // can't tell whether this AVIF is meant to repeat. Default to looping (the
+    // common case, and matches the historical always-loop behaviour).
+    return { frames, duration: elapsed, loops: true };
   } finally {
     decoder.close();
   }

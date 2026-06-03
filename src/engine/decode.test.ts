@@ -88,11 +88,14 @@ const GIF = new Uint8Array([
 
 // ---- assertions ----------------------------------------------------------
 
-const { frames, duration } = await decode(
+const { frames, duration, loops } = await decode(
   GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength),
 );
 
 assert.equal(frames.length, 2, "frame count");
+
+// No NETSCAPE2.0 application extension → the GIF plays through once.
+assert.equal(loops, false, "GIF without a loop extension does not loop");
 
 // gifuct normalises delay (10cs → 100ms); clamp leaves it ≥ 20ms.
 assert.equal(frames[0]!.delay, 100, "frame 0 delay (ms)");
@@ -108,6 +111,35 @@ assert.equal(duration, 200, "duration");
 
 // Every frame carries a (shimmed) full-canvas bitmap.
 for (const f of frames) assert.ok(f.bitmap, "frame has a bitmap");
+
+// ---- a looping GIF: same frames + a NETSCAPE2.0 loop extension -----------
+// The application extension after the GCT marks the GIF as repeating (count 0 =
+// infinite), so decode should report loops = true.
+// prettier-ignore
+const LOOPING_GIF = new Uint8Array([
+  0x47, 0x49, 0x46, 0x38, 0x39, 0x61,             // "GIF89a"
+  0x02, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00,       // LSD: 2×1, global colour table (2)
+  0x00, 0x00, 0x00, 0xff, 0xff, 0xff,             // GCT: black, white
+  0x21, 0xff, 0x0b,                               // app extension, block size 11
+  0x4e, 0x45, 0x54, 0x53, 0x43, 0x41, 0x50, 0x45, 0x32, 0x2e, 0x30, // "NETSCAPE2.0"
+  0x03, 0x01, 0x00, 0x00, 0x00,                   // sub-block: id 1, loop count 0, terminator
+  0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 0: delay=10cs
+  0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 0
+  0x02, 0x02, 0x44, 0x05, 0x00,                   // LZW: pixels [0,1]
+  0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 1: delay=10cs
+  0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 1
+  0x02, 0x02, 0x0c, 0x05, 0x00,                   // LZW: pixels [1,0]
+  0x3b,                                           // trailer
+]);
+
+const looping = await decode(
+  LOOPING_GIF.buffer.slice(
+    LOOPING_GIF.byteOffset,
+    LOOPING_GIF.byteOffset + LOOPING_GIF.byteLength,
+  ),
+);
+assert.equal(looping.frames.length, 2, "looping GIF still decodes 2 frames");
+assert.equal(looping.loops, true, "GIF with NETSCAPE2.0 extension loops");
 
 // ---- non-animated bytes throw a typed error ------------------------------
 // Bytes matching no animated sniffer and lacking a GIF signature must throw

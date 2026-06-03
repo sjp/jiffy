@@ -90,6 +90,7 @@ function parseApng(buf: ArrayBuffer): {
   plte: Uint8Array | null;
   trns: Uint8Array | null;
   bkgd: Uint8Array | null;
+  numPlays: number;
   frames: FcTLInfo[];
 } {
   if (buf.byteLength < 8) throw new Error("decodeApng: buffer too short");
@@ -105,6 +106,8 @@ function parseApng(buf: ArrayBuffer): {
   let plte: Uint8Array | null = null;
   let trns: Uint8Array | null = null;
   let bkgd: Uint8Array | null = null;
+  // acTL num_plays: 0 = infinite, N = play N times. Default to infinite.
+  let numPlays = 0;
   const frames: FcTLInfo[] = [];
   let pendingFcTL: FcTLInfo | null = null;
   // True once we've seen a fcTL before the first IDAT — means IDAT is frame 0.
@@ -130,7 +133,9 @@ function parseApng(buf: ArrayBuffer): {
     } else if (type === "bKGD") {
       bkgd = new Uint8Array(buf, dataOff, dataLen).slice();
     } else if (type === "acTL") {
-      // num_frames / num_plays are informational; we rely on fcTL/fdAT structure.
+      // num_frames is informational (we rely on fcTL/fdAT structure); num_plays
+      // (offset +4 in the chunk data) is the loop count, 0 = infinite.
+      numPlays = readU32BE(buf, dataOff + 4);
     } else if (type === "fcTL") {
       if (pendingFcTL) frames.push(pendingFcTL);
       const dv = new DataView(buf, dataOff, dataLen);
@@ -175,7 +180,16 @@ function parseApng(buf: ArrayBuffer): {
   if (frames.length === 0)
     throw new Error("decodeApng: no animation frames found");
 
-  return { canvasWidth, canvasHeight, ihdrData, plte, trns, bkgd, frames };
+  return {
+    canvasWidth,
+    canvasHeight,
+    ihdrData,
+    plte,
+    trns,
+    bkgd,
+    numPlays,
+    frames,
+  };
 }
 
 // Wrap a single frame's pixel data in a minimal self-contained PNG suitable
@@ -252,6 +266,7 @@ export async function decodeApng(bytes: ArrayBuffer): Promise<DecodeResult> {
     plte,
     trns,
     bkgd,
+    numPlays,
     frames: rawFrames,
   } = parseApng(bytes);
 
@@ -334,5 +349,6 @@ export async function decodeApng(bytes: ArrayBuffer): Promise<DecodeResult> {
     prev = rf;
   }
 
-  return { frames, duration: elapsed };
+  // num_plays 1 = play exactly once; 0 (infinite) or ≥2 means it repeats.
+  return { frames, duration: elapsed, loops: numPlays !== 1 };
 }

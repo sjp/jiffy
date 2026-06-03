@@ -46,7 +46,7 @@ export function SettingsMenu({
           </span>
           <span class="menu-label">{entry.label}</span>
         </button>
-        {entry.options.map((option) => {
+        {(entry.options ?? []).map((option) => {
           const active = settings[entry.id] === option.value;
           return (
             <button
@@ -80,22 +80,40 @@ export function SettingsMenu({
 
   return (
     <div class="menu-panel" role="menu" aria-label="Settings">
-      {config.map((e) => (
-        <button
-          key={e.id}
-          type="button"
-          class="menu-row"
-          role="menuitem"
-          aria-haspopup="menu"
-          onClick={() => setOpenId(e.id)}
-        >
-          <span class="menu-label">{e.label}</span>
-          <span class="menu-value">
-            {valueLabel(e, settings[e.id])}
-            <ChevronRightIcon />
-          </span>
-        </button>
-      ))}
+      {config.map((e) =>
+        e.kind === "toggle" ? (
+          // Inline toggle: clicking flips the value in place, with a leading
+          // checkmark when on. No sub-panel.
+          <button
+            key={e.id}
+            type="button"
+            class="menu-row"
+            role="menuitemcheckbox"
+            aria-checked={settings[e.id] === true}
+            onClick={() => onChange(e.id, settings[e.id] !== true)}
+          >
+            <span class="menu-check">
+              {settings[e.id] === true && <CheckIcon />}
+            </span>
+            <span class="menu-label">{e.label}</span>
+          </button>
+        ) : (
+          <button
+            key={e.id}
+            type="button"
+            class="menu-row"
+            role="menuitem"
+            aria-haspopup="menu"
+            onClick={() => setOpenId(e.id)}
+          >
+            <span class="menu-label">{e.label}</span>
+            <span class="menu-value">
+              {valueLabel(e, settings[e.id])}
+              <ChevronRightIcon />
+            </span>
+          </button>
+        ),
+      )}
     </div>
   );
 }

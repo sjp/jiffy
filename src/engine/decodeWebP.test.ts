@@ -146,9 +146,25 @@ const file = buildWebP([
   chunk("ANMF", anmf(100)),
 ]);
 
-const { frames, duration } = await decodeWebP(ab(file));
+const { frames, duration, loops } = await decodeWebP(ab(file));
 
 assert.equal(frames.length, 2, "frame count");
+
+// ANIM loop count is 0 (infinite) → loops.
+assert.equal(loops, true, "loop count 0 (infinite) → loops");
+
+// A loop count of exactly 1 means play once → does not loop.
+const playOnce = buildWebP([
+  chunk("VP8X", vp8x(4, 4, true)),
+  chunk("ANIM", [0xff, 0xff, 0xff, 0xff, 1, 0]), // BGRA + loop count = 1
+  chunk("ANMF", anmf(10)),
+  chunk("ANMF", anmf(100)),
+]);
+assert.equal(
+  (await decodeWebP(ab(playOnce))).loops,
+  false,
+  "loop count 1 → plays once",
+);
 
 assert.equal(frames[0]!.delay, 20, "frame 0 delay clamped to the 20ms floor");
 assert.equal(frames[1]!.delay, 100, "frame 1 delay (100ms, above floor)");

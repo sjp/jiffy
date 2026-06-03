@@ -24,6 +24,8 @@ export interface EngineState {
   frameCount: number;
   currentTime: number;
   duration: number;
+  /** Whether playback repeats; when false it parks on the last frame at the end. */
+  loop: boolean;
 }
 
 /** Playback engine — owns frames, time and the rAF loop; DOM/UI-agnostic. */
@@ -35,6 +37,8 @@ export interface Engine {
   step(delta: 1 | -1): void;
   seekToTime(t: number): void;
   seekToIndex(i: number): void;
+  /** Enable/disable looping. Off → playback stops on the last frame at the end. */
+  setLoop(enabled: boolean): void;
   /** Subscribe to state changes; returns an unsubscribe function. */
   subscribe(fn: (s: EngineState) => void): () => void;
 }
@@ -43,4 +47,6 @@ export interface Engine {
 export interface DecodeResult {
   frames: Frame[];
   duration: number;
+  /** Whether the source is meant to repeat (e.g. GIF NETSCAPE loop, APNG num_plays). */
+  loops: boolean;
 }

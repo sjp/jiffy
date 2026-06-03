@@ -16,7 +16,7 @@ import {
 import { Scrubber } from "./Scrubber";
 import { Readout } from "./Readout";
 import { SettingsMenu } from "./SettingsMenu";
-import { applySettings, DEFAULTS, SETTINGS_CONFIG } from "./settings";
+import { applySettings, initialSettings, SETTINGS_CONFIG } from "./settings";
 import type { Settings } from "./settings";
 import { handleControlKey } from "./keymap";
 
@@ -54,9 +54,12 @@ export function Controls({
   // Remember whether playback was running when a scrub began, to resume on release.
   const wasPlaying = useRef(false);
 
-  // Playback settings. Held locally (not persisted) so they reset to DEFAULTS
-  // every time the controls are re-mounted — i.e. when the overlay disappears.
-  const [settings, setSettings] = useState<Settings>(DEFAULTS);
+  // Playback settings. Held locally (not persisted) and seeded from the source
+  // (via the engine) so they reset to the source's own defaults every time the
+  // controls are re-mounted — i.e. when the overlay disappears.
+  const [settings, setSettings] = useState<Settings>(() =>
+    initialSettings(engine),
+  );
   // Single seam where settings drive the engine; re-applies on engine swap so a
   // fresh player starts from defaults.
   useEffect(() => {

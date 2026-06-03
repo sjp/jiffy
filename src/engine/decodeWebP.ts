@@ -20,6 +20,10 @@ function readU24LE(buf: ArrayBuffer, byteOffset: number): number {
   return v[0]! | (v[1]! << 8) | (v[2]! << 16);
 }
 
+function readU16LE(buf: ArrayBuffer, byteOffset: number): number {
+  return new DataView(buf, byteOffset, 2).getUint16(0, true);
+}
+
 function readU32LE(buf: ArrayBuffer, byteOffset: number): number {
   return new DataView(buf, byteOffset, 4).getUint32(0, true);
 }
@@ -44,6 +48,7 @@ function parseAnimatedWebP(buf: ArrayBuffer): {
   canvasWidth: number;
   canvasHeight: number;
   bgRGBA: readonly [number, number, number, number];
+  loopCount: number;
   frames: RawFrame[];
 } {
   if (buf.byteLength < 12) throw new Error("decodeWebP: buffer too short");
@@ -54,6 +59,8 @@ function parseAnimatedWebP(buf: ArrayBuffer): {
   let canvasHeight = 0;
   // Background colour from ANIM chunk, converted from spec BGRA to RGBA.
   let bgRGBA: readonly [number, number, number, number] = [255, 255, 255, 255];
+  // ANIM loop count: 0 = infinite, N = play N times. Default to infinite.
+  let loopCount = 0;
   const frames: RawFrame[] = [];
   let offset = 12;
 
@@ -69,6 +76,7 @@ function parseAnimatedWebP(buf: ArrayBuffer): {
     } else if (cc === "ANIM") {
       const b = new Uint8Array(buf, data, 4); // stored as B G R A
       bgRGBA = [b[2]!, b[1]!, b[0]!, b[3]!];
+      loopCount = readU16LE(buf, data + 4); // u16 LE following the BGRA bytes
     } else if (cc === "ANMF") {
       const flags = new Uint8Array(buf, data + 15, 1)[0]!;
       frames.push({
@@ -90,7 +98,7 @@ function parseAnimatedWebP(buf: ArrayBuffer): {
     throw new Error("decodeWebP: missing VP8X canvas dimensions");
   if (frames.length === 0) throw new Error("decodeWebP: no ANMF frames found");
 
-  return { canvasWidth, canvasHeight, bgRGBA, frames };
+  return { canvasWidth, canvasHeight, bgRGBA, loopCount, frames };
 }
 
 /**
@@ -149,6 +157,7 @@ export async function decodeWebP(bytes: ArrayBuffer): Promise<DecodeResult> {
     canvasWidth,
     canvasHeight,
     bgRGBA,
+    loopCount,
     frames: rawFrames,
   } = parseAnimatedWebP(bytes);
 
@@ -201,7 +210,8 @@ export async function decodeWebP(bytes: ArrayBuffer): Promise<DecodeResult> {
     prev = rf;
   }
 
-  return { frames, duration: elapsed };
+  // loopCount 1 = play exactly once; 0 (infinite) or ≥2 means it repeats.
+  return { frames, duration: elapsed, loops: loopCount !== 1 };
 }
 
 /**
