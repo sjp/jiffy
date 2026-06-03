@@ -26,6 +26,8 @@ export interface EngineState {
   duration: number;
   /** Whether playback repeats; when false it parks on the last frame at the end. */
   loop: boolean;
+  /** Playback rate multiplier (1 = normal). Scales how fast the clock advances. */
+  speed: number;
 }
 
 /** Playback engine — owns frames, time and the rAF loop; DOM/UI-agnostic. */
@@ -39,6 +41,8 @@ export interface Engine {
   seekToIndex(i: number): void;
   /** Enable/disable looping. Off → playback stops on the last frame at the end. */
   setLoop(enabled: boolean): void;
+  /** Set the playback rate multiplier (1 = normal). Values must be > 0. */
+  setSpeed(rate: number): void;
   /** Subscribe to state changes; returns an unsubscribe function. */
   subscribe(fn: (s: EngineState) => void): () => void;
 }

@@ -146,6 +146,25 @@ assert.equal(
   "toggling Loop on re-enables engine loop",
 );
 
+// The Speed entry opens a sub-panel of rates and drives engine.setSpeed. It
+// starts at 1× (Normal); picking 2× updates the engine and returns to the main
+// panel.
+const speedRow = buttons().find((b) =>
+  (b.textContent ?? "").includes("Speed"),
+) as HTMLElement;
+assert.ok(speedRow, "menu has a Speed row");
+assert.equal(engine.state.speed, 1, "engine speed defaults to 1");
+
+act(() => speedRow.click());
+const twoX = Array.from(
+  container.querySelectorAll('[role="menuitemradio"]'),
+).find((r) => (r.textContent ?? "").includes("2×")) as HTMLElement;
+assert.ok(twoX, "sub-panel lists a 2× option");
+
+act(() => twoX.click());
+assert.equal(engine.state.speed, 2, "selecting 2× sets engine speed");
+assert.ok(loopToggle(), "returned to the main panel after choosing a speed");
+
 press("Escape");
 assert.equal(cog.getAttribute("aria-expanded"), "false", "Escape closes menu");
 assert.equal(

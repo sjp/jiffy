@@ -55,6 +55,20 @@ export const SETTINGS_CONFIG: SettingsEntry[] = [
     // the toggle starts matching how the image normally plays.
     deriveDefault: (engine) => engine.state.loop,
   },
+  {
+    id: "speed",
+    label: "Speed",
+    kind: "options",
+    default: 1,
+    options: [
+      { value: 0.25, label: "0.25×" },
+      { value: 0.5, label: "0.5×" },
+      { value: 1, label: "Normal" },
+      { value: 1.5, label: "1.5×" },
+      { value: 2, label: "2×" },
+      { value: 4, label: "4×" },
+    ],
+  },
 ];
 
 /** Build the initial settings for a freshly-mounted player. */
@@ -83,4 +97,5 @@ export function valueLabel(
  */
 export function applySettings(engine: Engine, settings: Settings): void {
   engine.setLoop(settings.loop === true);
+  engine.setSpeed(typeof settings.speed === "number" ? settings.speed : 1);
 }

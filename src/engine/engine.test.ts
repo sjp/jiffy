@@ -47,6 +47,7 @@ assert.deepEqual(engine.state, {
   currentTime: 0,
   duration: 200,
   loop: true,
+  speed: 1,
 });
 
 // ---- playback advances across frame boundaries + loops -------------------
@@ -139,5 +140,36 @@ once.play();
 assert.equal(once.state.index, 0, "play() after end replays from frame 0");
 assert.equal(once.state.playing, true, "playing again after replay");
 once.pause();
+
+// ---- speed scales how fast the clock advances ----------------------------
+// At 2× a 100ms wall-clock delta moves the position 200ms, so one tick jumps
+// straight across frame 0 into frame 1.
+const fast = createEngine(frames, 200, clock);
+assert.equal(fast.state.speed, 1, "speed defaults to 1");
+fast.setSpeed(2);
+assert.equal(fast.state.speed, 2, "setSpeed(2) updates the rate");
+
+t = 0;
+fast.play();
+runTickAt(50); // 50ms wall → 100ms position → into frame 1
+assert.equal(fast.state.index, 1, "at 2× a 50ms tick reaches frame 1");
+assert.equal(fast.state.currentTime, 100, "position advanced by delta × speed");
+fast.pause();
+
+// Non-positive / NaN rates are ignored so the loop can't stall or reverse.
+fast.setSpeed(0);
+assert.equal(fast.state.speed, 2, "setSpeed(0) ignored");
+fast.setSpeed(-1);
+assert.equal(fast.state.speed, 2, "negative speed ignored");
+
+// A fractional rate slows playback: 50ms wall at 0.5× → 25ms position.
+const slow = createEngine(frames, 200, clock);
+slow.setSpeed(0.5);
+t = 0;
+slow.play();
+runTickAt(50); // 50ms wall → 25ms position → still frame 0
+assert.equal(slow.state.index, 0, "at 0.5× a 50ms tick stays on frame 0");
+assert.equal(slow.state.currentTime, 25, "position advanced at half rate");
+slow.pause();
 
 console.log("engine.test: OK");

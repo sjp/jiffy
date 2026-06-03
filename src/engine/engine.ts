@@ -52,6 +52,8 @@ export function createEngine(
   // Default on (preserves the historical always-loop behaviour); callers override
   // via setLoop with the source's own loop setting.
   let loop = true;
+  // Playback rate multiplier; the tick advances the clock by `delta * speed`.
+  let speed = 1;
 
   const subscribers = new Set<(s: EngineState) => void>();
 
@@ -78,6 +80,7 @@ export function createEngine(
     currentTime: position,
     duration,
     loop,
+    speed,
   });
 
   const notify = (): void => {
@@ -92,7 +95,7 @@ export function createEngine(
     const delta = now - lastTick;
     lastTick = now;
 
-    position += delta;
+    position += delta * speed;
     if (duration > 0 && position >= duration) {
       if (loop) {
         position %= duration; // wrap and keep playing
@@ -173,6 +176,14 @@ export function createEngine(
     notify();
   };
 
+  // Rate must be positive; ignore non-positive/NaN so the loop can't stall or
+  // run backwards. The change takes effect on the next tick (no clock jump).
+  const setSpeed = (rate: number): void => {
+    if (!(rate > 0) || speed === rate) return;
+    speed = rate;
+    notify();
+  };
+
   const seekToTime = (t: number): void => {
     if (frameCount === 0) return;
     position = Math.min(Math.max(t, 0), duration);
@@ -199,6 +210,7 @@ export function createEngine(
     seekToTime,
     seekToIndex,
     setLoop,
+    setSpeed,
     subscribe,
   };
 }
