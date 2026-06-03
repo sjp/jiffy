@@ -33,9 +33,12 @@ const defaultClock: EngineClock = {
  *
  * Conventions:
  * - `step` **clamps** at both ends (stepping past the last frame stays on it).
- * - `play()` while on the last frame restarts from 0 (replay).
+ * - `play()` parked on the end it would move away from restarts from the far
+ *   edge (replay) — last→first when going forward, first→last when reversed.
  * - When `loop` is on (default) the clock wraps modulo `duration`; when off,
- *   reaching the end parks on the last frame and pauses (video-style).
+ *   reaching the end parks on that frame and pauses (video-style).
+ * - `reverse` runs the clock backwards; `pingpong` bounces between the ends
+ *   forever (taking precedence over loop/reverse). Both steer the live `dir`.
  */
 export function createEngine(
   frames: Frame[],
@@ -54,6 +57,12 @@ export function createEngine(
   let loop = true;
   // Playback rate multiplier; the tick advances the clock by `delta * speed`.
   let speed = 1;
+  // Direction modifiers. `reverse` plays backwards; `pingpong` bounces between
+  // the ends forever. `dir` is the live travel direction the tick actually uses
+  // (kept in sync by setReverse/setPingPong, flipped at the ends in ping-pong).
+  let reverse = false;
+  let pingpong = false;
+  let dir: 1 | -1 = 1;
 
   const subscribers = new Set<(s: EngineState) => void>();
 
@@ -81,6 +90,8 @@ export function createEngine(
     duration,
     loop,
     speed,
+    reverse,
+    pingpong,
   });
 
   const notify = (): void => {
@@ -95,15 +106,37 @@ export function createEngine(
     const delta = now - lastTick;
     lastTick = now;
 
-    position += delta * speed;
+    position += delta * speed * dir;
     if (duration > 0 && position >= duration) {
-      if (loop) {
+      // Forward end.
+      if (pingpong) {
+        position = duration; // turn around and keep playing
+        dir = -1;
+      } else if (loop) {
         position %= duration; // wrap and keep playing
       } else {
         // Looping off: park on the last frame and stop, like a video ending.
         // play() restarts from 0, so the play button replays.
         position = duration;
         index = frameCount - 1;
+        playing = false;
+        stopLoop();
+        notify();
+        return;
+      }
+    } else if (duration > 0 && position <= 0) {
+      // Backward end (reverse / ping-pong moving down).
+      if (pingpong) {
+        position = 0; // turn around and keep playing
+        dir = 1;
+      } else if (loop) {
+        // Wrap to the end and keep playing backwards.
+        position %= duration;
+        if (position <= 0) position += duration;
+      } else {
+        // Looping off: park on the first frame and stop.
+        position = 0;
+        index = 0;
         playing = false;
         stopLoop();
         notify();
@@ -127,10 +160,14 @@ export function createEngine(
 
   const play = (): void => {
     if (playing || frameCount === 0) return;
-    // Restart from the top if parked on the last frame (nothing left to play).
-    if (index >= frameCount - 1) {
+    // Restart from the far edge if parked on the end we'd be moving away from
+    // (nothing left to play in the current direction).
+    if (dir > 0 && index >= frameCount - 1) {
       position = 0;
       index = 0;
+    } else if (dir < 0 && index <= 0) {
+      position = duration;
+      index = frameCount - 1;
     }
     playing = true;
     lastTick = clock.now();
@@ -184,6 +221,23 @@ export function createEngine(
     notify();
   };
 
+  // Reverse and ping-pong both steer `dir`. The unchanged-guard means each acts
+  // only on a real transition, so applySettings calling both every change is
+  // order-insensitive. Ping-pong always begins forward.
+  const setReverse = (enabled: boolean): void => {
+    if (reverse === enabled) return;
+    reverse = enabled;
+    if (!pingpong) dir = reverse ? -1 : 1;
+    notify();
+  };
+
+  const setPingPong = (enabled: boolean): void => {
+    if (pingpong === enabled) return;
+    pingpong = enabled;
+    dir = pingpong ? 1 : reverse ? -1 : 1;
+    notify();
+  };
+
   const seekToTime = (t: number): void => {
     if (frameCount === 0) return;
     position = Math.min(Math.max(t, 0), duration);
@@ -211,6 +265,8 @@ export function createEngine(
     seekToIndex,
     setLoop,
     setSpeed,
+    setReverse,
+    setPingPong,
     subscribe,
   };
 }

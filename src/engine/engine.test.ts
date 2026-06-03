@@ -48,6 +48,8 @@ assert.deepEqual(engine.state, {
   duration: 200,
   loop: true,
   speed: 1,
+  reverse: false,
+  pingpong: false,
 });
 
 // ---- playback advances across frame boundaries + loops -------------------
@@ -171,5 +173,82 @@ runTickAt(50); // 50ms wall → 25ms position → still frame 0
 assert.equal(slow.state.index, 0, "at 0.5× a 50ms tick stays on frame 0");
 assert.equal(slow.state.currentTime, 25, "position advanced at half rate");
 slow.pause();
+
+// ---- reverse: the clock runs backwards -----------------------------------
+// With loop on, hitting the start wraps back to the end and keeps playing.
+const rev = createEngine(frames, 200, clock);
+rev.setReverse(true);
+assert.equal(rev.state.reverse, true, "setReverse(true) updates state");
+
+// Seek to the very end, then play backwards.
+rev.seekToTime(200);
+t = 0;
+rev.play();
+runTickAt(50); // 200 → 150, still frame 1
+assert.equal(rev.state.index, 1, "reverse: at 150 still on frame 1");
+runTickAt(120); // 150 → 80, into frame 0
+assert.equal(rev.state.index, 0, "reverse: crossed back into frame 0");
+runTickAt(220); // 80 → -20 → wraps to 180 (loop on), back on frame 1
+assert.equal(rev.state.index, 1, "reverse + loop wraps from start back to end");
+assert.equal(rev.state.currentTime, 180, "reverse wrap lands at duration - 20");
+rev.pause();
+
+// Reverse + loop OFF parks on the first frame and stops.
+const revOnce = createEngine(frames, 200, clock);
+revOnce.setReverse(true);
+revOnce.setLoop(false);
+revOnce.seekToTime(200);
+t = 0;
+revOnce.play();
+runTickAt(250); // run past the start
+assert.equal(revOnce.state.index, 0, "reverse, no loop: parks on frame 0");
+assert.equal(revOnce.state.playing, false, "reverse, no loop: stops at start");
+assert.equal(revOnce.state.currentTime, 0, "clock parked at 0");
+// play() while parked at the reverse-end replays from the far edge (the end).
+t = 300;
+revOnce.play();
+assert.equal(
+  revOnce.state.index,
+  1,
+  "reverse replay restarts from the last frame",
+);
+assert.equal(revOnce.state.currentTime, 200, "reverse replay clock = duration");
+revOnce.pause();
+
+// ---- ping-pong: bounce between the ends forever (ignores loop) ------------
+const pp = createEngine(frames, 200, clock);
+pp.setLoop(false); // ping-pong repeats regardless of loop
+pp.setPingPong(true);
+assert.equal(pp.state.pingpong, true, "setPingPong(true) updates state");
+
+t = 0;
+pp.play();
+runTickAt(100); // 0 → 100, frame 1
+assert.equal(pp.state.index, 1, "ping-pong: forward into frame 1");
+runTickAt(250); // 100 → 250 → bounce at 200, dir flips, still playing
+assert.equal(pp.state.playing, true, "ping-pong keeps playing past the end");
+runTickAt(300); // now moving backward: 200 → 150
+assert.equal(pp.state.index, 1, "ping-pong: heading back, on frame 1 at 150");
+runTickAt(450); // 150 → 0, bounce at the start back to forward
+assert.equal(pp.state.playing, true, "ping-pong bounces at the start too");
+assert.equal(pp.state.index, 0, "ping-pong: turned around on frame 0");
+pp.pause();
+
+// Mutually exclusive at the engine level too: enabling one resets direction so
+// the live behaviour matches whichever was turned on last.
+const dirEngine = createEngine(frames, 200, clock);
+dirEngine.setReverse(true);
+assert.equal(dirEngine.state.reverse, true, "reverse on");
+dirEngine.setPingPong(true); // pingpong begins forward
+dirEngine.seekToIndex(0);
+t = 0;
+dirEngine.play();
+runTickAt(100); // forward despite reverse still set, because pingpong drives dir
+assert.equal(
+  dirEngine.state.index,
+  1,
+  "pingpong takes over direction (forward)",
+);
+dirEngine.pause();
 
 console.log("engine.test: OK");

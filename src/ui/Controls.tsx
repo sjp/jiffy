@@ -16,7 +16,12 @@ import {
 import { Scrubber } from "./Scrubber";
 import { Readout } from "./Readout";
 import { SettingsMenu } from "./SettingsMenu";
-import { applySettings, initialSettings, SETTINGS_CONFIG } from "./settings";
+import {
+  applySettings,
+  changeSetting,
+  initialSettings,
+  SETTINGS_CONFIG,
+} from "./settings";
 import type { Settings } from "./settings";
 import { handleControlKey } from "./keymap";
 
@@ -205,7 +210,9 @@ export function Controls({
               config={SETTINGS_CONFIG}
               settings={settings}
               onChange={(id, value) =>
-                setSettings((prev) => ({ ...prev, [id]: value }))
+                setSettings((prev) =>
+                  changeSetting(SETTINGS_CONFIG, prev, id, value),
+                )
               }
             />
           </div>

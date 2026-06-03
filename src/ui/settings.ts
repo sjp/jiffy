@@ -35,6 +35,11 @@ export interface SettingsEntry {
   /** Choices for `kind: "options"` (ignored for toggles). */
   options?: SettingsOption[];
   /**
+   * Optional radio-like grouping: turning one toggle in a group ON clears the
+   * other toggles sharing the same group id (see {@link changeSetting}).
+   */
+  exclusiveGroup?: string;
+  /**
    * Optional per-source default, computed from the engine at mount time (e.g.
    * loop derived from the image's own loop setting). Falls back to `default`.
    */
@@ -54,6 +59,20 @@ export const SETTINGS_CONFIG: SettingsEntry[] = [
     // The engine is seeded from the source's loop setting (content pipeline), so
     // the toggle starts matching how the image normally plays.
     deriveDefault: (engine) => engine.state.loop,
+  },
+  {
+    id: "reverse",
+    label: "Reverse",
+    kind: "toggle",
+    default: false,
+    exclusiveGroup: "direction",
+  },
+  {
+    id: "pingpong",
+    label: "Ping Pong",
+    kind: "toggle",
+    default: false,
+    exclusiveGroup: "direction",
   },
   {
     id: "speed",
@@ -81,6 +100,30 @@ export function initialSettings(engine: Engine): Settings {
   );
 }
 
+/**
+ * Produce the next settings after a single change, applying any radio-like
+ * exclusivity. Turning an `exclusiveGroup` toggle ON clears the other toggles in
+ * its group (e.g. Reverse and Ping Pong can't both be on). Pure: returns a new
+ * object, so it slots straight into a `setSettings` updater.
+ */
+export function changeSetting(
+  config: SettingsEntry[],
+  settings: Settings,
+  id: string,
+  value: SettingValue,
+): Settings {
+  const next: Settings = { ...settings, [id]: value };
+  const entry = config.find((e) => e.id === id);
+  if (entry?.exclusiveGroup && value === true) {
+    for (const other of config) {
+      if (other.id !== id && other.exclusiveGroup === entry.exclusiveGroup) {
+        next[other.id] = false;
+      }
+    }
+  }
+  return next;
+}
+
 /** Human-readable text for an entry's current value (the matching option label). */
 export function valueLabel(
   entry: SettingsEntry,
@@ -98,4 +141,6 @@ export function valueLabel(
 export function applySettings(engine: Engine, settings: Settings): void {
   engine.setLoop(settings.loop === true);
   engine.setSpeed(typeof settings.speed === "number" ? settings.speed : 1);
+  engine.setReverse(settings.reverse === true);
+  engine.setPingPong(settings.pingpong === true);
 }

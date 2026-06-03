@@ -124,7 +124,12 @@ const deps = {
     duration: 100 * frameCount,
     loops: true,
   }),
-  createEngine: () => ({ setLoop: () => {}, setSpeed: () => {} }),
+  createEngine: () => ({
+    setLoop: () => {},
+    setSpeed: () => {},
+    setReverse: () => {},
+    setPingPong: () => {},
+  }),
   createOverlay: () => {
     overlays++;
     return {

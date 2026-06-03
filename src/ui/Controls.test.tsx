@@ -165,6 +165,39 @@ act(() => twoX.click());
 assert.equal(engine.state.speed, 2, "selecting 2× sets engine speed");
 assert.ok(loopToggle(), "returned to the main panel after choosing a speed");
 
+// Reverse and Ping Pong are mutually-exclusive toggles that drive the engine.
+const checkboxes = () =>
+  Array.from(
+    container.querySelectorAll('[role="menuitemcheckbox"]'),
+  ) as HTMLElement[];
+const findToggle = (label: string): HTMLElement =>
+  checkboxes().find((b) => (b.textContent ?? "").includes(label))!;
+const reverseToggle = () => findToggle("Reverse");
+const pingpongToggle = () => findToggle("Ping Pong");
+
+assert.ok(reverseToggle(), "menu has a Reverse toggle");
+assert.ok(pingpongToggle(), "menu has a Ping Pong toggle");
+assert.equal(engine.state.reverse, false, "reverse off by default");
+assert.equal(engine.state.pingpong, false, "ping-pong off by default");
+
+act(() => reverseToggle().click());
+assert.equal(engine.state.reverse, true, "toggling Reverse drives the engine");
+
+// Turning on Ping Pong clears Reverse (mutual exclusivity).
+act(() => pingpongToggle().click());
+assert.equal(engine.state.pingpong, true, "Ping Pong enabled");
+assert.equal(engine.state.reverse, false, "enabling Ping Pong clears Reverse");
+assert.equal(
+  reverseToggle().getAttribute("aria-checked"),
+  "false",
+  "Reverse shows off after Ping Pong wins",
+);
+
+// …and vice versa.
+act(() => reverseToggle().click());
+assert.equal(engine.state.reverse, true, "Reverse re-enabled");
+assert.equal(engine.state.pingpong, false, "enabling Reverse clears Ping Pong");
+
 press("Escape");
 assert.equal(cog.getAttribute("aria-expanded"), "false", "Escape closes menu");
 assert.equal(

@@ -28,6 +28,10 @@ export interface EngineState {
   loop: boolean;
   /** Playback rate multiplier (1 = normal). Scales how fast the clock advances. */
   speed: number;
+  /** Whether playback runs backwards. */
+  reverse: boolean;
+  /** Whether playback bounces forwards↔backwards forever (overrides loop/reverse). */
+  pingpong: boolean;
 }
 
 /** Playback engine — owns frames, time and the rAF loop; DOM/UI-agnostic. */
@@ -43,6 +47,10 @@ export interface Engine {
   setLoop(enabled: boolean): void;
   /** Set the playback rate multiplier (1 = normal). Values must be > 0. */
   setSpeed(rate: number): void;
+  /** Play backwards when enabled. */
+  setReverse(enabled: boolean): void;
+  /** Bounce forwards↔backwards forever when enabled. */
+  setPingPong(enabled: boolean): void;
   /** Subscribe to state changes; returns an unsubscribe function. */
   subscribe(fn: (s: EngineState) => void): () => void;
 }
