@@ -13,6 +13,13 @@ Works in **Firefox** (142+) and **Chrome** (120+).
 
 </div>
 
+## Install
+
+- **Firefox**: https://addons.mozilla.org/en-US/firefox/addon/jiffy/
+- **Chrome**: _coming soon..._
+
+Prefer to build it yourself? See [Building from source](#building-from-source).
+
 ## Demo
 
 <div align="center">
@@ -22,13 +29,6 @@ Works in **Firefox** (142+) and **Chrome** (120+).
 </div>
 
 > ▶️ If the video above doesn't play, [watch the demo](https://github.com/user-attachments/assets/61902889-da8f-418c-a083-5dd1d66df0e9) directly.
-
-## Install
-
-- **Firefox**: https://addons.mozilla.org/en-US/firefox/addon/jiffy/
-- **Chrome**: _coming soon..._
-
-Prefer to build it yourself? See [Building from source](#building-from-source).
 
 ## Usage
 
