@@ -17,14 +17,11 @@ Works in **Firefox** (142+) and **Chrome** (120+).
 
 <div align="center">
 
-<video src="assets/demo.mp4" width="720" controls muted playsinline>
-  Your browser can't play this video.
-  <a href="assets/demo.mp4">Watch the demo</a> instead.
-</video>
+<video src="https://raw.githubusercontent.com/sjp/jiffy/master/assets/demo.mp4" width="720" controls muted playsinline></video>
 
 </div>
 
-> ▶️ If the video above doesn't play, [watch `assets/demo.mp4`](assets/demo.mp4) directly.
+> ▶️ If the video above doesn't play, [watch the demo](https://raw.githubusercontent.com/sjp/jiffy/master/assets/demo.mp4) directly.
 
 ## Install
 
