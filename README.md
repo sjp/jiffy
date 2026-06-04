@@ -1,48 +1,94 @@
+<div align="center">
+
+<img src="public/icons/icon.svg" width="88" height="88" alt="Jiffy logo" />
+
 # Jiffy
 
-A browser extension that gives animated GIFs, WebP, APNG, and AVIF images video-like playback controls: play, pause, frame-step, and seek.
+**Pause, scrub, and frame-step any animated image — like a video player for GIFs.**
+
+Jiffy adds a little video
+player to any animated **GIF, WebP, APNG, or AVIF** on the web.
 
 Works in **Firefox** (142+) and **Chrome** (120+).
 
-## How it works
+</div>
 
-Click the Jiffy toolbar button to enter pick mode — the cursor changes to a crosshair. Click any animated image on the page to attach a control bar to it. Click a second time (or press the close button) to remove it.
+## Demo
 
-On pages that are a standalone animated image (e.g. navigating directly to a `.gif` URL), the toolbar button toggles controls on that image immediately without needing to pick.
+<div align="center">
+
+<video src="assets/demo.mp4" width="720" controls muted playsinline>
+  Your browser can't play this video.
+  <a href="assets/demo.mp4">Watch the demo</a> instead.
+</video>
+
+</div>
+
+> ▶️ If the video above doesn't play, [watch `assets/demo.mp4`](assets/demo.mp4) directly.
+
+## Install
+
+- **Firefox**: https://addons.mozilla.org/en-US/firefox/addon/jiffy/
+- **Chrome**: _coming soon..._
+
+Prefer to build it yourself? See [Building from source](#building-from-source).
+
+## Usage
+
+1. **Click the Jiffy button** in your browser toolbar. Your cursor turns into a
+   crosshair.
+2. **Click the animated image** you want to control. A small player bar appears
+   attached to it.
+3. **Play with it** — pause, step through frames, scrub, change speed, and more
+   (see the controls below).
+4. **Click the ✕** (or click the image again) when you're done.
+
+> 💡 **On a standalone image page** — like when you open a `.gif` link directly —
+> just click the toolbar button and the controls appear instantly. No need to pick.
 
 ### Controls
 
-| Control            | Action                                    |
-| ------------------ | ----------------------------------------- |
-| ◀ / ▶ step buttons | Previous / next frame (pauses if playing) |
-| Play / Pause       | Toggle playback                           |
-| Scrubber           | Click or drag to seek                     |
-| Grip handle        | Drag to reposition the control bar        |
-| Double-click grip  | Snap bar back to default position         |
-| Close (✕)          | Remove controls and free memory           |
+| Control            | What it does                               |
+| ------------------ | ------------------------------------------ |
+| ▶ / ⏸ Play / Pause | Start or stop playback                     |
+| ◀ / ▶ Step         | Jump one frame back or forward (pauses)    |
+| Scrubber           | Click or drag to seek to any frame         |
+| Speed              | Slow down or speed up playback             |
+| Direction          | Forward, reverse, or ping-pong (bounce)    |
+| Grip handle        | Drag to move the player bar out of the way |
+| Double-click grip  | Snap the bar back to its default spot      |
+| ✕ Close            | Remove the controls                        |
 
 ### Keyboard shortcuts
 
-Focus the control bar (click it or Tab to it), then:
+Click the player bar (or Tab to it) to focus it, then:
 
 | Key       | Action                        |
 | --------- | ----------------------------- |
 | `Space`   | Play / Pause                  |
 | `←` / `→` | Step one frame back / forward |
-| `Home`    | Jump to first frame           |
-| `End`     | Jump to last frame            |
+| `Home`    | Jump to the first frame       |
+| `End`     | Jump to the last frame        |
 
-Shortcuts are scoped to the focused control bar — they won't fire on other GIFs on the same page or interfere with text inputs.
+Shortcuts only affect the player bar you've focused — they won't disturb other
+GIFs on the page or get in the way when you're typing in a text box.
 
-## Development
+## Privacy
+
+Jiffy does its work entirely on your own device. It doesn't collect data, send
+anything to a server, or track you.
+
+## Building from source
+
+<details>
+<summary>For developers — click to expand</summary>
 
 ### Prerequisites
 
 - **Node.js** 18+ (the devcontainer uses Node 24)
 - **npm** (included with Node)
-- **web-ext** (installed automatically as a dev dependency via `npm install`)
 
-### Install dependencies
+### Setup
 
 ```sh
 npm install
@@ -51,79 +97,55 @@ npm install
 ### Build
 
 ```sh
-# Build both Firefox and Chrome
-npm run build
-
-# Build one browser only
+npm run build           # both browsers
 npm run build:firefox   # → dist-firefox/
 npm run build:chrome    # → dist-chrome/
 ```
 
-### Watch mode (rebuilds on file change)
+### Watch mode (rebuilds on change)
 
 ```sh
 npm run dev:firefox
 npm run dev:chrome
 ```
 
-### Type checking and tests
+### Quality checks
 
 ```sh
-npm run typecheck   # TypeScript type check (no emit)
-npm run test        # Unit tests
+npm run typecheck       # TypeScript (no emit)
+npm run test            # Unit tests
+npm run lint            # web-ext lint on dist-firefox/
+npm run lint:js         # ESLint
+npm run format          # Prettier (write)
+npm run format:check    # Prettier (check only)
 ```
 
-### Linting and formatting
+### Load your local build
+
+**Firefox** — `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…**
+→ pick `dist-firefox/manifest.json`. Re-run the build and click **Reload** to pick
+up changes. (Or run `web-ext run -s dist-firefox/` on your host machine for
+auto-reload.)
+
+**Chrome** — `chrome://extensions/` → enable **Developer mode** → **Load unpacked**
+→ select `dist-chrome/`. Click the refresh icon on the card after each rebuild.
+
+### Packaging
 
 ```sh
-npm run lint        # web-ext lint on dist-firefox/
-npm run lint:js     # ESLint
-npm run format      # Prettier (write)
-npm run format:check  # Prettier (check only)
+npm run pack            # → jiffy-firefox.zip and jiffy-chrome.zip
 ```
 
-## Loading the extension
+### Devcontainer
 
-### Firefox
+The repo includes a VS Code devcontainer (`.devcontainer/`) based on the official
+`typescript-node:24-trixie` image with dependencies pre-installed. Open the repo
+in VS Code and choose **Reopen in Container**. Note: `web-ext run` launches a
+browser and must run on your host machine, not inside the container.
 
-**Option A — temporary install (easiest):**
-
-1. Navigate to `about:debugging#/runtime/this-firefox`
-2. Click **Load Temporary Add-on…**
-3. Pick `dist-firefox/manifest.json`
-
-The extension stays loaded until Firefox restarts. Re-run the build and click **Reload** in `about:debugging` to pick up changes.
-
-**Option B — web-ext (auto-reloads on rebuild):**
-
-```sh
-# Run on your host machine (not inside the devcontainer)
-web-ext run -s dist-firefox/
-```
-
-### Chrome
-
-1. Navigate to `chrome://extensions/`
-2. Enable **Developer mode** (top-right toggle)
-3. Click **Load unpacked**
-4. Select the `dist-chrome/` folder
-
-Click the refresh icon on the extension card after each rebuild to reload it.
-
-## Packaging
-
-```sh
-npm run pack
-```
-
-Produces `jiffy-firefox.zip` and `jiffy-chrome.zip` in the repo root.
-
-## Devcontainer
-
-The repo includes a VS Code devcontainer (`.devcontainer/`) based on the official `typescript-node:24-trixie` image. It pre-installs dependencies (including `web-ext`). To use it, open the repo in VS Code and choose **Reopen in Container**.
-
-Note: `web-ext run` (which launches a browser) must be run on your host machine, not inside the container, since it needs access to a display.
+</details>
 
 ## License
 
-See [LICENSE](LICENSE).
+[MIT](LICENSE)
+</content>
