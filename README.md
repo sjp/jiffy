@@ -17,11 +17,11 @@ Works in **Firefox** (142+) and **Chrome** (120+).
 
 <div align="center">
 
-<video src="https://raw.githubusercontent.com/sjp/jiffy/master/assets/demo.mp4" width="720" controls muted playsinline></video>
+<video src="https://github.com/user-attachments/assets/61902889-da8f-418c-a083-5dd1d66df0e9" width="720" controls muted playsinline></video>
 
 </div>
 
-> ▶️ If the video above doesn't play, [watch the demo](https://raw.githubusercontent.com/sjp/jiffy/master/assets/demo.mp4) directly.
+> ▶️ If the video above doesn't play, [watch the demo](https://github.com/user-attachments/assets/61902889-da8f-418c-a083-5dd1d66df0e9) directly.
 
 ## Install
 
