@@ -3,6 +3,8 @@
 
 import assert from "node:assert/strict";
 import {
+  base64ToBytes,
+  bytesToBase64,
   handleFetchGif,
   isFetchGifRequest,
   isPickGifRequest,
@@ -83,11 +85,27 @@ const fakeResponse = (opts: {
   };
 };
 
-// ---- success: returns bytes (streamed) ----------------------------------
+// ---- base64 codec round-trips arbitrary bytes (incl. a chunk boundary) --
+// Larger than the encoder's 0x8000 spread chunk, so multi-chunk encoding is hit.
+const B64_CHUNK_SPAN = 0x8000 + 5;
+for (const len of [0, 1, 3, 255, B64_CHUNK_SPAN]) {
+  const original = new Uint8Array(len);
+  for (let i = 0; i < len; i++) original[i] = i % 256;
+  const restored = base64ToBytes(bytesToBase64(original));
+  assert.deepEqual([...restored], [...original], `base64 round-trip len=${len}`);
+}
+
+// ---- success: returns base64-encoded bytes (streamed) -------------------
+// Bytes go over the message channel as base64 so they survive Chrome's JSON
+// message serialisation (a raw ArrayBuffer would collapse to `{}`).
 stub(async () => fakeResponse({ bytes: new Uint8Array([1, 2, 3]) }));
 const okRes = await handleFetchGif("http://example.com/a.gif");
 assert.equal(okRes.ok, true, "ok response");
-assert.equal(okRes.ok && okRes.data.byteLength, 3, "byte length");
+assert.deepEqual(
+  okRes.ok ? [...base64ToBytes(okRes.data)] : null,
+  [1, 2, 3],
+  "decoded bytes",
+);
 
 // ---- non-OK HTTP status → typed error -----------------------------------
 stub(async () =>

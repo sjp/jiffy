@@ -3,8 +3,15 @@
 // A content script has an <img>, not raw bytes, and same-origin `fetch` is
 // blocked by CORS for cross-origin images. The background script — granted
 // `host_permissions` — can fetch those bytes and hand them back over
-// `runtime.sendMessage`. Firefox structured-clones message payloads, so an
-// `ArrayBuffer` round-trips intact (unlike Chrome's JSON message serialisation).
+// `runtime.sendMessage`.
+//
+// Wire format is base64, NOT a raw `ArrayBuffer`. Firefox structured-clones
+// message payloads so an `ArrayBuffer` would round-trip intact there, but Chrome
+// serialises messages as JSON — an `ArrayBuffer` collapses to `{}`, the content
+// script then sniffs empty bytes and reports "Not an animated image". A base64
+// string survives JSON on both browsers; the content client decodes it back to an
+// `ArrayBuffer`. (Trade-off: ~33% transfer overhead vs. Firefox's zero-copy clone,
+// negligible for typical GIFs and the price of one code path that works in both.)
 //
 // This module is environment-agnostic (no `browser.*`): both the background
 // entry and the content client import from it, and it's unit-testable headless.
@@ -15,10 +22,33 @@ export interface FetchGifRequest {
   readonly url: string;
 }
 
-/** Background → content: the bytes, or a typed error. */
+/** Background → content: the bytes as base64 (see wire-format note above), or a typed error. */
 export type FetchGifResponse =
-  | { readonly ok: true; readonly data: ArrayBuffer }
+  | { readonly ok: true; readonly data: string }
   | { readonly ok: false; readonly error: string };
+
+/**
+ * Base64 codec for the message wire format. `btoa`/`atob` operate on binary
+ * strings, so we bridge through one char per byte. The encode side chunks the
+ * `String.fromCharCode(...)` spread (a single spread of a multi-MB array would
+ * overflow the call-stack argument limit); decode is a plain per-char loop.
+ */
+const B64_CHUNK = 0x8000;
+
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += B64_CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + B64_CHUNK));
+  }
+  return btoa(binary);
+}
+
+export function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
 
 /** Narrow an untyped incoming message to a `FetchGifRequest`. */
 export function isFetchGifRequest(
@@ -139,7 +169,8 @@ export async function handleFetchGif(
     if (Number.isFinite(declared) && declared > maxBytes) {
       return { ok: false, error: `Image exceeds ${maxBytes} byte limit` };
     }
-    return { ok: true, data: await readCapped(response, maxBytes) };
+    const buf = await readCapped(response, maxBytes);
+    return { ok: true, data: bytesToBase64(new Uint8Array(buf)) };
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
       return { ok: false, error: `Fetch timed out after ${timeoutMs}ms` };
