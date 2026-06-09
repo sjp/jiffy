@@ -92,7 +92,11 @@ for (const len of [0, 1, 3, 255, B64_CHUNK_SPAN]) {
   const original = new Uint8Array(len);
   for (let i = 0; i < len; i++) original[i] = i % 256;
   const restored = base64ToBytes(bytesToBase64(original));
-  assert.deepEqual([...restored], [...original], `base64 round-trip len=${len}`);
+  assert.deepEqual(
+    [...restored],
+    [...original],
+    `base64 round-trip len=${len}`,
+  );
 }
 
 // ---- success: returns base64-encoded bytes (streamed) -------------------
