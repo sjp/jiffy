@@ -11,6 +11,7 @@ import {
   exitPickMode,
   enhanceStandaloneImage,
 } from "./index.ts";
+import { DecodeBudgetError } from "../engine/types.ts";
 
 const imgWith = (src: string) => {
   const img = document.createElement("img");
@@ -366,5 +367,144 @@ assert.equal(
 
 setContentType("text/html");
 document.body.innerHTML = "";
+
+// ---- cancel aborts an in-flight load ---------------------------------------
+// A teardown() while decode is still running must abort the signal handed to
+// decode (so its loop can bail), report no ready/error status, drop any late
+// result, and leave no instance behind.
+{
+  let capturedSignal: AbortSignal | undefined;
+  let resolveDecode: (v: unknown) => void = () => {};
+  const statuses: string[] = [];
+  let closed = 0;
+  const cancelDeps = {
+    fetchBytes: async () => new ArrayBuffer(8),
+    decode: (_bytes: ArrayBuffer, signal?: AbortSignal) => {
+      capturedSignal = signal;
+      return new Promise((resolve) => {
+        resolveDecode = resolve;
+      });
+    },
+    createEngine: () => ({
+      setLoop: () => {},
+      setSpeed: () => {},
+      setReverse: () => {},
+      setPingPong: () => {},
+    }),
+    createOverlay: () => ({
+      canvas: document.createElement("canvas"),
+      destroy: () => {},
+    }),
+    mountControls: () => () => {},
+  } as never;
+
+  const cancelCtrl = createController(cancelDeps);
+  const cancelImg = imgWith("http://x/cancel.gif");
+  const done = cancelCtrl.processImage(cancelImg, (s) => statuses.push(s));
+  await flush(); // advance into the decode await
+
+  assert.deepEqual(statuses, ["loading"], "loading reported before cancel");
+  assert.ok(capturedSignal, "a signal is handed to decode");
+  assert.equal(capturedSignal!.aborted, false, "signal live before cancel");
+
+  cancelCtrl.teardown(cancelImg);
+  assert.equal(
+    capturedSignal!.aborted,
+    true,
+    "teardown aborts the in-flight decode signal",
+  );
+
+  // A late-resolving decode (e.g. the loop hadn't reached its next abort check)
+  // must have its frames dropped, not mounted.
+  resolveDecode({
+    frames: [{ bitmap: { close: () => closed++ }, time: 1, delay: 1 }],
+    duration: 1,
+    loops: false,
+  });
+  await done;
+
+  assert.equal(
+    statuses.includes("ready") || statuses.includes("error"),
+    false,
+    "a cancelled load reports neither ready nor error",
+  );
+  assert.equal(cancelCtrl.instances.size, 0, "no instance left after cancel");
+  assert.equal(
+    closed,
+    1,
+    "a late decode result's frames are closed, not leaked",
+  );
+}
+
+// ---- teardownAll aborts in-flight loads ------------------------------------
+{
+  let capturedSignal: AbortSignal | undefined;
+  const allDeps = {
+    fetchBytes: async () => new ArrayBuffer(8),
+    decode: (_bytes: ArrayBuffer, signal?: AbortSignal) => {
+      capturedSignal = signal;
+      return new Promise(() => {}); // never settles
+    },
+    createEngine: () => ({
+      setLoop: () => {},
+      setSpeed: () => {},
+      setReverse: () => {},
+      setPingPong: () => {},
+    }),
+    createOverlay: () => ({
+      canvas: document.createElement("canvas"),
+      destroy: () => {},
+    }),
+    mountControls: () => () => {},
+  } as never;
+  const allCtrl = createController(allDeps);
+  void allCtrl.processImage(imgWith("http://x/inflight.gif"));
+  await flush();
+  assert.equal(capturedSignal!.aborted, false, "in-flight signal live");
+  allCtrl.teardownAll();
+  assert.equal(
+    capturedSignal!.aborted,
+    true,
+    "teardownAll aborts in-flight loads",
+  );
+}
+
+// ---- an over-budget decode reports "too-large" -----------------------------
+// A DecodeBudgetError (image exceeds the pixel/memory ceiling) is surfaced as a
+// distinct status, not a generic error, so the toast can say so.
+{
+  const statuses: string[] = [];
+  const budgetDeps = {
+    fetchBytes: async () => new ArrayBuffer(8),
+    decode: async () => {
+      throw new DecodeBudgetError();
+    },
+    createEngine: () => ({
+      setLoop: () => {},
+      setSpeed: () => {},
+      setReverse: () => {},
+      setPingPong: () => {},
+    }),
+    createOverlay: () => ({
+      canvas: document.createElement("canvas"),
+      destroy: () => {},
+    }),
+    mountControls: () => () => {},
+  } as never;
+  const budgetCtrl = createController(budgetDeps);
+  await budgetCtrl.processImage(imgWith("http://x/huge.gif"), (s) =>
+    statuses.push(s),
+  );
+  assert.deepEqual(
+    statuses,
+    ["loading", "too-large"],
+    "an over-budget decode reports loading then too-large",
+  );
+  assert.equal(
+    budgetCtrl.instances.size,
+    0,
+    "no instance created for an over-budget image",
+  );
+}
 
 console.log("content-glue.test: OK");

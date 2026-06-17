@@ -10,7 +10,13 @@
 //   ANMF flags byte, bit 0 (Disposal):  0 = leave canvas,  1 = fill rect with bg
 //   ANMF flags byte, bit 1 (Blending):  0 = alpha-blend,   1 = overwrite
 
-import { MIN_DELAY_MS, type DecodeResult, type Frame } from "./types";
+import {
+  MIN_DELAY_MS,
+  assertDecodeBudget,
+  throwIfAborted,
+  type DecodeResult,
+  type Frame,
+} from "./types";
 
 const DISPOSAL_BACKGROUND = 0x01;
 const BLENDING_OVERWRITE = 0x02;
@@ -152,7 +158,10 @@ function makeFrameBlob(
 }
 
 /** Decode animated WebP bytes into pre-composited full-canvas frames + duration. */
-export async function decodeWebP(bytes: ArrayBuffer): Promise<DecodeResult> {
+export async function decodeWebP(
+  bytes: ArrayBuffer,
+  signal?: AbortSignal,
+): Promise<DecodeResult> {
   const {
     canvasWidth,
     canvasHeight,
@@ -160,6 +169,8 @@ export async function decodeWebP(bytes: ArrayBuffer): Promise<DecodeResult> {
     loopCount,
     frames: rawFrames,
   } = parseAnimatedWebP(bytes);
+
+  assertDecodeBudget(canvasWidth, canvasHeight, rawFrames.length);
 
   const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -180,6 +191,8 @@ export async function decodeWebP(bytes: ArrayBuffer): Promise<DecodeResult> {
   let prev: RawFrame | null = null;
 
   for (const rf of rawFrames) {
+    throwIfAborted(signal, frames);
+
     // 1. Apply the previous frame's disposal before drawing the next frame.
     if (prev?.disposeToBackground) {
       ctx.clearRect(prev.x, prev.y, prev.width, prev.height);

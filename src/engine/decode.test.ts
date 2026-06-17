@@ -10,6 +10,7 @@
 // correctness is best verified manually in the browser.
 
 import assert from "node:assert/strict";
+import { assertDecodeBudget, DecodeBudgetError } from "./types.ts";
 
 // ---- minimal canvas shim -------------------------------------------------
 
@@ -150,6 +151,35 @@ await assert.rejects(
   () => decode(notAnimated.buffer.slice(0)),
   (err: unknown) => err instanceof NotAnimatedError,
   "non-animated bytes throw NotAnimatedError",
+);
+
+// ---- a pre-aborted signal cancels the decode -----------------------------
+// The compositing loop checks the signal once per frame, so an already-aborted
+// signal bails on the first frame with a standard AbortError rather than
+// compositing the whole GIF.
+const aborted = new AbortController();
+aborted.abort();
+await assert.rejects(
+  () =>
+    decode(
+      GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength),
+      aborted.signal,
+    ),
+  (err: unknown) => err instanceof DOMException && err.name === "AbortError",
+  "an aborted signal rejects the decode with AbortError",
+);
+
+// ---- decode budget rejects an oversized image ----------------------------
+// The budget is total composited pixels (≈ frameCount × resolution): over the
+// ceiling throws DecodeBudgetError up front; under it passes.
+assert.throws(
+  () => assertDecodeBudget(40000, 40000, 1), // 1.6 Gpx > 1.5 Gpx ceiling
+  (err: unknown) => err instanceof DecodeBudgetError,
+  "an over-budget image throws DecodeBudgetError",
+);
+assert.doesNotThrow(
+  () => assertDecodeBudget(1000, 1000, 100), // 0.1 Gpx, well under
+  "a within-budget image passes",
 );
 
 console.log(

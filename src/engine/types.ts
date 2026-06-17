@@ -8,6 +8,38 @@
  */
 export const MIN_DELAY_MS = 20;
 
+/**
+ * Memory ceiling for a single decode, as total composited pixels
+ * (≈ frameCount × full-canvas resolution). Every frame is held as a full-canvas
+ * RGBA ImageBitmap (4 bytes/px), so this bounds the bitmap memory one image can
+ * pin (~1.5 Gpx ≈ 6 GB worst case). A pathological image — a huge canvas times
+ * many frames — is rejected up front instead of exhausting memory mid-decode.
+ */
+export const MAX_DECODE_PIXELS = 1_500_000_000;
+
+/** Thrown when a decode's total composited pixels would exceed MAX_DECODE_PIXELS. */
+export class DecodeBudgetError extends Error {
+  constructor(message = "image too large to play") {
+    super(message);
+    this.name = "DecodeBudgetError";
+  }
+}
+
+/**
+ * Reject a decode whose pre-composited frames would blow the pixel budget, before
+ * any compositing work happens. `width`×`height` is the full-canvas resolution;
+ * `frameCount` the number of frames (each kept as a bitmap).
+ */
+export function assertDecodeBudget(
+  width: number,
+  height: number,
+  frameCount: number,
+): void {
+  if (width * height * frameCount > MAX_DECODE_PIXELS) {
+    throw new DecodeBudgetError();
+  }
+}
+
 /** A pre-composited, ready-to-blit full-canvas frame. */
 export interface Frame {
   bitmap: ImageBitmap;
@@ -15,6 +47,24 @@ export interface Frame {
   time: number;
   /** Clamped frame delay in ms. */
   delay: number;
+}
+
+/**
+ * Bail out of an in-progress decode when its `signal` has been aborted (the user
+ * cancelled the load, or it was torn down). Called once per frame inside each
+ * decoder's compositing loop. The decode rejects, so its caller never sees the
+ * `frames` it built up — close them here so the partial work doesn't leak GPU
+ * memory. Throws a standard `AbortError` (matching the fetch convention) which the
+ * pipeline treats as a silent cancel, not an error.
+ */
+export function throwIfAborted(
+  signal: AbortSignal | undefined,
+  frames: Frame[],
+): void {
+  if (signal?.aborted) {
+    for (const f of frames) f.bitmap.close();
+    throw new DOMException("decode aborted", "AbortError");
+  }
 }
 
 /** Snapshot of engine state handed to UI subscribers. */

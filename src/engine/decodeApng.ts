@@ -19,7 +19,13 @@
 //   0 SOURCE  all components (incl. alpha) overwrite — clear-then-draw
 //   1 OVER    alpha-blend onto canvas (drawImage default / source-over)
 
-import { MIN_DELAY_MS, type DecodeResult, type Frame } from "./types";
+import {
+  MIN_DELAY_MS,
+  assertDecodeBudget,
+  throwIfAborted,
+  type DecodeResult,
+  type Frame,
+} from "./types";
 
 const PNG_SIG = new Uint8Array([
   0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -258,7 +264,10 @@ export function isAnimatedPng(bytes: ArrayBuffer): boolean {
 }
 
 /** Decode an animated PNG into pre-composited full-canvas frames + total duration. */
-export async function decodeApng(bytes: ArrayBuffer): Promise<DecodeResult> {
+export async function decodeApng(
+  bytes: ArrayBuffer,
+  signal?: AbortSignal,
+): Promise<DecodeResult> {
   const {
     canvasWidth,
     canvasHeight,
@@ -269,6 +278,8 @@ export async function decodeApng(bytes: ArrayBuffer): Promise<DecodeResult> {
     numPlays,
     frames: rawFrames,
   } = parseApng(bytes);
+
+  assertDecodeBudget(canvasWidth, canvasHeight, rawFrames.length);
 
   const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -311,6 +322,8 @@ export async function decodeApng(bytes: ArrayBuffer): Promise<DecodeResult> {
   let restoreSnapshot: ImageData | null = null;
 
   for (const rf of rawFrames) {
+    throwIfAborted(signal, frames);
+
     // 1. Apply the previous frame's disposal before drawing this one.
     if (prev) {
       if (prev.disposeOp === DISPOSE_OP_BACKGROUND) {

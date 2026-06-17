@@ -85,8 +85,9 @@ export function isPickGifRequest(message: unknown): message is PickGifRequest {
 // the size (the whole body is buffered then structured-cloned across the message
 // boundary — an unbounded image risks OOM/jank), and time it out so a hung request
 // can't hold the message channel open forever.
-const MAX_BYTES = 50 * 1024 * 1024; // 50 MB
-const FETCH_TIMEOUT_MS = 30_000;
+const MAX_BYTES = 256 * 1024 * 1024; // 256 MB
+const FETCH_TIMEOUT_MS = 120_000; // 2 min — large images on slow links; the
+// loading banner's cancel button covers impatience.
 // data: is allowed so pages that inline an animated image as a data URI still work;
 // everything else (file:, blob:, ftp:, …) is refused.
 const ALLOWED_SCHEMES = new Set(["http:", "https:", "data:"]);

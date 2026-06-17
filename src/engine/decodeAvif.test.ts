@@ -153,6 +153,15 @@ assert.equal(duration, 300, "total duration");
 assert.ok(closed, "decoder closed after decode");
 for (const f of frames) assert.ok(f.bitmap, "frame has a bitmap");
 
+// ---- a pre-aborted signal cancels the decode -----------------------------
+const abortedAvif = new AbortController();
+abortedAvif.abort();
+await assert.rejects(
+  () => decodeAvif(ab(avisMajor), abortedAvif.signal),
+  (err: unknown) => err instanceof DOMException && err.name === "AbortError",
+  "an aborted signal rejects the AVIF decode with AbortError",
+);
+
 console.log(
   "decodeAvif.test: OK — %d frames, duration %dms",
   frames.length,

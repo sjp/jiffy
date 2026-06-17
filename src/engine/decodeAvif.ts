@@ -14,7 +14,13 @@
 // the wild) and produces undecodable inter-frames. ImageDecoder sidesteps both
 // the container parsing and the AV1 decoding.
 
-import { MIN_DELAY_MS, type DecodeResult, type Frame } from "./types";
+import {
+  MIN_DELAY_MS,
+  assertDecodeBudget,
+  throwIfAborted,
+  type DecodeResult,
+  type Frame,
+} from "./types";
 
 // Fallback per-frame delay when the decoder reports no per-frame duration.
 const DEFAULT_DELAY_MS = 100;
@@ -56,7 +62,10 @@ export function canDecodeAvif(): boolean {
 }
 
 /** Decode an animated AVIF into pre-composited full-canvas frames + duration. */
-export async function decodeAvif(bytes: ArrayBuffer): Promise<DecodeResult> {
+export async function decodeAvif(
+  bytes: ArrayBuffer,
+  signal?: AbortSignal,
+): Promise<DecodeResult> {
   if (!canDecodeAvif()) {
     throw new Error(
       "decodeAvif: WebCodecs ImageDecoder is unavailable in this browser",
@@ -78,6 +87,8 @@ export async function decodeAvif(bytes: ArrayBuffer): Promise<DecodeResult> {
     let elapsed = 0;
 
     for (let i = 0; i < frameCount; i++) {
+      throwIfAborted(signal, frames);
+
       const { image } = await decoder.decode({
         frameIndex: i,
         completeFramesOnly: true,
@@ -85,6 +96,19 @@ export async function decodeAvif(bytes: ArrayBuffer): Promise<DecodeResult> {
       // VideoFrame.duration is microseconds; read it before closing the frame.
       const durationUs = image.duration;
       if (!ctx) {
+        // Dimensions are only known once the first frame decodes; check the
+        // budget here (once) before we start accumulating full-canvas bitmaps.
+        // Close this frame first if we're bailing, so it isn't leaked.
+        try {
+          assertDecodeBudget(
+            image.displayWidth,
+            image.displayHeight,
+            frameCount,
+          );
+        } catch (err) {
+          image.close();
+          throw err;
+        }
         canvas = new OffscreenCanvas(image.displayWidth, image.displayHeight);
         ctx = canvas.getContext("2d", { willReadFrequently: true });
         if (!ctx) throw new Error("decodeAvif: failed to acquire 2D context");

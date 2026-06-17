@@ -232,6 +232,19 @@ assert.equal(duration, 150, "total duration");
 
 for (const f of frames) assert.ok(f.bitmap, "frame has a bitmap");
 
+// ---- a pre-aborted signal cancels the decode -----------------------------
+const abortedApng = new AbortController();
+abortedApng.abort();
+await assert.rejects(
+  () =>
+    decodeApng(
+      APNG.buffer.slice(APNG.byteOffset, APNG.byteOffset + APNG.byteLength),
+      abortedApng.signal,
+    ),
+  (err: unknown) => err instanceof DOMException && err.name === "AbortError",
+  "an aborted signal rejects the APNG decode with AbortError",
+);
+
 console.log(
   "decodeApng.test: OK — %d frames, duration %dms",
   frames.length,

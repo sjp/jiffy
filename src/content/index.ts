@@ -17,6 +17,7 @@
 // The observer is attached lazily — only while ≥1 player is live — so an idle
 // page (no GIF ever enhanced) carries zero observers and zero listeners.
 import { decode, NotAnimatedError } from "../engine/decode";
+import { DecodeBudgetError } from "../engine/types";
 import { createEngine } from "../engine/engine";
 import { createOverlay, type Overlay } from "./overlay";
 import { mountControls } from "./mount";
@@ -31,15 +32,21 @@ import type { DecodeResult, Engine, Frame } from "../engine/types";
  *   loading       — fetch/decode started (show a transient "Loading…")
  *   ready         — overlay mounted, controls live (clear the loading message)
  *   not-animated  — single-frame or no animated sniffer matched
+ *   too-large     — decode would exceed the pixel/memory budget
  *   error         — genuine fetch/decode failure
  */
-export type ProcessStatus = "loading" | "ready" | "not-animated" | "error";
+export type ProcessStatus =
+  | "loading"
+  | "ready"
+  | "not-animated"
+  | "too-large"
+  | "error";
 type StatusFn = (status: ProcessStatus) => void;
 
 /** Collaborators for the per-GIF pipeline (injectable for tests). */
 export interface PipelineDeps {
-  fetchBytes: (url: string) => Promise<ArrayBuffer>;
-  decode: (bytes: ArrayBuffer) => Promise<DecodeResult>;
+  fetchBytes: (url: string, signal?: AbortSignal) => Promise<ArrayBuffer>;
+  decode: (bytes: ArrayBuffer, signal?: AbortSignal) => Promise<DecodeResult>;
   createEngine: (frames: Frame[], duration: number) => Engine;
   createOverlay: (
     img: HTMLImageElement,
@@ -100,7 +107,11 @@ export function isAnimatedCandidate(img: HTMLImageElement): boolean {
 
 export function createController(deps: PipelineDeps): Controller {
   const instances = new Map<HTMLImageElement, Instance>();
-  const pending = new Set<HTMLImageElement>();
+  // In-flight loads, each paired with the AbortController that cancels it. Aborting
+  // unwinds the fetch wait and breaks the decode loop (see throwIfAborted), so a
+  // cancel during a slow large-GIF load stops the work rather than just discarding
+  // its result. teardown() is the single place that aborts.
+  const pending = new Map<HTMLImageElement, AbortController>();
 
   // DOM-removal watcher, lazily attached. The observer + popstate listener exist
   // ONLY while at least one player is live: with an empty registry reconcile()
@@ -123,12 +134,13 @@ export function createController(deps: PipelineDeps): Controller {
     onStatus?: StatusFn,
   ): Promise<void> {
     if (instances.has(img) || pending.has(img)) return; // never double-process
-    pending.add(img);
+    const ac = new AbortController();
+    pending.set(img, ac);
     onStatus?.("loading");
     try {
       const url = img.currentSrc || img.src;
-      const bytes = await deps.fetchBytes(url);
-      const { frames, duration, loops } = await deps.decode(bytes);
+      const bytes = await deps.fetchBytes(url, ac.signal);
+      const { frames, duration, loops } = await deps.decode(bytes, ac.signal);
 
       // Torn down mid-flight (reconcile / teardownAll): drop the frames silently.
       if (!pending.has(img)) {
@@ -159,14 +171,25 @@ export function createController(deps: PipelineDeps): Controller {
       // (expected for static .png/.webp false positives) from a genuine failure
       // so the feedback can be specific. Stay silent if torn down mid-flight.
       console.debug("[jiffy] skipping image", img.currentSrc || img.src, err);
-      if (pending.has(img))
-        onStatus?.(err instanceof NotAnimatedError ? "not-animated" : "error");
+      if (pending.has(img)) {
+        const status: ProcessStatus =
+          err instanceof NotAnimatedError
+            ? "not-animated"
+            : err instanceof DecodeBudgetError
+              ? "too-large"
+              : "error";
+        onStatus?.(status);
+      }
     } finally {
       pending.delete(img);
     }
   }
 
   function teardown(img: HTMLImageElement): void {
+    // Abort first: if the image is still loading this cancels the fetch wait and
+    // breaks the decode loop; if it's already a live instance there's no pending
+    // controller and this is a no-op.
+    pending.get(img)?.abort();
     pending.delete(img);
     const instance = instances.get(img);
     if (!instance) return;
@@ -179,6 +202,7 @@ export function createController(deps: PipelineDeps): Controller {
   }
 
   function teardownAll(): void {
+    for (const ac of pending.values()) ac.abort();
     pending.clear();
     for (const instance of instances.values()) {
       instance.overlay.destroy();
@@ -256,9 +280,13 @@ let previousCursor = "";
  * the "Loading…" message clears when the overlay mounts, while the terminal
  * messages auto-dismiss.
  */
-function toastReporter(clientX: number, clientY: number): StatusFn {
+function toastReporter(
+  clientX: number,
+  clientY: number,
+  onCancel?: () => void,
+): StatusFn {
   let toast: ReturnType<typeof showToast> | null = null;
-  const ensure = () => (toast ??= showToast(clientX, clientY));
+  const ensure = () => (toast ??= showToast(clientX, clientY, onCancel));
   return (status) => {
     switch (status) {
       case "loading":
@@ -269,6 +297,9 @@ function toastReporter(clientX: number, clientY: number): StatusFn {
         break;
       case "not-animated":
         ensure().set("Not an animated image", 2000);
+        break;
+      case "too-large":
+        ensure().set("Image too large to play", 2500);
         break;
       case "error":
         ensure().set("Couldn't load this image", 2500);
@@ -314,7 +345,9 @@ function onPickClick(event: MouseEvent): void {
   else
     void controller.processImage(
       img,
-      toastReporter(event.clientX, event.clientY),
+      toastReporter(event.clientX, event.clientY, () =>
+        controller.teardown(img),
+      ),
     );
 }
 
@@ -355,7 +388,10 @@ export function enhanceStandaloneImage(
     // No cursor here (toolbar click on a full-page image) — anchor feedback at the
     // top-centre of the viewport.
     else
-      void target.processImage(img, toastReporter(window.innerWidth / 2, 56));
+      void target.processImage(
+        img,
+        toastReporter(window.innerWidth / 2, 56, () => target.teardown(img)),
+      );
   }
   return true; // a standalone image document — handled here, don't enter pick mode
 }

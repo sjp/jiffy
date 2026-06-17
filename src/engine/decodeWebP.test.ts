@@ -185,6 +185,15 @@ await assert.rejects(
   "a WEBP with no frames is rejected",
 );
 
+// ---- a pre-aborted signal cancels the decode -----------------------------
+const abortedWebP = new AbortController();
+abortedWebP.abort();
+await assert.rejects(
+  () => decodeWebP(ab(file), abortedWebP.signal),
+  (err: unknown) => err instanceof DOMException && err.name === "AbortError",
+  "an aborted signal rejects the WebP decode with AbortError",
+);
+
 console.log(
   "decodeWebP.test: OK — %d frames, duration %dms",
   frames.length,

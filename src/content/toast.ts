@@ -17,6 +17,9 @@ const HOST_Z_INDEX = "2147483647";
 
 const TOAST_CSS = `
   .toast {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font: 13px/1.4 system-ui, -apple-system, sans-serif;
     background: rgba(20, 20, 20, 0.92);
     color: #fff;
@@ -26,6 +29,28 @@ const TOAST_CSS = `
     white-space: nowrap;
     /* Sit just above-right of the click point, out from under the cursor. */
     transform: translate(8px, -120%);
+  }
+  .cancel {
+    /* The host has pointer-events: none so the toast never eats page clicks;
+       re-enable them on the button alone so it stays clickable. */
+    pointer-events: auto;
+    cursor: pointer;
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    padding: 0;
+    border: 0;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.15);
+    color: inherit;
+    font: inherit;
+    line-height: 1;
+  }
+  .cancel:hover {
+    background: rgba(255, 255, 255, 0.3);
   }
 `;
 
@@ -37,8 +62,16 @@ export interface Toast {
   dismiss(): void;
 }
 
-/** Show a toast anchored at viewport coordinates `clientX`/`clientY`. */
-export function showToast(clientX: number, clientY: number): Toast {
+/**
+ * Show a toast anchored at viewport coordinates `clientX`/`clientY`. When
+ * `onCancel` is given, a ✕ button is shown (used for the cancellable "Loading…"
+ * state); clicking it dismisses the toast and invokes the callback.
+ */
+export function showToast(
+  clientX: number,
+  clientY: number,
+  onCancel?: () => void,
+): Toast {
   const host = document.createElement("div");
   host.style.position = "fixed";
   host.style.left = `${clientX}px`;
@@ -56,6 +89,11 @@ export function showToast(clientX: number, clientY: number): Toast {
   box.className = "toast";
   shadow.appendChild(box);
 
+  // The message lives in its own node so the cancel button (a sibling) survives
+  // a set() — writing box.textContent directly would wipe the button.
+  const label = document.createElement("span");
+  box.appendChild(label);
+
   let timer: ReturnType<typeof setTimeout> | undefined;
   let removed = false;
 
@@ -68,11 +106,25 @@ export function showToast(clientX: number, clientY: number): Toast {
 
   const set = (text: string, autoDismissMs?: number): void => {
     if (removed) return;
-    box.textContent = text;
+    label.textContent = text;
     if (timer != null) clearTimeout(timer);
     timer =
       autoDismissMs != null ? setTimeout(dismiss, autoDismissMs) : undefined;
   };
+
+  if (onCancel) {
+    const button = document.createElement("button");
+    button.className = "cancel";
+    button.type = "button";
+    button.textContent = "✕";
+    button.setAttribute("aria-label", "Cancel");
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      dismiss();
+      onCancel();
+    });
+    box.appendChild(button);
+  }
 
   return { set, dismiss };
 }

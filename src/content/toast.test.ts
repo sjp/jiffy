@@ -93,6 +93,40 @@ assert.equal(timers.size, 0, "re-setting without a delay clears the old timer");
 assert.equal(hosts().length, 1, "toast still on screen");
 toast3.dismiss();
 
+// ---- cancel button: only present when onCancel is supplied -----------------
+const plain = showToast(0, 0);
+const plainHost = hosts().at(-1)!;
+assert.equal(
+  plainHost.shadowRoot?.querySelector(".cancel") ?? null,
+  null,
+  "no ✕ button when onCancel is omitted",
+);
+plain.dismiss();
+
+// ---- cancel button: clicking it dismisses and fires onCancel once ----------
+let cancelled = 0;
+const cancellable = showToast(10, 10, () => cancelled++);
+const cancelHost = hosts().at(-1)!;
+cancellable.set("Loading…");
+const button = cancelHost.shadowRoot!.querySelector(
+  ".cancel",
+) as HTMLButtonElement | null;
+assert.ok(button, "onCancel renders a ✕ button");
+assert.equal(
+  cancelHost.shadowRoot!.querySelector("span")?.textContent,
+  "Loading…",
+  "the message lives in its own node beside the button",
+);
+// set() must update the text without wiping the button.
+cancellable.set("Still loading…");
+assert.ok(
+  cancelHost.shadowRoot!.querySelector(".cancel"),
+  "set() preserves the cancel button",
+);
+button!.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+assert.equal(cancelled, 1, "clicking ✕ invokes onCancel exactly once");
+assert.equal(hosts().length, 0, "clicking ✕ dismisses the toast");
+
 globalThis.setTimeout = realSetTimeout;
 globalThis.clearTimeout = realClearTimeout;
 console.log("toast.test: OK");

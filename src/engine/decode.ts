@@ -11,7 +11,13 @@
 
 import { parseGIF, decompressFrames } from "gifuct-js";
 import type { FrameDims } from "gifuct-js";
-import { MIN_DELAY_MS, type DecodeResult, type Frame } from "./types";
+import {
+  MIN_DELAY_MS,
+  assertDecodeBudget,
+  throwIfAborted,
+  type DecodeResult,
+  type Frame,
+} from "./types";
 import { decodeWebP, isAnimatedWebP } from "./decodeWebP";
 import { decodeApng, isAnimatedPng } from "./decodeApng";
 import { decodeAvif, isAnimatedAvif } from "./decodeAvif";
@@ -113,10 +119,13 @@ const DISPOSAL_RESTORE_PREVIOUS = 3;
  * Uses `OffscreenCanvas` + `createImageBitmap`, so it runs headless (no page
  * DOM) and is unit-testable.
  */
-export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
-  if (isAnimatedWebP(bytes)) return decodeWebP(bytes);
-  if (isAnimatedPng(bytes)) return decodeApng(bytes);
-  if (isAnimatedAvif(bytes)) return decodeAvif(bytes);
+export async function decode(
+  bytes: ArrayBuffer,
+  signal?: AbortSignal,
+): Promise<DecodeResult> {
+  if (isAnimatedWebP(bytes)) return decodeWebP(bytes, signal);
+  if (isAnimatedPng(bytes)) return decodeApng(bytes, signal);
+  if (isAnimatedAvif(bytes)) return decodeAvif(bytes, signal);
   // No animated sniffer matched and it isn't a GIF: a static image (or not an
   // image at all). Throw a typed error rather than letting parseGIF fail opaquely
   // on non-GIF bytes, so the content script can surface "Not an animated image".
@@ -134,6 +143,9 @@ export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
   ).some((f) => f.application?.id === "NETSCAPE2.0");
 
   const { width, height } = gif.lsd;
+  // Reject an image whose pre-composited frames would blow the memory budget,
+  // before we start building bitmaps.
+  assertDecodeBudget(width, height, rawFrames.length);
 
   // Work canvas at the GIF's native (logical screen) resolution. The snapshots
   // we take from it are full-canvas at native resolution, ready to blit.
@@ -153,6 +165,10 @@ export async function decode(bytes: ArrayBuffer): Promise<DecodeResult> {
   let restoreSnapshot: ImageData | null = null;
 
   for (const rf of rawFrames) {
+    // Cancelled mid-decode (large GIF, user hit ✕): stop compositing and free
+    // the frames built so far instead of grinding to the end of the loop.
+    throwIfAborted(signal, frames);
+
     // 1. Apply the previous frame's disposal to the work canvas.
     if (prevDims) {
       if (prevDisposalType === DISPOSAL_RESTORE_BACKGROUND) {
