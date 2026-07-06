@@ -36,11 +36,7 @@ import type { DecodeResult, Engine, Frame } from "../engine/types";
  *   error         — genuine fetch/decode failure
  */
 export type ProcessStatus =
-  | "loading"
-  | "ready"
-  | "not-animated"
-  | "too-large"
-  | "error";
+  "loading" | "ready" | "not-animated" | "too-large" | "error";
 type StatusFn = (status: ProcessStatus) => void;
 
 /** Collaborators for the per-GIF pipeline (injectable for tests). */
