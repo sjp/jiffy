@@ -20,20 +20,20 @@
   },
   "dependencies": {
     "gifuct-js": "^2.1.2",
-    "preact": "^10.29.4"
+    "preact": "^10.29.7"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/firefox-webext-browser": "^143.0.0",
     "@types/jsdom": "^28.0.3",
-    "@types/node": "^26.1.0",
+    "@types/node": "^26.1.1",
     "esbuild": "^0.28.1",
-    "eslint": "^10.6.0",
+    "eslint": "^10.7.0",
     "globals": "^17.7.0",
     "jsdom": "^29.1.1",
-    "prettier": "^3.9.4",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.62.1",
-    "web-ext": "^10.4.0"
+    "prettier": "^3.9.5",
+    "typescript": "^7.0.2",
+    "typescript-eslint": "^8.63.0",
+    "web-ext": "^10.5.0"
   }
 }
