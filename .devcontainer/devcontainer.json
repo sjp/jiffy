@@ -15,7 +15,7 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "dbaeumer.vscode-eslint",
+        "oxc.oxc-vscode",
         "esbenp.prettier-vscode",
         "mozilla.firefox-devtools-vscode-firefox-debug"
       ],
