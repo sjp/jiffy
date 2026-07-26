@@ -212,7 +212,7 @@ export function createController(deps: PipelineDeps): Controller {
   // Tear down players whose <img> is no longer in the document. Cheap (O(live
   // players)) and idempotent, so it's safe to call from a noisy observer.
   function reconcile(): void {
-    for (const img of [...instances.keys()]) {
+    for (const img of instances.keys()) {
       if (!img.isConnected) teardown(img);
     }
   }

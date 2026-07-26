@@ -1,0 +1,28 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "react"],
+  "categories": {
+    "correctness": "error"
+  },
+  "ignorePatterns": ["dist/", "dist-firefox/", "dist-chrome/"],
+  "rules": {
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_",
+        "caughtErrorsIgnorePattern": "^_"
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.{ts,tsx}"],
+      "env": { "browser": true, "webextensions": true }
+    },
+    {
+      "files": ["**/*.mjs", "scripts/**/*.js"],
+      "env": { "node": true }
+    }
+  ]
+}

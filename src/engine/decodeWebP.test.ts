@@ -103,7 +103,7 @@ const notRiff = cat([
   fourCC("XXXX"),
   u32le(0),
   fourCC("WEBP"),
-  new Array(9).fill(0),
+  Array.from({ length: 9 }, () => 0),
 ]);
 assert.equal(isAnimatedWebP(ab(notRiff)), false, "not RIFF");
 
@@ -112,12 +112,17 @@ const notWebp = cat([
   fourCC("RIFF"),
   u32le(0),
   fourCC("XXXX"),
-  new Array(9).fill(0),
+  Array.from({ length: 9 }, () => 0),
 ]);
 assert.equal(isAnimatedWebP(ab(notWebp)), false, "not WEBP");
 
 // RIFF/WEBP but the first chunk isn't VP8X.
-const noVp8x = buildWebP([chunk("VP8 ", new Array(12).fill(0))]);
+const noVp8x = buildWebP([
+  chunk(
+    "VP8 ",
+    Array.from({ length: 12 }, () => 0),
+  ),
+]);
 assert.equal(isAnimatedWebP(ab(noVp8x)), false, "no VP8X chunk");
 
 // VP8X present but the animation flag (bit 1) is clear → a still extended WebP.
