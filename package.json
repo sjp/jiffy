@@ -24,11 +24,11 @@
   },
   "devDependencies": {
     "@types/firefox-webext-browser": "^143.0.0",
-    "@types/jsdom": "^28.0.3",
-    "@types/node": "^26.1.2",
-    "esbuild": "^0.28.1",
+    "@types/jsdom": "^30.0.0",
+    "@types/node": "^26.2.0",
+    "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
-    "oxlint": "^1.77.0",
+    "oxlint": "^1.78.0",
     "prettier": "^3.9.6",
     "typescript": "^7.0.2",
     "web-ext": "^10.6.0"
