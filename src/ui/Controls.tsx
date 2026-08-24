@@ -41,6 +41,16 @@ export interface ControlsProps {
   onClose?: () => void;
 }
 
+const useScrubResume = () => {
+  const ref = useRef(false);
+  return {
+    save: (playing: boolean) => {
+      ref.current = playing;
+    },
+    saved: () => ref.current,
+  };
+};
+
 /** Top-level controls bar. */
 export function Controls({
   engine,
@@ -57,7 +67,7 @@ export function Controls({
   const steppable = frameCount > 1;
 
   // Remember whether playback was running when a scrub began, to resume on release.
-  const wasPlaying = useRef(false);
+  const scrubResume = useScrubResume();
 
   // Playback settings. Held locally (not persisted) and seeded from the source
   // (via the engine) so they reset to the source's own defaults every time the
@@ -177,11 +187,11 @@ export function Controls({
         onSeek={(t) => engine.seekToTime(t)}
         onScrubStart={() => {
           // Read live state (avoids stale closure) and pause while dragging.
-          wasPlaying.current = engine.state.playing;
+          scrubResume.save(engine.state.playing);
           engine.pause();
         }}
         onScrubEnd={() => {
-          if (wasPlaying.current) engine.play();
+          if (scrubResume.saved()) engine.play();
         }}
       />
 
