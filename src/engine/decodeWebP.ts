@@ -100,8 +100,7 @@ function parseAnimatedWebP(buf: ArrayBuffer): {
     offset = data + chunkSize + (chunkSize & 1); // pad to even boundary
   }
 
-  if (!canvasWidth || !canvasHeight)
-    throw new Error("decodeWebP: missing VP8X canvas dimensions");
+  if (!canvasWidth || !canvasHeight) throw new Error("decodeWebP: missing VP8X canvas dimensions");
   if (frames.length === 0) throw new Error("decodeWebP: no ANMF frames found");
 
   return { canvasWidth, canvasHeight, bgRGBA, loopCount, frames };
@@ -115,11 +114,7 @@ function parseAnimatedWebP(buf: ArrayBuffer): {
  * Frames with an alpha channel (ALPH chunk preceding VP8) also need a
  * synthesized VP8X header that declares the alpha flag and frame dimensions.
  */
-function makeFrameBlob(
-  frameData: ArrayBuffer,
-  width: number,
-  height: number,
-): Blob {
+function makeFrameBlob(frameData: ArrayBuffer, width: number, height: number): Blob {
   const cc = readCC(frameData, 0);
 
   if (cc === "VP8 " || cc === "VP8L") {
@@ -158,10 +153,7 @@ function makeFrameBlob(
 }
 
 /** Decode animated WebP bytes into pre-composited full-canvas frames + duration. */
-export async function decodeWebP(
-  bytes: ArrayBuffer,
-  signal?: AbortSignal,
-): Promise<DecodeResult> {
+export async function decodeWebP(bytes: ArrayBuffer, signal?: AbortSignal): Promise<DecodeResult> {
   const {
     canvasWidth,
     canvasHeight,
@@ -203,9 +195,7 @@ export async function decodeWebP(
     }
 
     // 2. Decode this frame's compressed bitstream via browser-native WebP.
-    const frameBmp = await createImageBitmap(
-      makeFrameBlob(rf.frameData, rf.width, rf.height),
-    );
+    const frameBmp = await createImageBitmap(makeFrameBlob(rf.frameData, rf.width, rf.height));
 
     // 3. Composite onto the work canvas.
     //    Overwrite: clear the frame rect first so the frame's transparent pixels
@@ -235,11 +225,8 @@ export async function decodeWebP(
 export function isAnimatedWebP(bytes: ArrayBuffer): boolean {
   if (bytes.byteLength < 21) return false;
   const v = new Uint8Array(bytes);
-  if (v[0] !== 0x52 || v[1] !== 0x49 || v[2] !== 0x46 || v[3] !== 0x46)
-    return false; // RIFF
-  if (v[8] !== 0x57 || v[9] !== 0x45 || v[10] !== 0x42 || v[11] !== 0x50)
-    return false; // WEBP
-  if (v[12] !== 0x56 || v[13] !== 0x50 || v[14] !== 0x38 || v[15] !== 0x58)
-    return false; // VP8X
+  if (v[0] !== 0x52 || v[1] !== 0x49 || v[2] !== 0x46 || v[3] !== 0x46) return false; // RIFF
+  if (v[8] !== 0x57 || v[9] !== 0x45 || v[10] !== 0x42 || v[11] !== 0x50) return false; // WEBP
+  if (v[12] !== 0x56 || v[13] !== 0x50 || v[14] !== 0x38 || v[15] !== 0x58) return false; // VP8X
   return (v[20]! & 0x02) !== 0; // animation flag
 }

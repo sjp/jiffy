@@ -4,6 +4,7 @@
 // snapshot, re-rendering on every change and unsubscribing on unmount. The UI
 // never touches rAF — all timing lives in the engine; this just reflects it.
 import { useEffect, useState } from "preact/hooks";
+
 import type { Engine, EngineState } from "../engine/types";
 
 export function useEngineState(engine: Engine): EngineState {

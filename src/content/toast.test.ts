@@ -7,6 +7,7 @@
 // Run: `npm test`.
 import "../test/setup-dom.ts";
 import assert from "node:assert/strict";
+
 import { showToast } from "./toast.ts";
 
 // ---- fake timers ----------------------------------------------------------
@@ -31,27 +32,17 @@ const fire = (id: number) => {
   cb?.();
 };
 
-const hosts = () =>
-  Array.from(document.body.children).filter((el) => el.shadowRoot);
-const boxText = (host: Element) =>
-  host.shadowRoot?.querySelector(".toast")?.textContent ?? null;
+const hosts = () => Array.from(document.body.children).filter((el) => el.shadowRoot);
+const boxText = (host: Element) => host.shadowRoot?.querySelector(".toast")?.textContent ?? null;
 
 // ---- creation + positioning -----------------------------------------------
 const toast = showToast(120, 40);
 assert.equal(hosts().length, 1, "one toast host attached to <body>");
 const [host] = hosts();
-assert.equal(
-  (host as HTMLElement).style.position,
-  "fixed",
-  "host is viewport-fixed",
-);
+assert.equal((host as HTMLElement).style.position, "fixed", "host is viewport-fixed");
 assert.equal((host as HTMLElement).style.left, "120px", "anchored at clientX");
 assert.equal((host as HTMLElement).style.top, "40px", "anchored at clientY");
-assert.equal(
-  (host as HTMLElement).style.pointerEvents,
-  "none",
-  "toast never eats clicks",
-);
+assert.equal((host as HTMLElement).style.pointerEvents, "none", "toast never eats clicks");
 
 // ---- set() writes text into the shadow box --------------------------------
 toast.set("Loading…");
@@ -108,9 +99,7 @@ let cancelled = 0;
 const cancellable = showToast(10, 10, () => cancelled++);
 const cancelHost = hosts().at(-1)!;
 cancellable.set("Loading…");
-const button = cancelHost.shadowRoot!.querySelector(
-  ".cancel",
-) as HTMLButtonElement | null;
+const button = cancelHost.shadowRoot!.querySelector(".cancel") as HTMLButtonElement | null;
 assert.ok(button, "onCancel renders a ✕ button");
 assert.equal(
   cancelHost.shadowRoot!.querySelector("span")?.textContent,
@@ -119,10 +108,7 @@ assert.equal(
 );
 // set() must update the text without wiping the button.
 cancellable.set("Still loading…");
-assert.ok(
-  cancelHost.shadowRoot!.querySelector(".cancel"),
-  "set() preserves the cancel button",
-);
+assert.ok(cancelHost.shadowRoot!.querySelector(".cancel"), "set() preserves the cancel button");
 button!.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 assert.equal(cancelled, 1, "clicking ✕ invokes onCancel exactly once");
 assert.equal(hosts().length, 0, "clicking ✕ dismisses the toast");

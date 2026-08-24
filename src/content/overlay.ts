@@ -69,11 +69,7 @@ const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
  * keeping the canvas synced on scroll/resize. The canvas drawing buffer is set
  * to the GIF's native resolution.
  */
-export function createOverlay(
-  img: HTMLImageElement,
-  engine: Engine,
-  frames: Frame[],
-): Overlay {
+export function createOverlay(img: HTMLImageElement, engine: Engine, frames: Frame[]): Overlay {
   const canvas = document.createElement("canvas");
 
   // Drawing buffer = GIF native pixel size (device pixels). The composited

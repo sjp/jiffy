@@ -10,10 +10,11 @@
 //   node scripts/build.mjs --firefox --watch  Firefox dev (rebuild on change)
 //   node scripts/build.mjs --chrome  --watch  Chrome  dev (rebuild on change)
 
-import * as esbuild from "esbuild";
 import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import * as esbuild from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const watch = process.argv.includes("--watch");
@@ -72,10 +73,7 @@ async function copyStatic() {
   if (await exists(manifestSrc)) {
     const manifest = JSON.parse(await readFile(manifestSrc, "utf8"));
     manifest.version = version;
-    await writeFile(
-      path.join(outdir, "manifest.json"),
-      JSON.stringify(manifest, null, 2) + "\n",
-    );
+    await writeFile(path.join(outdir, "manifest.json"), JSON.stringify(manifest, null, 2) + "\n");
   }
   const publicDir = path.join(root, "public");
   if (await exists(publicDir)) {

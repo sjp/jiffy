@@ -26,12 +26,7 @@ import {
 const DEFAULT_DELAY_MS = 100;
 
 function readCC(v: Uint8Array, offset: number): string {
-  return String.fromCharCode(
-    v[offset]!,
-    v[offset + 1]!,
-    v[offset + 2]!,
-    v[offset + 3]!,
-  );
+  return String.fromCharCode(v[offset]!, v[offset + 1]!, v[offset + 2]!, v[offset + 3]!);
 }
 
 /**
@@ -44,10 +39,7 @@ export function isAnimatedAvif(bytes: ArrayBuffer): boolean {
   if (bytes.byteLength < 16) return false;
   const v = new Uint8Array(bytes);
   if (readCC(v, 4) !== "ftyp") return false;
-  const ftypSize = Math.min(
-    new DataView(bytes, 0, 4).getUint32(0, false),
-    bytes.byteLength,
-  );
+  const ftypSize = Math.min(new DataView(bytes, 0, 4).getUint32(0, false), bytes.byteLength);
   if (readCC(v, 8) === "avis") return true; // major brand
   // Compatible brands: 4-byte tags from offset 16 to the end of the ftyp box.
   for (let o = 16; o + 4 <= ftypSize; o += 4) {
@@ -62,14 +54,9 @@ export function canDecodeAvif(): boolean {
 }
 
 /** Decode an animated AVIF into pre-composited full-canvas frames + duration. */
-export async function decodeAvif(
-  bytes: ArrayBuffer,
-  signal?: AbortSignal,
-): Promise<DecodeResult> {
+export async function decodeAvif(bytes: ArrayBuffer, signal?: AbortSignal): Promise<DecodeResult> {
   if (!canDecodeAvif()) {
-    throw new Error(
-      "decodeAvif: WebCodecs ImageDecoder is unavailable in this browser",
-    );
+    throw new Error("decodeAvif: WebCodecs ImageDecoder is unavailable in this browser");
   }
 
   const decoder = new ImageDecoder({ data: bytes, type: "image/avif" });
@@ -100,11 +87,7 @@ export async function decodeAvif(
         // budget here (once) before we start accumulating full-canvas bitmaps.
         // Close this frame first if we're bailing, so it isn't leaked.
         try {
-          assertDecodeBudget(
-            image.displayWidth,
-            image.displayHeight,
-            frameCount,
-          );
+          assertDecodeBudget(image.displayWidth, image.displayHeight, frameCount);
         } catch (err) {
           image.close();
           throw err;
@@ -119,8 +102,7 @@ export async function decodeAvif(
       ctx.drawImage(image, 0, 0);
       image.close(); // release the VideoFrame's backing memory promptly
 
-      const durationMs =
-        durationUs != null ? durationUs / 1000 : DEFAULT_DELAY_MS;
+      const durationMs = durationUs != null ? durationUs / 1000 : DEFAULT_DELAY_MS;
       const delay = Math.max(Math.round(durationMs), MIN_DELAY_MS);
       elapsed += delay;
       frames.push({

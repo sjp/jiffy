@@ -51,9 +51,7 @@ export function base64ToBytes(base64: string): Uint8Array {
 }
 
 /** Narrow an untyped incoming message to a `FetchGifRequest`. */
-export function isFetchGifRequest(
-  message: unknown,
-): message is FetchGifRequest {
+export function isFetchGifRequest(message: unknown): message is FetchGifRequest {
   return (
     typeof message === "object" &&
     message !== null &&
@@ -106,14 +104,10 @@ function isAllowedUrl(url: string): boolean {
  * (and catches servers that omit or understate Content-Length). Falls back to
  * buffering when the response exposes no readable stream.
  */
-async function readCapped(
-  response: Response,
-  maxBytes: number,
-): Promise<ArrayBuffer> {
+async function readCapped(response: Response, maxBytes: number): Promise<ArrayBuffer> {
   if (!response.body) {
     const buf = await response.arrayBuffer();
-    if (buf.byteLength > maxBytes)
-      throw new Error(`Image exceeds ${maxBytes} byte limit`);
+    if (buf.byteLength > maxBytes) throw new Error(`Image exceeds ${maxBytes} byte limit`);
     return buf;
   }
   const reader = response.body.getReader();

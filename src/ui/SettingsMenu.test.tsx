@@ -4,10 +4,12 @@
 // render/act, plain node:assert.
 import "../test/setup-dom.ts";
 import assert from "node:assert/strict";
+
 import { render } from "preact";
 import { act } from "preact/test-utils";
-import { SettingsMenu } from "./SettingsMenu.tsx";
+
 import type { Settings, SettingsEntry, SettingValue } from "./settings.ts";
+import { SettingsMenu } from "./SettingsMenu.tsx";
 
 const config: SettingsEntry[] = [
   {
@@ -35,10 +37,7 @@ document.body.appendChild(container);
 
 const renderMenu = (): void => {
   act(() => {
-    render(
-      <SettingsMenu config={config} settings={settings} onChange={onChange} />,
-      container,
-    );
+    render(<SettingsMenu config={config} settings={settings} onChange={onChange} />, container);
   });
 };
 
@@ -56,20 +55,13 @@ assert.equal(
 );
 assert.match(text(), /Speed/, "row shows the entry label");
 assert.match(text(), /Normal/, "row shows the current value");
-assert.equal(
-  rows()[0]!.getAttribute("role"),
-  "menuitem",
-  "main row is menuitem",
-);
+assert.equal(rows()[0]!.getAttribute("role"), "menuitem", "main row is menuitem");
 
 // Open the sub-panel.
 act(() => rows()[0]!.click());
-const radios = () =>
-  Array.from(container.querySelectorAll('[role="menuitemradio"]'));
+const radios = () => Array.from(container.querySelectorAll('[role="menuitemradio"]'));
 assert.equal(radios().length, 3, "sub-panel lists the three options");
-const checked = radios().filter(
-  (r) => r.getAttribute("aria-checked") === "true",
-);
+const checked = radios().filter((r) => r.getAttribute("aria-checked") === "true");
 assert.equal(checked.length, 1, "exactly one option is checked");
 assert.match(checked[0]!.textContent ?? "", /Normal/, "Normal is checked");
 
@@ -115,23 +107,14 @@ const renderToggle = (): void => {
 };
 
 renderToggle();
-const toggleRow = () =>
-  container.querySelector('[role="menuitemcheckbox"]') as HTMLElement;
+const toggleRow = () => container.querySelector('[role="menuitemcheckbox"]') as HTMLElement;
 assert.ok(toggleRow(), "toggle renders as a menuitemcheckbox (no sub-panel)");
-assert.equal(
-  toggleRow().getAttribute("aria-checked"),
-  "true",
-  "starts checked",
-);
+assert.equal(toggleRow().getAttribute("aria-checked"), "true", "starts checked");
 
 act(() => toggleRow().click());
 assert.deepEqual(toggleChanges.at(-1), ["loop", false], "click flips to false");
 renderToggle();
-assert.equal(
-  toggleRow().getAttribute("aria-checked"),
-  "false",
-  "now unchecked",
-);
+assert.equal(toggleRow().getAttribute("aria-checked"), "false", "now unchecked");
 
 render(null, container);
 console.log("SettingsMenu.test: OK");

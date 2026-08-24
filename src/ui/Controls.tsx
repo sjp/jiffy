@@ -2,8 +2,8 @@
 // It subscribes via useEngineState and dispatches engine commands; children
 // (Scrubber, Readout) are pure props+callbacks.
 import { useEffect, useRef, useState } from "preact/hooks";
+
 import type { Engine } from "../engine/types";
-import { useEngineState } from "./useEngineState";
 import {
   CloseIcon,
   CogIcon,
@@ -13,17 +13,13 @@ import {
   StepBackIcon,
   StepForwardIcon,
 } from "./icons";
-import { Scrubber } from "./Scrubber";
-import { Readout } from "./Readout";
-import { SettingsMenu } from "./SettingsMenu";
-import {
-  applySettings,
-  changeSetting,
-  initialSettings,
-  SETTINGS_CONFIG,
-} from "./settings";
-import type { Settings } from "./settings";
 import { handleControlKey } from "./keymap";
+import { Readout } from "./Readout";
+import { Scrubber } from "./Scrubber";
+import { applySettings, changeSetting, initialSettings, SETTINGS_CONFIG } from "./settings";
+import type { Settings } from "./settings";
+import { SettingsMenu } from "./SettingsMenu";
+import { useEngineState } from "./useEngineState";
 
 /** Props for the top-level controls component. */
 export interface ControlsProps {
@@ -52,14 +48,8 @@ const useScrubResume = () => {
 };
 
 /** Top-level controls bar. */
-export function Controls({
-  engine,
-  onDragStart,
-  onResetPosition,
-  onClose,
-}: ControlsProps) {
-  const { playing, index, frameCount, currentTime, duration } =
-    useEngineState(engine);
+export function Controls({ engine, onDragStart, onResetPosition, onClose }: ControlsProps) {
+  const { playing, index, frameCount, currentTime, duration } = useEngineState(engine);
 
   // With a single frame there's nothing to play or step through. At the ends we
   // let the engine clamp rather than disabling the buttons, so they don't
@@ -72,9 +62,7 @@ export function Controls({
   // Playback settings. Held locally (not persisted) and seeded from the source
   // (via the engine) so they reset to the source's own defaults every time the
   // controls are re-mounted — i.e. when the overlay disappears.
-  const [settings, setSettings] = useState<Settings>(() =>
-    initialSettings(engine),
-  );
+  const [settings, setSettings] = useState<Settings>(() => initialSettings(engine));
   // Single seam where settings drive the engine; re-applies on engine swap so a
   // fresh player starts from defaults.
   useEffect(() => {
@@ -97,8 +85,7 @@ export function Controls({
       setMenuOpen(false);
     };
     document.addEventListener("pointerdown", onPointerDown, true);
-    return () =>
-      document.removeEventListener("pointerdown", onPointerDown, true);
+    return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [menuOpen]);
 
   // Move focus into the menu when it opens.
@@ -195,12 +182,7 @@ export function Controls({
         }}
       />
 
-      <Readout
-        index={index}
-        frameCount={frameCount}
-        time={currentTime}
-        duration={duration}
-      />
+      <Readout index={index} frameCount={frameCount} time={currentTime} duration={duration} />
 
       <div class="settings" ref={settingsRef}>
         <button
@@ -220,9 +202,7 @@ export function Controls({
               config={SETTINGS_CONFIG}
               settings={settings}
               onChange={(id, value) =>
-                setSettings((prev) =>
-                  changeSetting(SETTINGS_CONFIG, prev, id, value),
-                )
+                setSettings((prev) => changeSetting(SETTINGS_CONFIG, prev, id, value))
               }
             />
           </div>
@@ -230,12 +210,7 @@ export function Controls({
       </div>
 
       {onClose && (
-        <button
-          type="button"
-          class="icon"
-          aria-label="Close"
-          onClick={() => onClose()}
-        >
+        <button type="button" class="icon" aria-label="Close" onClick={() => onClose()}>
           <CloseIcon />
         </button>
       )}

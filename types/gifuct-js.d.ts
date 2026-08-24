@@ -34,8 +34,5 @@ declare module "gifuct-js" {
   }
 
   export function parseGIF(data: ArrayBuffer | Uint8Array): ParsedGif;
-  export function decompressFrames(
-    gif: ParsedGif,
-    buildImagePatches: boolean,
-  ): ParsedFrame[];
+  export function decompressFrames(gif: ParsedGif, buildImagePatches: boolean): ParsedFrame[];
 }

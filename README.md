@@ -112,9 +112,9 @@ npm run dev:chrome
 npm run typecheck       # TypeScript (no emit)
 npm run test            # Unit tests
 npm run lint            # web-ext lint on dist-firefox/
-npm run lint:js         # ESLint
-npm run format          # Prettier (write)
-npm run format:check    # Prettier (check only)
+npm run lint:js         # oxlint
+npm run format          # oxfmt (write)
+npm run format:check    # oxfmt (check only)
 ```
 
 ### Load your local build

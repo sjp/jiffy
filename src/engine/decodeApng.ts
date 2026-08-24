@@ -27,9 +27,7 @@ import {
   type Frame,
 } from "./types";
 
-const PNG_SIG = new Uint8Array([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-]);
+const PNG_SIG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const DISPOSE_OP_BACKGROUND = 1;
 const DISPOSE_OP_PREVIOUS = 2;
@@ -50,8 +48,7 @@ const CRC_TABLE = (() => {
 
 function crc32(data: Uint8Array): number {
   let c = 0xffffffff;
-  for (let i = 0; i < data.length; i++)
-    c = CRC_TABLE[(c ^ data[i]!) & 0xff]! ^ (c >>> 8);
+  for (let i = 0; i < data.length; i++) c = CRC_TABLE[(c ^ data[i]!) & 0xff]! ^ (c >>> 8);
   return (c ^ 0xffffffff) >>> 0;
 }
 
@@ -102,8 +99,7 @@ function parseApng(buf: ArrayBuffer): {
   if (buf.byteLength < 8) throw new Error("decodeApng: buffer too short");
   const sigView = new Uint8Array(buf, 0, 8);
   for (let i = 0; i < 8; i++) {
-    if (sigView[i] !== PNG_SIG[i])
-      throw new Error("decodeApng: not a PNG file");
+    if (sigView[i] !== PNG_SIG[i]) throw new Error("decodeApng: not a PNG file");
   }
 
   let canvasWidth = 0;
@@ -163,16 +159,12 @@ function parseApng(buf: ArrayBuffer): {
       // If a fcTL preceded the first IDAT, these bytes are frame 0's pixel data.
       // Otherwise this IDAT is the default/fallback image for non-APNG viewers.
       if (fcTLBeforeIdat && pendingFcTL) {
-        pendingFcTL.payloads.push(
-          new Uint8Array(buf, dataOff, dataLen).slice(),
-        );
+        pendingFcTL.payloads.push(new Uint8Array(buf, dataOff, dataLen).slice());
       }
     } else if (type === "fdAT") {
       // First 4 bytes are the sequence number — strip them.
       if (pendingFcTL && dataLen > 4) {
-        pendingFcTL.payloads.push(
-          new Uint8Array(buf, dataOff + 4, dataLen - 4).slice(),
-        );
+        pendingFcTL.payloads.push(new Uint8Array(buf, dataOff + 4, dataLen - 4).slice());
       }
     } else if (type === "IEND") {
       if (pendingFcTL) frames.push(pendingFcTL);
@@ -181,10 +173,8 @@ function parseApng(buf: ArrayBuffer): {
   }
 
   if (!ihdrData) throw new Error("decodeApng: missing IHDR chunk");
-  if (!canvasWidth || !canvasHeight)
-    throw new Error("decodeApng: zero canvas dimensions");
-  if (frames.length === 0)
-    throw new Error("decodeApng: no animation frames found");
+  if (!canvasWidth || !canvasHeight) throw new Error("decodeApng: zero canvas dimensions");
+  if (frames.length === 0) throw new Error("decodeApng: no animation frames found");
 
   return {
     canvasWidth,
@@ -264,10 +254,7 @@ export function isAnimatedPng(bytes: ArrayBuffer): boolean {
 }
 
 /** Decode an animated PNG into pre-composited full-canvas frames + total duration. */
-export async function decodeApng(
-  bytes: ArrayBuffer,
-  signal?: AbortSignal,
-): Promise<DecodeResult> {
+export async function decodeApng(bytes: ArrayBuffer, signal?: AbortSignal): Promise<DecodeResult> {
   const {
     canvasWidth,
     canvasHeight,
@@ -341,15 +328,12 @@ export async function decodeApng(
     }
 
     // 3. Decode frame sub-image via browser-native PNG.
-    const frameBmp = await createImageBitmap(
-      makeFrameBlob(rf, ihdrData, plte, trns),
-    );
+    const frameBmp = await createImageBitmap(makeFrameBlob(rf, ihdrData, plte, trns));
 
     // 4. Composite at frame position.
     //    BLEND_OP_SOURCE: clear first so transparent pixels copy (not blend).
     //    BLEND_OP_OVER:   drawImage alone is source-over / alpha-blend.
-    if (rf.blendOp === BLEND_OP_SOURCE)
-      ctx.clearRect(rf.x, rf.y, rf.width, rf.height);
+    if (rf.blendOp === BLEND_OP_SOURCE) ctx.clearRect(rf.x, rf.y, rf.width, rf.height);
     ctx.drawImage(frameBmp, rf.x, rf.y);
     frameBmp.close();
 

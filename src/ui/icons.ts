@@ -81,21 +81,12 @@ export const CogIcon = ({ size = 16 }: IconProps): VNode =>
 
 // Right-pointing chevron: cue that a main-menu row opens a sub-panel.
 export const ChevronRightIcon = ({ size = 16 }: IconProps): VNode =>
-  glyph(
-    size,
-    h("path", { d: "M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" }),
-  );
+  glyph(size, h("path", { d: "M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" }));
 
 // Left-pointing chevron for the sub-panel back header.
 export const BackIcon = ({ size = 16 }: IconProps): VNode =>
-  glyph(
-    size,
-    h("path", { d: "M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z" }),
-  );
+  glyph(size, h("path", { d: "M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z" }));
 
 // Checkmark on the active option in a sub-panel.
 export const CheckIcon = ({ size = 16 }: IconProps): VNode =>
-  glyph(
-    size,
-    h("path", { d: "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" }),
-  );
+  glyph(size, h("path", { d: "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" }));

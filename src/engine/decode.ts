@@ -11,6 +11,10 @@
 
 import { parseGIF, decompressFrames } from "gifuct-js";
 import type { FrameDims } from "gifuct-js";
+
+import { decodeApng, isAnimatedPng } from "./decodeApng";
+import { decodeAvif, isAnimatedAvif } from "./decodeAvif";
+import { decodeWebP, isAnimatedWebP } from "./decodeWebP";
 import {
   MIN_DELAY_MS,
   assertDecodeBudget,
@@ -18,9 +22,6 @@ import {
   type DecodeResult,
   type Frame,
 } from "./types";
-import { decodeWebP, isAnimatedWebP } from "./decodeWebP";
-import { decodeApng, isAnimatedPng } from "./decodeApng";
-import { decodeAvif, isAnimatedAvif } from "./decodeAvif";
 
 /**
  * Thrown when the bytes aren't an animated image we can control — none of the
@@ -55,8 +56,7 @@ function isGif(bytes: ArrayBuffer): boolean {
  * `.wrappedJSObject` returns the underlying page-realm object; on Chrome / Node
  * (no Xray) the value is returned unchanged.
  */
-const unwrapXray = <T>(value: T): T =>
-  (value as { wrappedJSObject?: T }).wrappedJSObject ?? value;
+const unwrapXray = <T>(value: T): T => (value as { wrappedJSObject?: T }).wrappedJSObject ?? value;
 
 /**
  * Copy gifuct's `patch` bytes into the canvas-backed ImageData.
@@ -76,10 +76,7 @@ const unwrapXray = <T>(value: T): T =>
  */
 let setWorksAcrossRealm: boolean | undefined;
 
-function copyPatchInto(
-  dest: Uint8ClampedArray,
-  patch: Uint8ClampedArray,
-): void {
+function copyPatchInto(dest: Uint8ClampedArray, patch: Uint8ClampedArray): void {
   if (setWorksAcrossRealm !== false) {
     try {
       dest.set(patch);
@@ -119,10 +116,7 @@ const DISPOSAL_RESTORE_PREVIOUS = 3;
  * Uses `OffscreenCanvas` + `createImageBitmap`, so it runs headless (no page
  * DOM) and is unit-testable.
  */
-export async function decode(
-  bytes: ArrayBuffer,
-  signal?: AbortSignal,
-): Promise<DecodeResult> {
+export async function decode(bytes: ArrayBuffer, signal?: AbortSignal): Promise<DecodeResult> {
   if (isAnimatedWebP(bytes)) return decodeWebP(bytes, signal);
   if (isAnimatedPng(bytes)) return decodeApng(bytes, signal);
   if (isAnimatedAvif(bytes)) return decodeAvif(bytes, signal);
@@ -138,9 +132,9 @@ export async function decode(
   // the GIF repeats (count 0 = infinite, count N = N repeats); a GIF without it
   // plays through once. gifuct keeps the extension as an `application` entry in
   // the raw `gif.frames` (the decompressed `rawFrames` above hold only images).
-  const loops = (
-    gif.frames as ReadonlyArray<{ application?: { id?: string } }>
-  ).some((f) => f.application?.id === "NETSCAPE2.0");
+  const loops = (gif.frames as ReadonlyArray<{ application?: { id?: string } }>).some(
+    (f) => f.application?.id === "NETSCAPE2.0",
+  );
 
   const { width, height } = gif.lsd;
   // Reject an image whose pre-composited frames would blow the memory budget,
@@ -172,16 +166,8 @@ export async function decode(
     // 1. Apply the previous frame's disposal to the work canvas.
     if (prevDims) {
       if (prevDisposalType === DISPOSAL_RESTORE_BACKGROUND) {
-        ctx.clearRect(
-          prevDims.left,
-          prevDims.top,
-          prevDims.width,
-          prevDims.height,
-        );
-      } else if (
-        prevDisposalType === DISPOSAL_RESTORE_PREVIOUS &&
-        restoreSnapshot
-      ) {
+        ctx.clearRect(prevDims.left, prevDims.top, prevDims.width, prevDims.height);
+      } else if (prevDisposalType === DISPOSAL_RESTORE_PREVIOUS && restoreSnapshot) {
         ctx.putImageData(restoreSnapshot, 0, 0);
       }
     }
@@ -209,8 +195,7 @@ export async function decode(
       const { width: pw, height: ph, left, top } = rf.dims;
       const patchCanvas = new OffscreenCanvas(pw, ph);
       const patchCtx = patchCanvas.getContext("2d");
-      if (!patchCtx)
-        throw new Error("decode: failed to acquire patch 2D context");
+      if (!patchCtx) throw new Error("decode: failed to acquire patch 2D context");
       const patchData = patchCtx.createImageData(pw, ph);
       copyPatchInto(patchData.data, rf.patch);
       patchCtx.putImageData(patchData, 0, 0);

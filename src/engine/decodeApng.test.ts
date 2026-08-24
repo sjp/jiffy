@@ -148,11 +148,7 @@ assert.equal(isAnimatedPng(gifBytes.buffer), false, "GIF mistaken for PNG");
 
 // Static PNG: has IDAT before acTL → false
 const staticPng = new Uint8Array([...PNG_SIG, ...IHDR_1x1, ...IDAT_1]);
-assert.equal(
-  isAnimatedPng(staticPng.buffer),
-  false,
-  "static PNG (IDAT before acTL)",
-);
+assert.equal(isAnimatedPng(staticPng.buffer), false, "static PNG (IDAT before acTL)");
 
 // APNG with num_frames=1 → false (single frame, nothing to control)
 const apng1 = new Uint8Array([...PNG_SIG, ...IHDR_1x1, ...actl(1)]);
@@ -216,11 +212,7 @@ assert.equal(frames.length, 2, "frame count");
 // acTL num_plays is 0 (infinite) → loops.
 assert.equal(loops, true, "num_plays 0 (infinite) → loops");
 
-assert.equal(
-  frames[0]!.delay,
-  50,
-  "frame 0 delay (5/100 s → 50ms, above 20ms floor)",
-);
+assert.equal(frames[0]!.delay, 50, "frame 0 delay (5/100 s → 50ms, above 20ms floor)");
 assert.equal(frames[1]!.delay, 100, "frame 1 delay (10/100 s → 100ms)");
 
 // End-of-frame cumulative convention: monotonically increasing.
@@ -245,8 +237,4 @@ await assert.rejects(
   "an aborted signal rejects the APNG decode with AbortError",
 );
 
-console.log(
-  "decodeApng.test: OK — %d frames, duration %dms",
-  frames.length,
-  duration,
-);
+console.log("decodeApng.test: OK — %d frames, duration %dms", frames.length, duration);

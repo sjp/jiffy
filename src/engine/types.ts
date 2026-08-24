@@ -30,11 +30,7 @@ export class DecodeBudgetError extends Error {
  * any compositing work happens. `width`×`height` is the full-canvas resolution;
  * `frameCount` the number of frames (each kept as a bitmap).
  */
-export function assertDecodeBudget(
-  width: number,
-  height: number,
-  frameCount: number,
-): void {
+export function assertDecodeBudget(width: number, height: number, frameCount: number): void {
   if (width * height * frameCount > MAX_DECODE_PIXELS) {
     throw new DecodeBudgetError();
   }
@@ -57,10 +53,7 @@ export interface Frame {
  * memory. Throws a standard `AbortError` (matching the fetch convention) which the
  * pipeline treats as a silent cancel, not an error.
  */
-export function throwIfAborted(
-  signal: AbortSignal | undefined,
-  frames: Frame[],
-): void {
+export function throwIfAborted(signal: AbortSignal | undefined, frames: Frame[]): void {
   if (signal?.aborted) {
     for (const f of frames) f.bitmap.close();
     throw new DOMException("decode aborted", "AbortError");

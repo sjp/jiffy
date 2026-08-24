@@ -10,6 +10,7 @@
 // correctness is best verified manually in the browser.
 
 import assert from "node:assert/strict";
+
 import { assertDecodeBudget, DecodeBudgetError } from "./types.ts";
 
 // ---- minimal canvas shim -------------------------------------------------
@@ -134,10 +135,7 @@ const LOOPING_GIF = new Uint8Array([
 ]);
 
 const looping = await decode(
-  LOOPING_GIF.buffer.slice(
-    LOOPING_GIF.byteOffset,
-    LOOPING_GIF.byteOffset + LOOPING_GIF.byteLength,
-  ),
+  LOOPING_GIF.buffer.slice(LOOPING_GIF.byteOffset, LOOPING_GIF.byteOffset + LOOPING_GIF.byteLength),
 );
 assert.equal(looping.frames.length, 2, "looping GIF still decodes 2 frames");
 assert.equal(looping.loops, true, "GIF with NETSCAPE2.0 extension loops");
@@ -160,11 +158,7 @@ await assert.rejects(
 const aborted = new AbortController();
 aborted.abort();
 await assert.rejects(
-  () =>
-    decode(
-      GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength),
-      aborted.signal,
-    ),
+  () => decode(GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength), aborted.signal),
   (err: unknown) => err instanceof DOMException && err.name === "AbortError",
   "an aborted signal rejects the decode with AbortError",
 );
@@ -182,8 +176,4 @@ assert.doesNotThrow(
   "a within-budget image passes",
 );
 
-console.log(
-  "decode.test: OK — %d frames, duration %dms",
-  frames.length,
-  duration,
-);
+console.log("decode.test: OK — %d frames, duration %dms", frames.length, duration);

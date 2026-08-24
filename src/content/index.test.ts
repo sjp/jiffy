@@ -4,6 +4,8 @@
 // need a canvas), so we exercise the registry/teardown orchestration in jsdom.
 import "../test/setup-dom.ts";
 import assert from "node:assert/strict";
+
+import { DecodeBudgetError } from "../engine/types.ts";
 import {
   createController,
   isAnimatedCandidate,
@@ -11,7 +13,6 @@ import {
   exitPickMode,
   enhanceStandaloneImage,
 } from "./index.ts";
-import { DecodeBudgetError } from "../engine/types.ts";
 
 const imgWith = (src: string) => {
   const img = document.createElement("img");
@@ -23,88 +24,24 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 // ---- isAnimatedCandidate ---------------------------------------------------
 // GIF
 assert.equal(isAnimatedCandidate(imgWith("http://x/a.gif")), true);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.gif?v=2")),
-  true,
-  "query string",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.gif#frag")),
-  true,
-  "fragment",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.GIF")),
-  true,
-  "case-insensitive",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.png")),
-  true,
-  "png candidate",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.PNG")),
-  true,
-  "png case-insensitive",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.png?v=2")),
-  true,
-  "png query string",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.pngx")),
-  false,
-  "png no false positive",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.apng")),
-  true,
-  "apng candidate",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.APNG")),
-  true,
-  "apng case-insensitive",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.apng?v=2")),
-  true,
-  "apng query string",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.apngx")),
-  false,
-  "apng no false positive",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.gifx")),
-  false,
-  "no false positive",
-);
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.gif?v=2")), true, "query string");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.gif#frag")), true, "fragment");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.GIF")), true, "case-insensitive");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.png")), true, "png candidate");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.PNG")), true, "png case-insensitive");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.png?v=2")), true, "png query string");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.pngx")), false, "png no false positive");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.apng")), true, "apng candidate");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.APNG")), true, "apng case-insensitive");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.apng?v=2")), true, "apng query string");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.apngx")), false, "apng no false positive");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.gifx")), false, "no false positive");
 // WebP
 assert.equal(isAnimatedCandidate(imgWith("http://x/a.webp")), true);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.webp?v=2")),
-  true,
-  "webp query string",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.webp#frag")),
-  true,
-  "webp fragment",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.WEBP")),
-  true,
-  "webp case-insensitive",
-);
-assert.equal(
-  isAnimatedCandidate(imgWith("http://x/a.webpx")),
-  false,
-  "webp no false positive",
-);
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.webp?v=2")), true, "webp query string");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.webp#frag")), true, "webp fragment");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.WEBP")), true, "webp case-insensitive");
+assert.equal(isAnimatedCandidate(imgWith("http://x/a.webpx")), false, "webp no false positive");
 
 // ---- pipeline stubs --------------------------------------------------------
 let overlays = 0;
@@ -164,11 +101,7 @@ closedBitmaps = 0;
 await ctrl.processImage(imgWith("http://x/single.gif"));
 assert.equal(ctrl.instances.size, 1, "single-frame image gets no controls");
 assert.equal(overlays, 1);
-assert.equal(
-  closedBitmaps,
-  1,
-  "bitmap of the skipped single-frame image is closed",
-);
+assert.equal(closedBitmaps, 1, "bitmap of the skipped single-frame image is closed");
 
 // ---- per-element teardown --------------------------------------------------
 frameCount = 3;
@@ -222,27 +155,17 @@ assert.equal(ctrl.instances.size, 1, "re-enhanced after going idle");
 
 again.remove();
 await flush();
-assert.equal(
-  ctrl.instances.size,
-  0,
-  "watcher re-attached and reconciled the removal",
-);
+assert.equal(ctrl.instances.size, 0, "watcher re-attached and reconciled the removal");
 ctrl.teardownAll();
 
 // ---- pick-mode state machine -----------------------------------------------
 const docEl = document.documentElement;
 
 enterPickMode();
-assert.equal(
-  docEl.style.cursor,
-  "crosshair",
-  "pick mode sets crosshair cursor",
-);
+assert.equal(docEl.style.cursor, "crosshair", "pick mode sets crosshair cursor");
 
 // Escape cancels.
-document.dispatchEvent(
-  new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
-);
+document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 assert.notEqual(docEl.style.cursor, "crosshair", "Escape exits pick mode");
 
 // Clicking a non-candidate cancels too.
@@ -251,11 +174,7 @@ assert.equal(docEl.style.cursor, "crosshair");
 const notAGif = document.createElement("div");
 document.body.appendChild(notAGif);
 notAGif.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-assert.notEqual(
-  docEl.style.cursor,
-  "crosshair",
-  "clicking a non-candidate exits pick mode",
-);
+assert.notEqual(docEl.style.cursor, "crosshair", "clicking a non-candidate exits pick mode");
 
 exitPickMode(); // no-op if already exited
 
@@ -286,11 +205,7 @@ const standaloneTarget = {
 setContentType("text/html");
 document.body.innerHTML = "";
 document.body.appendChild(imgWith("http://x/page.gif"));
-assert.equal(
-  enhanceStandaloneImage(standaloneTarget),
-  false,
-  "normal page → not handled",
-);
+assert.equal(enhanceStandaloneImage(standaloneTarget), false, "normal page → not handled");
 assert.equal(standalonePicked, null, "normal page is not auto-enhanced");
 
 // Standalone GIF document: first click enhances the single <img>.
@@ -298,25 +213,13 @@ setContentType("image/gif");
 document.body.innerHTML = "";
 const standaloneGif = imgWith("http://x/standalone.gif");
 document.body.appendChild(standaloneGif);
-assert.equal(
-  enhanceStandaloneImage(standaloneTarget),
-  true,
-  "standalone GIF → handled",
-);
+assert.equal(enhanceStandaloneImage(standaloneTarget), true, "standalone GIF → handled");
 await flush();
-assert.equal(
-  standalonePicked,
-  standaloneGif,
-  "first toolbar click enhances the GIF",
-);
+assert.equal(standalonePicked, standaloneGif, "first toolbar click enhances the GIF");
 
 // Second click toggles it back off (tears down).
 assert.equal(enhanceStandaloneImage(standaloneTarget), true, "still handled");
-assert.equal(
-  standaloneTorndown,
-  standaloneGif,
-  "second toolbar click tears it down",
-);
+assert.equal(standaloneTorndown, standaloneGif, "second toolbar click tears it down");
 
 // Standalone WebP document.
 setContentType("image/webp");
@@ -325,11 +228,7 @@ standalonePicked = null;
 standaloneInstances.clear();
 const standaloneWebP = imgWith("http://x/standalone.webp");
 document.body.appendChild(standaloneWebP);
-assert.equal(
-  enhanceStandaloneImage(standaloneTarget),
-  true,
-  "standalone WebP → handled",
-);
+assert.equal(enhanceStandaloneImage(standaloneTarget), true, "standalone WebP → handled");
 await flush();
 assert.equal(standalonePicked, standaloneWebP, "standalone WebP enhanced");
 
@@ -340,11 +239,7 @@ standalonePicked = null;
 standaloneInstances.clear();
 const standaloneApng = imgWith("http://x/standalone.apng");
 document.body.appendChild(standaloneApng);
-assert.equal(
-  enhanceStandaloneImage(standaloneTarget),
-  true,
-  "standalone APNG → handled",
-);
+assert.equal(enhanceStandaloneImage(standaloneTarget), true, "standalone APNG → handled");
 await flush();
 assert.equal(standalonePicked, standaloneApng, "standalone APNG enhanced");
 
@@ -354,16 +249,8 @@ setContentType("image/gif");
 document.body.innerHTML = "";
 standalonePicked = null;
 document.body.appendChild(imgWith("http://x/not.jpg"));
-assert.equal(
-  enhanceStandaloneImage(standaloneTarget),
-  true,
-  "image doc → handled",
-);
-assert.equal(
-  standalonePicked,
-  null,
-  "non-candidate in an image document is ignored",
-);
+assert.equal(enhanceStandaloneImage(standaloneTarget), true, "image doc → handled");
+assert.equal(standalonePicked, null, "non-candidate in an image document is ignored");
 
 setContentType("text/html");
 document.body.innerHTML = "";
@@ -408,11 +295,7 @@ document.body.innerHTML = "";
   assert.equal(capturedSignal!.aborted, false, "signal live before cancel");
 
   cancelCtrl.teardown(cancelImg);
-  assert.equal(
-    capturedSignal!.aborted,
-    true,
-    "teardown aborts the in-flight decode signal",
-  );
+  assert.equal(capturedSignal!.aborted, true, "teardown aborts the in-flight decode signal");
 
   // A late-resolving decode (e.g. the loop hadn't reached its next abort check)
   // must have its frames dropped, not mounted.
@@ -429,11 +312,7 @@ document.body.innerHTML = "";
     "a cancelled load reports neither ready nor error",
   );
   assert.equal(cancelCtrl.instances.size, 0, "no instance left after cancel");
-  assert.equal(
-    closed,
-    1,
-    "a late decode result's frames are closed, not leaked",
-  );
+  assert.equal(closed, 1, "a late decode result's frames are closed, not leaked");
 }
 
 // ---- teardownAll aborts in-flight loads ------------------------------------
@@ -462,11 +341,7 @@ document.body.innerHTML = "";
   await flush();
   assert.equal(capturedSignal!.aborted, false, "in-flight signal live");
   allCtrl.teardownAll();
-  assert.equal(
-    capturedSignal!.aborted,
-    true,
-    "teardownAll aborts in-flight loads",
-  );
+  assert.equal(capturedSignal!.aborted, true, "teardownAll aborts in-flight loads");
 }
 
 // ---- an over-budget decode reports "too-large" -----------------------------
@@ -492,19 +367,13 @@ document.body.innerHTML = "";
     mountControls: () => () => {},
   } as never;
   const budgetCtrl = createController(budgetDeps);
-  await budgetCtrl.processImage(imgWith("http://x/huge.gif"), (s) =>
-    statuses.push(s),
-  );
+  await budgetCtrl.processImage(imgWith("http://x/huge.gif"), (s) => statuses.push(s));
   assert.deepEqual(
     statuses,
     ["loading", "too-large"],
     "an over-budget decode reports loading then too-large",
   );
-  assert.equal(
-    budgetCtrl.instances.size,
-    0,
-    "no instance created for an over-budget image",
-  );
+  assert.equal(budgetCtrl.instances.size, 0, "no instance created for an over-budget image");
 }
 
 console.log("content-glue.test: OK");

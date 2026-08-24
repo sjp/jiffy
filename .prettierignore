@@ -1,8 +1,0 @@
-# Build outputs
-dist/
-dist-firefox/
-dist-chrome/
-*.zip
-
-# Lockfiles / generated
-package-lock.json

@@ -29,8 +29,7 @@ const g = globalThis as Record<string, unknown>;
 g.OffscreenCanvas = FakeOffscreenCanvas;
 g.createImageBitmap = async () => ({ close() {} });
 
-const { isAnimatedAvif, decodeAvif, canDecodeAvif } =
-  await import("./decodeAvif.ts");
+const { isAnimatedAvif, decodeAvif, canDecodeAvif } = await import("./decodeAvif.ts");
 
 // ---- ftyp byte-builder ----------------------------------------------------
 
@@ -64,22 +63,10 @@ assert.equal(isAnimatedAvif(new ArrayBuffer(0)), false, "empty buffer");
 assert.equal(isAnimatedAvif(new ArrayBuffer(8)), false, "too short");
 assert.equal(isAnimatedAvif(ab(box("moov", u32(0), u32(0)))), false, "no ftyp");
 
-const still = box(
-  "ftyp",
-  enc.encode("avif"),
-  u32(0),
-  enc.encode("avif"),
-  enc.encode("mif1"),
-);
+const still = box("ftyp", enc.encode("avif"), u32(0), enc.encode("avif"), enc.encode("mif1"));
 assert.equal(isAnimatedAvif(ab(still)), false, "still avif");
 
-const avisMajor = box(
-  "ftyp",
-  enc.encode("avis"),
-  u32(0),
-  enc.encode("avif"),
-  enc.encode("mif1"),
-);
+const avisMajor = box("ftyp", enc.encode("avis"), u32(0), enc.encode("avif"), enc.encode("mif1"));
 assert.equal(isAnimatedAvif(ab(avisMajor)), true, "avis major brand");
 
 const avisCompat = box(
@@ -139,11 +126,7 @@ const { frames, duration, loops } = await decodeAvif(ab(avisMajor));
 assert.equal(frames.length, 3, "frame count");
 // ImageDecoder doesn't expose loop count, so AVIF defaults to looping.
 assert.equal(loops, true, "AVIF defaults to looping (loop count unavailable)");
-assert.deepEqual(
-  decodedIndexes,
-  [0, 1, 2],
-  "decoded every frame index in order",
-);
+assert.deepEqual(decodedIndexes, [0, 1, 2], "decoded every frame index in order");
 assert.equal(frames[0]!.delay, 100, "frame 0 delay (100000µs → 100ms)");
 assert.equal(frames[0]!.time, 100, "frame 0 cumulative time");
 assert.equal(frames[1]!.time, 200, "frame 1 cumulative time");
@@ -162,8 +145,4 @@ await assert.rejects(
   "an aborted signal rejects the AVIF decode with AbortError",
 );
 
-console.log(
-  "decodeAvif.test: OK — %d frames, duration %dms",
-  frames.length,
-  duration,
-);
+console.log("decodeAvif.test: OK — %d frames, duration %dms", frames.length, duration);

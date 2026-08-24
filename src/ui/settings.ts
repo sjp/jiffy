@@ -125,10 +125,7 @@ export function changeSetting(
 }
 
 /** Human-readable text for an entry's current value (the matching option label). */
-export function valueLabel(
-  entry: SettingsEntry,
-  value: SettingValue | undefined,
-): string {
+export function valueLabel(entry: SettingsEntry, value: SettingValue | undefined): string {
   const option = entry.options?.find((o) => o.value === value);
   if (option) return option.label;
   return value === undefined ? "" : String(value);

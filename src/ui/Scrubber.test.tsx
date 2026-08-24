@@ -5,11 +5,13 @@
 // the right type — the handlers don't read event coordinates.
 import "../test/setup-dom.ts";
 import assert from "node:assert/strict";
+
 import { render } from "preact";
 import { act } from "preact/test-utils";
-import { Scrubber } from "./Scrubber.tsx";
-import { Controls } from "./Controls.tsx";
+
 import { createEngine, type EngineClock } from "../engine/engine.ts";
+import { Controls } from "./Controls.tsx";
+import { Scrubber } from "./Scrubber.tsx";
 
 const ev = (type: string) => new window.Event(type, { bubbles: true });
 

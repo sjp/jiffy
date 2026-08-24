@@ -8,11 +8,12 @@
 //
 //   node scripts/test.mjs
 
-import * as esbuild from "esbuild";
+import { spawnSync } from "node:child_process";
 import { readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+
+import * as esbuild from "esbuild";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const srcDir = path.join(root, "src");

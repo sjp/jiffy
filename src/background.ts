@@ -23,10 +23,7 @@ function isControllable(url: string | undefined): boolean {
   return url != null && /^https?:/i.test(url);
 }
 
-async function syncActionState(
-  tabId: number,
-  url: string | undefined,
-): Promise<void> {
+async function syncActionState(tabId: number, url: string | undefined): Promise<void> {
   try {
     if (isControllable(url)) {
       await browser.action.enable(tabId);

@@ -2,8 +2,8 @@
   "name": "jiffy",
   "version": "0.3.0",
   "private": true,
-  "type": "module",
   "description": "Browser extension (Firefox & Chrome) that gives animated GIFs, WebP, APNG & AVIF video-like playback controls (play, pause, frame-step, seek).",
+  "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs --firefox && node scripts/build.mjs --chrome",
     "build:firefox": "node scripts/build.mjs --firefox",
@@ -13,8 +13,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "web-ext lint -s dist-firefox/",
     "lint:js": "oxlint",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
     "test": "node scripts/test.mjs",
     "pack": "cd dist-firefox && zip -r ../jiffy-firefox.zip . && cd .. && cd dist-chrome && zip -r ../jiffy-chrome.zip ."
   },
@@ -28,8 +28,8 @@
     "@types/node": "^26.2.0",
     "esbuild": "^0.28.2",
     "jsdom": "^30.0.1",
+    "oxfmt": "^0.64.0",
     "oxlint": "^1.79.0",
-    "prettier": "^3.9.6",
     "typescript": "^7.0.2",
     "web-ext": "^10.6.0"
   }

@@ -28,15 +28,10 @@ function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
  * and is already bounded by its own size/timeout caps — but we stop *waiting* on
  * it so the UI unwinds immediately, rejecting with an `AbortError`.
  */
-export async function fetchGifBytes(
-  url: string,
-  signal?: AbortSignal,
-): Promise<ArrayBuffer> {
+export async function fetchGifBytes(url: string, signal?: AbortSignal): Promise<ArrayBuffer> {
   if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
   const request: FetchGifRequest = { type: "FETCH_GIF", url };
-  const message = browser.runtime.sendMessage(request) as Promise<
-    FetchGifResponse | undefined
-  >;
+  const message = browser.runtime.sendMessage(request) as Promise<FetchGifResponse | undefined>;
   const response = signal ? await raceAbort(message, signal) : await message;
   if (!response) {
     throw new Error("fetchGifBytes: no response from background script");

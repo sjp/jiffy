@@ -4,6 +4,7 @@
 // deterministically with a fake clock — no real requestAnimationFrame needed.
 
 import assert from "node:assert/strict";
+
 import { createEngine } from "./engine.ts";
 
 // ---- fake clock ----------------------------------------------------------
@@ -207,11 +208,7 @@ assert.equal(revOnce.state.currentTime, 0, "clock parked at 0");
 // play() while parked at the reverse-end replays from the far edge (the end).
 t = 300;
 revOnce.play();
-assert.equal(
-  revOnce.state.index,
-  1,
-  "reverse replay restarts from the last frame",
-);
+assert.equal(revOnce.state.index, 1, "reverse replay restarts from the last frame");
 assert.equal(revOnce.state.currentTime, 200, "reverse replay clock = duration");
 revOnce.pause();
 
@@ -244,11 +241,7 @@ dirEngine.seekToIndex(0);
 t = 0;
 dirEngine.play();
 runTickAt(100); // forward despite reverse still set, because pingpong drives dir
-assert.equal(
-  dirEngine.state.index,
-  1,
-  "pingpong takes over direction (forward)",
-);
+assert.equal(dirEngine.state.index, 1, "pingpong takes over direction (forward)");
 dirEngine.pause();
 
 console.log("engine.test: OK");

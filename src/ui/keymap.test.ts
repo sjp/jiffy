@@ -7,8 +7,9 @@
 //
 // Run: `npm test`.
 import assert from "node:assert/strict";
-import { handleControlKey } from "./keymap.ts";
+
 import type { Engine, EngineState } from "../engine/types.ts";
+import { handleControlKey } from "./keymap.ts";
 
 // ---- recording fake engine ------------------------------------------------
 // Records every call so we can assert the exact mapping. `duration` is fixed so

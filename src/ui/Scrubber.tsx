@@ -16,13 +16,7 @@ export interface ScrubberProps {
   onScrubEnd?: () => void;
 }
 
-export function Scrubber({
-  time,
-  duration,
-  onSeek,
-  onScrubStart,
-  onScrubEnd,
-}: ScrubberProps) {
+export function Scrubber({ time, duration, onSeek, onScrubStart, onScrubEnd }: ScrubberProps) {
   return (
     <input
       class="scrubber"

@@ -67,11 +67,7 @@ export interface Toast {
  * `onCancel` is given, a ✕ button is shown (used for the cancellable "Loading…"
  * state); clicking it dismisses the toast and invokes the callback.
  */
-export function showToast(
-  clientX: number,
-  clientY: number,
-  onCancel?: () => void,
-): Toast {
+export function showToast(clientX: number, clientY: number, onCancel?: () => void): Toast {
   const host = document.createElement("div");
   host.style.position = "fixed";
   host.style.left = `${clientX}px`;
@@ -108,8 +104,7 @@ export function showToast(
     if (removed) return;
     label.textContent = text;
     if (timer != null) clearTimeout(timer);
-    timer =
-      autoDismissMs != null ? setTimeout(dismiss, autoDismissMs) : undefined;
+    timer = autoDismissMs != null ? setTimeout(dismiss, autoDismissMs) : undefined;
   };
 
   if (onCancel) {

@@ -17,14 +17,14 @@
 // The observer is attached lazily — only while ≥1 player is live — so an idle
 // page (no GIF ever enhanced) carries zero observers and zero listeners.
 import { decode, NotAnimatedError } from "../engine/decode";
-import { DecodeBudgetError } from "../engine/types";
 import { createEngine } from "../engine/engine";
-import { createOverlay, type Overlay } from "./overlay";
-import { mountControls } from "./mount";
-import { fetchGifBytes } from "./fetchGif";
-import { showToast } from "./toast";
-import { isPickGifRequest } from "../messages";
+import { DecodeBudgetError } from "../engine/types";
 import type { DecodeResult, Engine, Frame } from "../engine/types";
+import { isPickGifRequest } from "../messages";
+import { fetchGifBytes } from "./fetchGif";
+import { mountControls } from "./mount";
+import { createOverlay, type Overlay } from "./overlay";
+import { showToast } from "./toast";
 
 /**
  * Outcomes of running an image through the pipeline, reported to an optional
@@ -35,8 +35,7 @@ import type { DecodeResult, Engine, Frame } from "../engine/types";
  *   too-large     — decode would exceed the pixel/memory budget
  *   error         — genuine fetch/decode failure
  */
-export type ProcessStatus =
-  "loading" | "ready" | "not-animated" | "too-large" | "error";
+export type ProcessStatus = "loading" | "ready" | "not-animated" | "too-large" | "error";
 type StatusFn = (status: ProcessStatus) => void;
 
 /** Collaborators for the per-GIF pipeline (injectable for tests). */
@@ -44,16 +43,8 @@ export interface PipelineDeps {
   fetchBytes: (url: string, signal?: AbortSignal) => Promise<ArrayBuffer>;
   decode: (bytes: ArrayBuffer, signal?: AbortSignal) => Promise<DecodeResult>;
   createEngine: (frames: Frame[], duration: number) => Engine;
-  createOverlay: (
-    img: HTMLImageElement,
-    engine: Engine,
-    frames: Frame[],
-  ) => Overlay;
-  mountControls: (
-    img: HTMLImageElement,
-    engine: Engine,
-    onClose: () => void,
-  ) => () => void;
+  createOverlay: (img: HTMLImageElement, engine: Engine, frames: Frame[]) => Overlay;
+  mountControls: (img: HTMLImageElement, engine: Engine, onClose: () => void) => () => void;
 }
 
 /** A live, controllable GIF on the page. */
@@ -125,10 +116,7 @@ export function createController(deps: PipelineDeps): Controller {
     }
   };
 
-  async function processImage(
-    img: HTMLImageElement,
-    onStatus?: StatusFn,
-  ): Promise<void> {
+  async function processImage(img: HTMLImageElement, onStatus?: StatusFn): Promise<void> {
     if (instances.has(img) || pending.has(img)) return; // never double-process
     const ac = new AbortController();
     pending.set(img, ac);
@@ -156,9 +144,7 @@ export function createController(deps: PipelineDeps): Controller {
       // the image normally plays (e.g. a one-shot GIF starts with looping off).
       engine.setLoop(loops);
       const overlay = deps.createOverlay(img, engine, frames);
-      const teardownControls = deps.mountControls(img, engine, () =>
-        teardown(img),
-      );
+      const teardownControls = deps.mountControls(img, engine, () => teardown(img));
       instances.set(img, { engine, overlay, teardownControls, frames });
       ensureWatching(); // first live player → start watching for DOM removals
       onStatus?.("ready");
@@ -232,9 +218,7 @@ export function createController(deps: PipelineDeps): Controller {
       });
     };
     const observer =
-      typeof MutationObserver !== "undefined"
-        ? new MutationObserver(schedule)
-        : null;
+      typeof MutationObserver !== "undefined" ? new MutationObserver(schedule) : null;
     observer?.observe(document, { childList: true, subtree: true });
     // SPA route changes can swap DOM via history navigation; reconcile then too.
     const onPopState = (): void => schedule();
@@ -276,11 +260,7 @@ let previousCursor = "";
  * the "Loading…" message clears when the overlay mounts, while the terminal
  * messages auto-dismiss.
  */
-function toastReporter(
-  clientX: number,
-  clientY: number,
-  onCancel?: () => void,
-): StatusFn {
+function toastReporter(clientX: number, clientY: number, onCancel?: () => void): StatusFn {
   let toast: ReturnType<typeof showToast> | null = null;
   const ensure = () => (toast ??= showToast(clientX, clientY, onCancel));
   return (status) => {
@@ -322,9 +302,7 @@ export function exitPickMode(): void {
 }
 
 function onPickClick(event: MouseEvent): void {
-  const img = (event.target as Element | null)?.closest(
-    "img",
-  ) as HTMLImageElement | null;
+  const img = (event.target as Element | null)?.closest("img") as HTMLImageElement | null;
   // Cancelling on a non-candidate (empty space, a link, a non-animated image):
   // just leave pick mode and let the click behave normally — don't swallow it,
   // so a link still navigates and a button still presses.
@@ -341,9 +319,7 @@ function onPickClick(event: MouseEvent): void {
   else
     void controller.processImage(
       img,
-      toastReporter(event.clientX, event.clientY, () =>
-        controller.teardown(img),
-      ),
+      toastReporter(event.clientX, event.clientY, () => controller.teardown(img)),
     );
 }
 
@@ -351,13 +327,7 @@ function onPickKey(event: KeyboardEvent): void {
   if (event.key === "Escape") exitPickMode();
 }
 
-const animatedMimeTypes = [
-  "image/gif",
-  "image/webp",
-  "image/png",
-  "image/apng",
-  "image/avif",
-];
+const animatedMimeTypes = ["image/gif", "image/webp", "image/png", "image/apng", "image/avif"];
 
 /**
  * Handle a toolbar click on a standalone animated image (top-level navigation to
@@ -370,10 +340,7 @@ const animatedMimeTypes = [
  * Guarded by content type so it never fires on pages that merely contain images.
  */
 export function enhanceStandaloneImage(
-  target: Pick<
-    Controller,
-    "processImage" | "teardown" | "instances"
-  > = controller,
+  target: Pick<Controller, "processImage" | "teardown" | "instances"> = controller,
 ): boolean {
   if (typeof document === "undefined") return false;
   const ct = document.contentType;

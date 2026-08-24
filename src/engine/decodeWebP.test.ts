@@ -48,11 +48,7 @@ const u32le = (n: number): number[] => [
   (n >> 16) & 0xff,
   (n >> 24) & 0xff,
 ];
-const u24le = (n: number): number[] => [
-  n & 0xff,
-  (n >> 8) & 0xff,
-  (n >> 16) & 0xff,
-];
+const u24le = (n: number): number[] => [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff];
 const fourCC = (s: string): number[] => Array.from(enc.encode(s));
 /** A RIFF chunk: fourCC + u32 LE size + payload (+ pad to even). */
 const chunk = (cc: string, payload: number[]): number[] => {
@@ -99,21 +95,11 @@ assert.equal(isAnimatedWebP(new ArrayBuffer(0)), false, "empty buffer");
 assert.equal(isAnimatedWebP(new ArrayBuffer(20)), false, "too short (< 21)");
 
 // Right length but not a RIFF container.
-const notRiff = cat([
-  fourCC("XXXX"),
-  u32le(0),
-  fourCC("WEBP"),
-  Array.from({ length: 9 }, () => 0),
-]);
+const notRiff = cat([fourCC("XXXX"), u32le(0), fourCC("WEBP"), Array.from({ length: 9 }, () => 0)]);
 assert.equal(isAnimatedWebP(ab(notRiff)), false, "not RIFF");
 
 // RIFF but not WEBP.
-const notWebp = cat([
-  fourCC("RIFF"),
-  u32le(0),
-  fourCC("XXXX"),
-  Array.from({ length: 9 }, () => 0),
-]);
+const notWebp = cat([fourCC("RIFF"), u32le(0), fourCC("XXXX"), Array.from({ length: 9 }, () => 0)]);
 assert.equal(isAnimatedWebP(ab(notWebp)), false, "not WEBP");
 
 // RIFF/WEBP but the first chunk isn't VP8X.
@@ -127,11 +113,7 @@ assert.equal(isAnimatedWebP(ab(noVp8x)), false, "no VP8X chunk");
 
 // VP8X present but the animation flag (bit 1) is clear → a still extended WebP.
 const stillExtended = buildWebP([chunk("VP8X", vp8x(4, 4, false))]);
-assert.equal(
-  isAnimatedWebP(ab(stillExtended)),
-  false,
-  "VP8X without the animation flag",
-);
+assert.equal(isAnimatedWebP(ab(stillExtended)), false, "VP8X without the animation flag");
 
 // A full animated WebP → true.
 const animated = buildWebP([
@@ -165,11 +147,7 @@ const playOnce = buildWebP([
   chunk("ANMF", anmf(10)),
   chunk("ANMF", anmf(100)),
 ]);
-assert.equal(
-  (await decodeWebP(ab(playOnce))).loops,
-  false,
-  "loop count 1 → plays once",
-);
+assert.equal((await decodeWebP(ab(playOnce))).loops, false, "loop count 1 → plays once");
 
 assert.equal(frames[0]!.delay, 20, "frame 0 delay clamped to the 20ms floor");
 assert.equal(frames[1]!.delay, 100, "frame 1 delay (100ms, above floor)");
@@ -199,8 +177,4 @@ await assert.rejects(
   "an aborted signal rejects the WebP decode with AbortError",
 );
 
-console.log(
-  "decodeWebP.test: OK — %d frames, duration %dms",
-  frames.length,
-  duration,
-);
+console.log("decodeWebP.test: OK — %d frames, duration %dms", frames.length, duration);

@@ -9,9 +9,10 @@
 // navigation state (which sub-panel is open); the selected VALUES live in
 // <Controls> and arrive via props, so reset-on-teardown is handled there.
 import { useState } from "preact/hooks";
+
+import { BackIcon, CheckIcon, ChevronRightIcon } from "./icons";
 import type { Settings, SettingsEntry, SettingValue } from "./settings";
 import { valueLabel } from "./settings";
-import { BackIcon, CheckIcon, ChevronRightIcon } from "./icons";
 
 export interface SettingsMenuProps {
   /** Menu definition (SETTINGS_CONFIG, or a mock in tests). */
@@ -22,11 +23,7 @@ export interface SettingsMenuProps {
   onChange: (id: string, value: SettingValue) => void;
 }
 
-export function SettingsMenu({
-  config,
-  settings,
-  onChange,
-}: SettingsMenuProps) {
+export function SettingsMenu({ config, settings, onChange }: SettingsMenuProps) {
   // id of the open sub-panel; null = the main list. Ephemeral nav state only.
   const [openId, setOpenId] = useState<string | null>(null);
   const entry = openId ? (config.find((e) => e.id === openId) ?? null) : null;
@@ -92,9 +89,7 @@ export function SettingsMenu({
             aria-checked={settings[e.id] === true}
             onClick={() => onChange(e.id, settings[e.id] !== true)}
           >
-            <span class="menu-check">
-              {settings[e.id] === true && <CheckIcon />}
-            </span>
+            <span class="menu-check">{settings[e.id] === true && <CheckIcon />}</span>
             <span class="menu-label">{e.label}</span>
           </button>
         ) : (

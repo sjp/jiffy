@@ -5,8 +5,10 @@
 // bound to the engine. Preact attaches real DOM listeners inside the shadow tree
 // (no synthetic event system), so events work across the boundary.
 import { render } from "preact";
+
 import type { Engine } from "../engine/types";
 import { Controls } from "../ui/Controls";
+
 import controlsCss from "../ui/controls.css";
 
 // Above the overlay canvas so the bar is clickable over the frame.
@@ -70,14 +72,8 @@ export function mountControls(
     // left edge to [0, innerWidth - marginX] instead: a hard left drag stops with
     // the grip at the viewport edge; a right drag still leaves the grip-side
     // marginX visible.
-    const clampedLeft = Math.min(
-      Math.max(vpLeft, 0),
-      window.innerWidth - marginX,
-    );
-    const clampedTop = Math.min(
-      Math.max(vpTop, marginY - h),
-      window.innerHeight - marginY,
-    );
+    const clampedLeft = Math.min(Math.max(vpLeft, 0), window.innerWidth - marginX);
+    const clampedTop = Math.min(Math.max(vpTop, marginY - h), window.innerHeight - marginY);
     host.style.left = `${clampedLeft + window.scrollX}px`;
     host.style.top = `${clampedTop + window.scrollY}px`;
   };
@@ -112,10 +108,7 @@ export function mountControls(
       const r = img.getBoundingClientRect();
       const bh = host.offsetHeight;
       userDx = parseFloat(host.style.left) - window.scrollX - r.left - 8;
-      userDy =
-        parseFloat(host.style.top) -
-        window.scrollY -
-        (r.top + r.height - 8 - bh);
+      userDy = parseFloat(host.style.top) - window.scrollY - (r.top + r.height - 8 - bh);
     };
     const onUp = (): void => {
       // The capture is auto-released on pointerup, but release explicitly to
