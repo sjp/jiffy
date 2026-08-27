@@ -78,20 +78,6 @@ export interface Controller {
   readonly instances: ReadonlyMap<HTMLImageElement, Instance>;
 }
 
-/**
- * True if the image's resolved URL looks like an animated GIF, WebP, APNG or AVIF.
- *
- * This is only a coarse pre-filter on the extension. A `.png` (or any of these
- * extensions) is *expected* to frequently be a non-animated false positive — the
- * vast majority of PNGs are static, not APNG. The authority is the byte-sniff in
- * `decode()`, which throws `NotAnimatedError` for static bytes; that surfaces as a
- * "Not an animated image" toast so a false positive is no longer silent.
- */
-export function isAnimatedCandidate(img: HTMLImageElement): boolean {
-  const url = img.currentSrc || img.src;
-  return /\.(gif|webp|apng|png|avif)(?:[?#]|$)/i.test(url);
-}
-
 export function createController(deps: PipelineDeps): Controller {
   const instances = new Map<HTMLImageElement, Instance>();
   // In-flight loads, each paired with the AbortController that cancels it. Aborting
@@ -150,8 +136,9 @@ export function createController(deps: PipelineDeps): Controller {
       onStatus?.("ready");
     } catch (err) {
       // One bad GIF shouldn't break the rest. Distinguish "not an animated image"
-      // (expected for static .png/.webp false positives) from a genuine failure
-      // so the feedback can be specific. Stay silent if torn down mid-flight.
+      // (expected — the user can click any <img>, and most images are static) from
+      // a genuine failure so the feedback can be specific. Stay silent if torn
+      // down mid-flight.
       console.debug("[jiffy] skipping image", img.currentSrc || img.src, err);
       if (pending.has(img)) {
         const status: ProcessStatus =
@@ -247,11 +234,22 @@ export const controller = createController({
 
 // Discovery scope: ON-DEMAND via the toolbar popup. The popup's
 // "Select a GIF" button sends PICK_GIF to this content script, which enters a
-// one-shot "pick mode": the next click on a GIF candidate enhances it (or tears
-// it down if already enhanced); Esc or clicking elsewhere cancels. Only GIFs the
+// one-shot "pick mode": the next click on an <img> enhances it (or tears it down
+// if already enhanced); Esc or clicking anything else cancels. Only images the
 // user opts into spin up an engine/overlay/controls.
+//
+// Any <img> is a valid pick — there is deliberately no URL/extension pre-filter.
+// Plenty of animated images live behind extension-less CDN paths, signed URLs,
+// or blob:/data: sources, and rejecting those made pick mode look broken. The
+// byte-sniff in decode() is the authority: it throws NotAnimatedError for static
+// bytes, which surfaces as a "Not an animated image" toast.
+
+/** The controller surface pick mode drives (injectable for tests). */
+type PickTarget = Pick<Controller, "processImage" | "teardown" | "instances">;
+
 let picking = false;
 let previousCursor = "";
+let pickTarget: PickTarget = controller;
 
 /**
  * Build a status callback that drives a toast anchored at the given viewport
@@ -284,9 +282,10 @@ function toastReporter(clientX: number, clientY: number, onCancel?: () => void):
   };
 }
 
-export function enterPickMode(): void {
+export function enterPickMode(target: PickTarget = controller): void {
   if (picking) return;
   picking = true;
+  pickTarget = target;
   previousCursor = document.documentElement.style.cursor;
   document.documentElement.style.cursor = "crosshair";
   document.addEventListener("click", onPickClick, true);
@@ -303,23 +302,25 @@ export function exitPickMode(): void {
 
 function onPickClick(event: MouseEvent): void {
   const img = (event.target as Element | null)?.closest("img") as HTMLImageElement | null;
-  // Cancelling on a non-candidate (empty space, a link, a non-animated image):
-  // just leave pick mode and let the click behave normally — don't swallow it,
-  // so a link still navigates and a button still presses.
-  if (!img || !isAnimatedCandidate(img)) {
+  // Clicking anything that isn't an image (empty space, a link, a button): just
+  // leave pick mode and let the click behave normally — don't swallow it, so a
+  // link still navigates and a button still presses.
+  if (!img) {
     exitPickMode();
     return;
   }
-  // Landing on a candidate: consume the click so it doesn't reach the page (e.g.
-  // a link wrapping the GIF), then enhance it (or toggle it back off).
+  // Landing on an image: consume the click so it doesn't reach the page (e.g. a
+  // link wrapping the GIF), then enhance it (or toggle it back off). Whether the
+  // bytes are actually animated is decode()'s call, reported via the toast.
+  const target = pickTarget;
   event.preventDefault();
   event.stopPropagation();
   exitPickMode();
-  if (controller.instances.has(img)) controller.teardown(img);
+  if (target.instances.has(img)) target.teardown(img);
   else
-    void controller.processImage(
+    void target.processImage(
       img,
-      toastReporter(event.clientX, event.clientY, () => controller.teardown(img)),
+      toastReporter(event.clientX, event.clientY, () => target.teardown(img)),
     );
 }
 
@@ -339,14 +340,12 @@ const animatedMimeTypes = ["image/gif", "image/webp", "image/png", "image/apng",
  * skip pick mode), `false` on a normal page so the caller falls back to pick mode.
  * Guarded by content type so it never fires on pages that merely contain images.
  */
-export function enhanceStandaloneImage(
-  target: Pick<Controller, "processImage" | "teardown" | "instances"> = controller,
-): boolean {
+export function enhanceStandaloneImage(target: PickTarget = controller): boolean {
   if (typeof document === "undefined") return false;
   const ct = document.contentType;
   if (!animatedMimeTypes.some((m) => m === ct)) return false;
   const img = document.querySelector("img");
-  if (img && isAnimatedCandidate(img)) {
+  if (img) {
     if (target.instances.has(img)) target.teardown(img);
     // No cursor here (toolbar click on a full-page image) — anchor feedback at the
     // top-centre of the viewport.

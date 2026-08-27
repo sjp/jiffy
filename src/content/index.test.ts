@@ -1,18 +1,12 @@
-// Headless tests for the content-script glue: animated-image
-// detection (GIF + WebP), the per-image pipeline, de-duplication, single-frame
-// skip, and teardown. The pipeline collaborators are stubbed (real decode/overlay
-// need a canvas), so we exercise the registry/teardown orchestration in jsdom.
+// Headless tests for the content-script glue: the per-image pipeline,
+// de-duplication, single-frame skip, teardown, and the pick-mode click handler.
+// The pipeline collaborators are stubbed (real decode/overlay need a canvas), so
+// we exercise the registry/teardown orchestration in jsdom.
 import "../test/setup-dom.ts";
 import assert from "node:assert/strict";
 
 import { DecodeBudgetError } from "../engine/types.ts";
-import {
-  createController,
-  isAnimatedCandidate,
-  enterPickMode,
-  exitPickMode,
-  enhanceStandaloneImage,
-} from "./index.ts";
+import { createController, enterPickMode, exitPickMode, enhanceStandaloneImage } from "./index.ts";
 
 const imgWith = (src: string) => {
   const img = document.createElement("img");
@@ -20,28 +14,6 @@ const imgWith = (src: string) => {
   return img;
 };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
-
-// ---- isAnimatedCandidate ---------------------------------------------------
-// GIF
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.gif")), true);
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.gif?v=2")), true, "query string");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.gif#frag")), true, "fragment");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.GIF")), true, "case-insensitive");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.png")), true, "png candidate");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.PNG")), true, "png case-insensitive");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.png?v=2")), true, "png query string");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.pngx")), false, "png no false positive");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.apng")), true, "apng candidate");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.APNG")), true, "apng case-insensitive");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.apng?v=2")), true, "apng query string");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.apngx")), false, "apng no false positive");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.gifx")), false, "no false positive");
-// WebP
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.webp")), true);
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.webp?v=2")), true, "webp query string");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.webp#frag")), true, "webp fragment");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.WEBP")), true, "webp case-insensitive");
-assert.equal(isAnimatedCandidate(imgWith("http://x/a.webpx")), false, "webp no false positive");
 
 // ---- pipeline stubs --------------------------------------------------------
 let overlays = 0;
@@ -168,15 +140,93 @@ assert.equal(docEl.style.cursor, "crosshair", "pick mode sets crosshair cursor")
 document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 assert.notEqual(docEl.style.cursor, "crosshair", "Escape exits pick mode");
 
-// Clicking a non-candidate cancels too.
+// Clicking something that isn't an image cancels too — and the click is left
+// alone (not swallowed) so a link still navigates.
 enterPickMode();
 assert.equal(docEl.style.cursor, "crosshair");
-const notAGif = document.createElement("div");
-document.body.appendChild(notAGif);
-notAGif.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-assert.notEqual(docEl.style.cursor, "crosshair", "clicking a non-candidate exits pick mode");
+const notAnImage = document.createElement("div");
+document.body.appendChild(notAnImage);
+const plainClick = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+notAnImage.dispatchEvent(plainClick);
+assert.notEqual(docEl.style.cursor, "crosshair", "clicking a non-image exits pick mode");
+assert.equal(plainClick.defaultPrevented, false, "a cancelling click isn't swallowed");
 
 exitPickMode(); // no-op if already exited
+notAnImage.remove();
+
+// ---- pick mode accepts any <img>, whatever its URL --------------------------
+// There is no extension pre-filter: opaque CDN paths, signed URLs and
+// blob:/data: sources are all valid picks — decode() decides if they animate.
+const pickInstances = new Map<HTMLImageElement, object>();
+let picked: HTMLImageElement | null = null;
+let pickedTorndown: HTMLImageElement | null = null;
+let pickStatus: ((status: string) => void) | undefined;
+const pickTarget = {
+  instances: pickInstances as never,
+  processImage: async (img: HTMLImageElement, onStatus?: (status: string) => void) => {
+    picked = img;
+    pickStatus = onStatus;
+    pickInstances.set(img, {});
+  },
+  teardown: (img: HTMLImageElement) => {
+    pickedTorndown = img;
+    pickInstances.delete(img);
+  },
+};
+
+/** Enter pick mode against the stub target and click `img`. */
+const pickClick = (img: HTMLImageElement) => {
+  document.body.appendChild(img);
+  enterPickMode(pickTarget);
+  const event = new window.MouseEvent("click", { bubbles: true, cancelable: true });
+  img.dispatchEvent(event);
+  return event;
+};
+
+for (const url of [
+  "http://cdn.example/media/abc123", // extension-less CDN path
+  "http://cdn.example/image?id=7&format=gif", // extension only in the query
+  "http://cdn.example/p/9f3a?sig=deadbeef", // opaque signed URL
+  "blob:http://x/2f8c-4f2a", // lazy-loading library
+  "data:image/gif;base64,R0lGOD", // inline bytes
+  "http://x/photo.jpg", // a static-looking extension is still a pick
+]) {
+  picked = null;
+  pickInstances.clear();
+  const img = imgWith(url);
+  const event = pickClick(img);
+  await flush();
+  assert.equal(picked, img, `picked image with opaque URL: ${url}`);
+  assert.equal(event.defaultPrevented, true, "the picking click is swallowed");
+  assert.notEqual(docEl.style.cursor, "crosshair", "a pick exits pick mode");
+  img.remove();
+}
+
+// Clicking an already-enhanced image toggles it back off.
+pickInstances.clear();
+const enhanced = imgWith("http://cdn.example/media/toggle");
+pickInstances.set(enhanced, {});
+pickedTorndown = null;
+pickClick(enhanced);
+assert.equal(pickedTorndown, enhanced, "clicking an enhanced image tears it down");
+enhanced.remove();
+
+// A static image surfaces the "Not an animated image" toast at the click point.
+pickInstances.clear();
+picked = null;
+pickStatus = undefined;
+const staticImg = imgWith("http://cdn.example/media/static");
+pickClick(staticImg);
+await flush();
+assert.equal(picked, staticImg, "the static image was still processed");
+assert.ok(pickStatus, "a status reporter is handed to processImage");
+pickStatus!("not-animated");
+const toastText = [...document.body.querySelectorAll("div")]
+  .map((el) => el.shadowRoot?.textContent ?? "")
+  .join(" ");
+assert.match(toastText, /Not an animated image/, "not-animated surfaces a toast");
+staticImg.remove();
+document.body.innerHTML = "";
 
 // ---- standalone image: toolbar toggles directly (ImageDocument) ------------
 // Firefox renders a directly-opened .gif/.webp as an ImageDocument: contentType
@@ -243,14 +293,17 @@ assert.equal(enhanceStandaloneImage(standaloneTarget), true, "standalone APNG �
 await flush();
 assert.equal(standalonePicked, standaloneApng, "standalone APNG enhanced");
 
-// Defensive: an image document with a non-candidate img is still "handled"
-// (no pick mode on an image page) but enhances nothing.
+// The content type is the only gate: an image document's <img> is enhanced
+// whatever its URL looks like (Firefox serves these from opaque paths too).
 setContentType("image/gif");
 document.body.innerHTML = "";
 standalonePicked = null;
-document.body.appendChild(imgWith("http://x/not.jpg"));
+standaloneInstances.clear();
+const standaloneOpaque = imgWith("http://cdn.example/media/xyz");
+document.body.appendChild(standaloneOpaque);
 assert.equal(enhanceStandaloneImage(standaloneTarget), true, "image doc → handled");
-assert.equal(standalonePicked, null, "non-candidate in an image document is ignored");
+await flush();
+assert.equal(standalonePicked, standaloneOpaque, "opaque URL in an image document is enhanced");
 
 setContentType("text/html");
 document.body.innerHTML = "";
