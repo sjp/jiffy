@@ -50,20 +50,23 @@ export function base64ToBytes(base64: string): Uint8Array {
   return bytes;
 }
 
+/** Shape test shared by the message guards below. */
+function hasType(message: unknown, type: string): boolean {
+  return (
+    typeof message === "object" && message !== null && (message as { type?: unknown }).type === type
+  );
+}
+
 /** Narrow an untyped incoming message to a `FetchGifRequest`. */
 export function isFetchGifRequest(message: unknown): message is FetchGifRequest {
-  return (
-    typeof message === "object" &&
-    message !== null &&
-    (message as { type?: unknown }).type === "FETCH_GIF" &&
-    typeof (message as { url?: unknown }).url === "string"
-  );
+  return hasType(message, "FETCH_GIF") && typeof (message as { url?: unknown }).url === "string";
 }
 
 /**
  * Popup → content script: enter "pick a GIF" mode. Sent when
  * the user clicks the toolbar popup's button; the content script then enhances
- * the next GIF they click.
+ * the next GIF they click. Delivered to every frame of the tab, since the GIF may
+ * be inside an embed rather than the top document.
  */
 export interface PickGifRequest {
   readonly type: "PICK_GIF";
@@ -71,11 +74,37 @@ export interface PickGifRequest {
 
 /** Narrow an untyped incoming message to a `PickGifRequest`. */
 export function isPickGifRequest(message: unknown): message is PickGifRequest {
-  return (
-    typeof message === "object" &&
-    message !== null &&
-    (message as { type?: unknown }).type === "PICK_GIF"
-  );
+  return hasType(message, "PICK_GIF");
+}
+
+/**
+ * Content → background: the pick is over in this frame — an image was clicked,
+ * something else was clicked, or Escape was pressed.
+ *
+ * The content script runs in every frame of the tab, so `PICK_GIF` arms all of
+ * them at once and whichever frame sees the interaction first resolves it. Frames
+ * have no way to message each other, so the resolving one tells the background,
+ * which fans an `ExitPickRequest` back out to the whole tab. Without that relay a
+ * pick made in one frame would leave every other frame armed and wearing a
+ * crosshair.
+ */
+export interface PickEndedRequest {
+  readonly type: "PICK_ENDED";
+}
+
+/** Narrow an untyped incoming message to a `PickEndedRequest`. */
+export function isPickEndedRequest(message: unknown): message is PickEndedRequest {
+  return hasType(message, "PICK_ENDED");
+}
+
+/** Background → every frame of a tab: leave pick mode (see `PickEndedRequest`). */
+export interface ExitPickRequest {
+  readonly type: "EXIT_PICK";
+}
+
+/** Narrow an untyped incoming message to an `ExitPickRequest`. */
+export function isExitPickRequest(message: unknown): message is ExitPickRequest {
+  return hasType(message, "EXIT_PICK");
 }
 
 // Fetch hardening. The URL is attacker-influenced (the page supplies

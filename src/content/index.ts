@@ -20,7 +20,8 @@ import { decode, NotAnimatedError } from "../engine/decode";
 import { createEngine } from "../engine/engine";
 import { DecodeBudgetError } from "../engine/types";
 import type { DecodeResult, Engine, Frame } from "../engine/types";
-import { isPickGifRequest } from "../messages";
+import { isExitPickRequest, isPickGifRequest } from "../messages";
+import type { PickEndedRequest } from "../messages";
 import { fetchGifBytes } from "./fetchGif";
 import { mountControls } from "./mount";
 import { createOverlay, type Overlay } from "./overlay";
@@ -238,6 +239,12 @@ export const controller = createController({
 // if already enhanced); Esc or clicking anything else cancels. Only images the
 // user opts into spin up an engine/overlay/controls.
 //
+// Frames: this script is injected into every frame, because plenty of animated
+// images live inside embeds (forum posts, comment widgets, sandboxed previews)
+// rather than the top document. PICK_GIF is broadcast to the whole tab, so every
+// frame arms itself and the one the user actually clicks in resolves the pick —
+// then announces it (endPick) so the others disarm. See PickEndedRequest.
+//
 // Any <img> is a valid pick — there is deliberately no URL/extension pre-filter.
 // Plenty of animated images live behind extension-less CDN paths, signed URLs,
 // or blob:/data: sources, and rejecting those made pick mode look broken. The
@@ -247,9 +254,19 @@ export const controller = createController({
 /** The controller surface pick mode drives (injectable for tests). */
 type PickTarget = Pick<Controller, "processImage" | "teardown" | "instances">;
 
+/**
+ * How long an armed frame waits before disarming itself. A resolved pick disarms
+ * every frame through the background relay, but an ABANDONED one (the user
+ * wanders off, the embed scrolls out of sight) has no such signal — and a frame
+ * left armed swallows the user's next click on one of its images. Generous
+ * enough to hunt for the right GIF, short enough that a forgotten pick expires.
+ */
+const PICK_TIMEOUT_MS = 60_000;
+
 let picking = false;
 let previousCursor = "";
 let pickTarget: PickTarget = controller;
+let pickTimer: ReturnType<typeof setTimeout> | undefined;
 
 /**
  * Build a status callback that drives a toast anchored at the given viewport
@@ -290,14 +307,50 @@ export function enterPickMode(target: PickTarget = controller): void {
   document.documentElement.style.cursor = "crosshair";
   document.addEventListener("click", onPickClick, true);
   document.addEventListener("keydown", onPickKey, true);
+  // Self-disarming safety nets, all local to this frame (see endPick).
+  document.addEventListener("visibilitychange", onPickVisibilityChange);
+  window.addEventListener("blur", exitPickMode);
+  pickTimer = setTimeout(exitPickMode, PICK_TIMEOUT_MS);
 }
 
+/** Leave pick mode in THIS frame only. Idempotent. */
 export function exitPickMode(): void {
   if (!picking) return;
   picking = false;
   document.documentElement.style.cursor = previousCursor;
   document.removeEventListener("click", onPickClick, true);
   document.removeEventListener("keydown", onPickKey, true);
+  document.removeEventListener("visibilitychange", onPickVisibilityChange);
+  window.removeEventListener("blur", exitPickMode);
+  clearTimeout(pickTimer);
+}
+
+/**
+ * Leave pick mode here AND in every other frame of the tab, by telling the
+ * background to relay an EXIT_PICK broadcast. For the outcomes the user
+ * deliberately produced — a click, or Escape — so one pick stays one pick.
+ *
+ * The safety nets deliberately do NOT come through here. A frame losing focus is
+ * precisely what happens when the user clicks into a sibling frame, so
+ * broadcasting from there would cancel the sibling a moment before it handles the
+ * very click it was armed for.
+ */
+function endPick(): void {
+  exitPickMode();
+  if (typeof browser === "undefined" || !browser.runtime?.sendMessage) return;
+  const message: PickEndedRequest = { type: "PICK_ENDED" };
+  try {
+    // A rejection only means nothing was listening; the local exit already ran.
+    void browser.runtime.sendMessage(message).catch(() => {});
+  } catch {
+    // Extension context invalidated (reloaded or updated mid-pick).
+  }
+}
+
+// Switching tabs abandons the pick. Visibility is shared by every frame of the
+// document, so each one disarms on its own without needing the relay.
+function onPickVisibilityChange(): void {
+  if (document.hidden) exitPickMode();
 }
 
 function onPickClick(event: MouseEvent): void {
@@ -306,7 +359,7 @@ function onPickClick(event: MouseEvent): void {
   // leave pick mode and let the click behave normally — don't swallow it, so a
   // link still navigates and a button still presses.
   if (!img) {
-    exitPickMode();
+    endPick();
     return;
   }
   // Landing on an image: consume the click so it doesn't reach the page (e.g. a
@@ -315,7 +368,7 @@ function onPickClick(event: MouseEvent): void {
   const target = pickTarget;
   event.preventDefault();
   event.stopPropagation();
-  exitPickMode();
+  endPick();
   if (target.instances.has(img)) target.teardown(img);
   else
     void target.processImage(
@@ -325,7 +378,7 @@ function onPickClick(event: MouseEvent): void {
 }
 
 function onPickKey(event: KeyboardEvent): void {
-  if (event.key === "Escape") exitPickMode();
+  if (event.key === "Escape") endPick();
 }
 
 const animatedMimeTypes = ["image/gif", "image/webp", "image/png", "image/apng", "image/avif"];
@@ -342,6 +395,11 @@ const animatedMimeTypes = ["image/gif", "image/webp", "image/png", "image/apng",
  */
 export function enhanceStandaloneImage(target: PickTarget = controller): boolean {
   if (typeof document === "undefined") return false;
+  // Top frame only. A standalone image document is also what an <iframe> pointed
+  // straight at a .gif renders, and a page can hold any number of those; toggling
+  // every one of them off a single toolbar click isn't what the user asked for.
+  // Sub-frames fall through to pick mode so the user says which image they mean.
+  if (typeof window !== "undefined" && window !== window.top) return false;
   const ct = document.contentType;
   if (!animatedMimeTypes.some((m) => m === ct)) return false;
   const img = document.querySelector("img");
@@ -365,10 +423,17 @@ export function init(): () => void {
     return () => {};
   }
   const onMessage = (message: unknown) => {
-    // Toolbar click. On a standalone GIF (opened directly) there's exactly one
-    // unambiguous target, so toggle it straight away; otherwise fall back to
-    // on-demand pick mode so the user chooses which GIF on the page to enhance.
-    if (isPickGifRequest(message) && !enhanceStandaloneImage()) enterPickMode();
+    // Toolbar click, broadcast to every frame. On a standalone GIF (opened
+    // directly) there's exactly one unambiguous target, so toggle it straight
+    // away; otherwise fall back to on-demand pick mode so the user chooses which
+    // GIF — in whichever frame — to enhance.
+    if (isPickGifRequest(message)) {
+      if (!enhanceStandaloneImage()) enterPickMode();
+    } else if (isExitPickRequest(message)) {
+      // Another frame resolved the pick; disarm quietly (re-broadcasting from
+      // here would just bounce the message around the tab).
+      exitPickMode();
+    }
     return undefined;
   };
   browser.runtime.onMessage.addListener(onMessage);

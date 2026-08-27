@@ -6,7 +6,13 @@ import "../test/setup-dom.ts";
 import assert from "node:assert/strict";
 
 import { DecodeBudgetError } from "../engine/types.ts";
-import { createController, enterPickMode, exitPickMode, enhanceStandaloneImage } from "./index.ts";
+import {
+  createController,
+  enterPickMode,
+  exitPickMode,
+  enhanceStandaloneImage,
+  init,
+} from "./index.ts";
 
 const imgWith = (src: string) => {
   const img = document.createElement("img");
@@ -427,6 +433,112 @@ document.body.innerHTML = "";
     "an over-budget decode reports loading then too-large",
   );
   assert.equal(budgetCtrl.instances.size, 0, "no instance created for an over-budget image");
+}
+
+// ---- cross-frame pick coordination -----------------------------------------
+// The content script runs in every frame, so PICK_GIF arms all of them. The
+// frame that resolves the pick announces it (PICK_ENDED → background) and the
+// background fans EXIT_PICK back out so no other frame is left armed. The
+// self-disarming safety nets must stay LOCAL: broadcasting from them would
+// cancel a sibling frame right before it handles the click it was armed for.
+{
+  const sent: unknown[] = [];
+  let listener: ((message: unknown) => unknown) | null = null;
+  // init() ran at import time with no `browser` global (a no-op); install a fake
+  // runtime and call it again to capture the message listener it registers.
+  (globalThis as Record<string, unknown>).browser = {
+    runtime: {
+      onMessage: {
+        addListener: (fn: (message: unknown) => unknown) => {
+          listener = fn;
+        },
+        removeListener: () => {
+          listener = null;
+        },
+      },
+      sendMessage: async (message: unknown) => {
+        sent.push(message);
+      },
+    },
+  };
+  const teardownInit = init();
+  const deliver = (message: unknown) => listener?.(message);
+  assert.ok(listener, "init registers a runtime message listener");
+
+  // Escape resolves the pick: local exit + an announcement for the other frames.
+  deliver({ type: "PICK_GIF" });
+  assert.equal(docEl.style.cursor, "crosshair", "PICK_GIF arms this frame");
+  document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert.notEqual(docEl.style.cursor, "crosshair", "Escape leaves pick mode");
+  assert.deepEqual(sent, [{ type: "PICK_ENDED" }], "Escape announces the end of the pick");
+
+  // So does a click that cancels (and so does one that picks — same code path).
+  sent.length = 0;
+  deliver({ type: "PICK_GIF" });
+  const elsewhere = document.createElement("div");
+  document.body.appendChild(elsewhere);
+  elsewhere.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  assert.deepEqual(sent, [{ type: "PICK_ENDED" }], "a click announces the end of the pick");
+  elsewhere.remove();
+
+  // EXIT_PICK (another frame got there first) disarms without re-announcing,
+  // otherwise the frames would bounce the message around the tab forever.
+  sent.length = 0;
+  deliver({ type: "PICK_GIF" });
+  assert.equal(docEl.style.cursor, "crosshair");
+  deliver({ type: "EXIT_PICK" });
+  assert.notEqual(docEl.style.cursor, "crosshair", "EXIT_PICK disarms this frame");
+  assert.deepEqual(sent, [], "disarming for another frame doesn't re-broadcast");
+
+  // Losing focus abandons the pick here only — this is what a click into a
+  // sibling frame looks like, so it must not cancel that sibling.
+  deliver({ type: "PICK_GIF" });
+  window.dispatchEvent(new window.Event("blur"));
+  assert.notEqual(docEl.style.cursor, "crosshair", "losing focus abandons the pick");
+  assert.deepEqual(sent, [], "an abandoned pick is not announced");
+
+  // Hiding the tab likewise — every frame shares the document's visibility, so
+  // each disarms itself without needing the relay.
+  const setHidden = (value: boolean) =>
+    Object.defineProperty(document, "hidden", { value, configurable: true });
+  deliver({ type: "PICK_GIF" });
+  setHidden(true);
+  document.dispatchEvent(new window.Event("visibilitychange"));
+  assert.notEqual(docEl.style.cursor, "crosshair", "hiding the tab abandons the pick");
+  assert.deepEqual(sent, [], "a hidden tab's abandoned pick is not announced");
+  setHidden(false);
+
+  // A still-visible tab firing visibilitychange keeps the pick armed.
+  deliver({ type: "PICK_GIF" });
+  document.dispatchEvent(new window.Event("visibilitychange"));
+  assert.equal(docEl.style.cursor, "crosshair", "a visible tab stays armed");
+  exitPickMode();
+
+  teardownInit();
+  delete (globalThis as Record<string, unknown>).browser;
+}
+
+// ---- standalone handling is top-frame-only ---------------------------------
+// An <iframe> pointed at a .gif is an image document too, and a page can hold
+// many; sub-frames fall through to pick mode instead of all toggling at once.
+{
+  setContentType("image/gif");
+  document.body.innerHTML = "";
+  document.body.appendChild(imgWith("http://x/framed.gif"));
+  // jsdom can't nest realms and its `window.top` is non-configurable, so stand in
+  // a minimal window whose `top` is some other object — all the frame check reads.
+  const realWindow = globalThis.window;
+  (globalThis as Record<string, unknown>).window = { top: realWindow };
+  assert.equal(enhanceStandaloneImage(), false, "a sub-frame image document is not auto-toggled");
+  (globalThis as Record<string, unknown>).window = realWindow;
+
+  standaloneInstances.clear();
+  standalonePicked = null;
+  assert.equal(enhanceStandaloneImage(standaloneTarget), true, "the top frame still handles it");
+  await flush();
+  assert.ok(standalonePicked, "the top frame's image document is enhanced");
+  setContentType("text/html");
+  document.body.innerHTML = "";
 }
 
 console.log("content-glue.test: OK");

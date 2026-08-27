@@ -15,8 +15,9 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
 
 - Video-like playback controls (play/pause, frame-step, seek) for animated
   GIF, WebP, APNG, and AVIF images.
-- Pick mode: click the toolbar button, then click an image to attach controls;
-  standalone image pages toggle controls directly.
+- Pick mode: click the toolbar button, then click an image to attach controls —
+  including images embedded in an iframe; standalone image pages toggle controls
+  directly.
 - Keyboard shortcuts scoped to the focused control bar (Space, ←/→, Home, End).
 - Draggable, repositionable control bar with snap-back-to-default.
 - Firefox (130+) and Chrome (120+) builds.

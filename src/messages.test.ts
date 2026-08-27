@@ -7,7 +7,9 @@ import {
   base64ToBytes,
   bytesToBase64,
   handleFetchGif,
+  isExitPickRequest,
   isFetchGifRequest,
+  isPickEndedRequest,
   isPickGifRequest,
 } from "./messages.ts";
 
@@ -23,6 +25,19 @@ assert.equal(isPickGifRequest({ type: "PICK_GIF" }), true);
 assert.equal(isPickGifRequest({ type: "FETCH_GIF", url: "x" }), false, "wrong type");
 assert.equal(isPickGifRequest(null), false);
 assert.equal(isPickGifRequest(undefined), false);
+
+// ---- cross-frame pick coordination guards --------------------------------
+assert.equal(isPickEndedRequest({ type: "PICK_ENDED" }), true);
+assert.equal(isPickEndedRequest({ type: "EXIT_PICK" }), false, "wrong type");
+assert.equal(isPickEndedRequest(null), false);
+
+assert.equal(isExitPickRequest({ type: "EXIT_PICK" }), true);
+assert.equal(isExitPickRequest({ type: "PICK_ENDED" }), false, "wrong type");
+assert.equal(isExitPickRequest(null), false);
+
+// The pick messages must not cross-match each other or the fetch request.
+assert.equal(isPickGifRequest({ type: "PICK_ENDED" }), false);
+assert.equal(isFetchGifRequest({ type: "EXIT_PICK" }), false);
 
 const realFetch = globalThis.fetch;
 let fetchCalls = 0;
