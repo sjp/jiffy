@@ -7,6 +7,7 @@
 // engine's current frame.
 import type { FrameSource } from "../engine/frameSource";
 import type { Engine } from "../engine/types";
+import { overlayBox } from "./transformBox";
 
 export interface Overlay {
   canvas: HTMLCanvasElement;
@@ -98,6 +99,16 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
     objectPosition: computed.objectPosition,
     opacity: computed.opacity,
     backgroundColor: getEffectiveBgColor(img),
+    // The page's own rounding and clipping — a circular avatar, an image cut to
+    // a shape — apply to the img, not to a canvas sitting on top of it. Copying
+    // them keeps the playback the same shape as the picture it replaces; both
+    // resolve percentages against the element's own box, which is the img's.
+    borderRadius: computed.borderRadius,
+    clipPath: computed.clipPath,
+    // Any transform we mirror onto the canvas is measured from the untransformed
+    // box's top-left corner (see ./transformBox), so that is the origin it has
+    // to turn about — not the centre the CSS default would use.
+    transformOrigin: "0 0",
   });
 
   // The canvas covers the img entirely; hide the original so transparent canvas
@@ -109,13 +120,20 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
 
   const ctx = canvas.getContext("2d");
 
-  /** Lay the canvas over the img's current border-box, in page coordinates. */
+  /**
+   * Lay the canvas over the img's current border-box, in page coordinates, and
+   * mirror whatever CSS transform the page has on it (see ./transformBox).
+   *
+   * The transform chain is re-read every time rather than cached at mount: a
+   * page is free to rotate or scale the image while the player is up.
+   */
   const reposition = (): void => {
-    const rect = img.getBoundingClientRect();
-    canvas.style.left = `${rect.left + window.scrollX}px`;
-    canvas.style.top = `${rect.top + window.scrollY}px`;
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
+    const box = overlayBox(img);
+    canvas.style.left = `${box.left}px`;
+    canvas.style.top = `${box.top}px`;
+    canvas.style.width = `${box.width}px`;
+    canvas.style.height = `${box.height}px`;
+    canvas.style.transform = box.transform;
   };
 
   // Bumped on every draw request, so a bitmap that arrives after a newer frame

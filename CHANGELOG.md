@@ -52,4 +52,11 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   a cookie-less background fetch 403s), and can read `blob:` sources. The
   background's privileged fetch remains the fallback for cross-origin images that
   send no CORS headers.
+- The playback overlay honours the page's own CSS: an image the page has
+  rotated, scaled or skewed — by its own `transform`, or one on a container above
+  it (a shadow host included) — plays back at that same angle and size instead of
+  upright inside its bounding box, and the image's `border-radius` and
+  `clip-path` come across too, so rounded avatars and clipped images keep their
+  shape. 3D transforms, which no 2D matrix can stand in for, fall back to
+  covering the bounding box.
 - Firefox (142+) and Chrome (137+) builds.
