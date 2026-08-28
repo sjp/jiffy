@@ -24,10 +24,14 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
-# Bump version in source files
-perl -i -pe "s/\"version\": \"[^\"]*\"/\"version\": \"$CLEAN_VERSION\"/" package.json manifest.chrome.json manifest.firefox.json
+# Bump package.json only. The committed manifests deliberately keep a static
+# placeholder version: scripts/build.mjs stamps the real one in as it writes
+# dist-*/manifest.json, taking it from the release tag (JIFFY_VERSION in CI) and
+# falling back to package.json for local builds. Rewriting them here as well
+# would give the version two homes and let them drift.
+perl -i -pe "s/\"version\": \"[^\"]*\"/\"version\": \"$CLEAN_VERSION\"/" package.json
 
-git add package.json manifest.chrome.json manifest.firefox.json
+git add package.json
 git commit -m "Release $CLEAN_VERSION"
 
 echo "Creating and pushing tag: $TAG"

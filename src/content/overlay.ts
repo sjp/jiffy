@@ -7,6 +7,7 @@
 // engine's current frame.
 import type { FrameSource } from "../engine/frameSource";
 import type { Engine } from "../engine/types";
+import { trackImageBox } from "./trackBox";
 import { overlayBox } from "./transformBox";
 
 export interface Overlay {
@@ -62,10 +63,6 @@ function getEffectiveBgColor(el: Element): string {
   return "";
 }
 
-// scroll/resize listener options — captured so nested scroll containers also
-// trigger a reposition. The same object is handed to removeEventListener.
-const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
-
 /**
  * Position a canvas exactly over `img` and blit the engine's current frame,
  * keeping the canvas synced on scroll/resize. The canvas drawing buffer is set
@@ -112,9 +109,13 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
   });
 
   // The canvas covers the img entirely; hide the original so transparent canvas
-  // regions show the page background rather than the underlying image.
-  const savedOpacity = img.style.opacity;
-  img.style.opacity = "0";
+  // regions show the page background rather than the underlying image. Set
+  // !important: a page rule carrying its own `opacity … !important` outranks a
+  // plain inline value, and the original animation would then show through the
+  // canvas's transparent regions.
+  const savedOpacity = img.style.getPropertyValue("opacity");
+  const savedOpacityPriority = img.style.getPropertyPriority("opacity");
+  img.style.setProperty("opacity", "0", "important");
 
   document.body.appendChild(canvas);
 
@@ -168,42 +169,28 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
     blit(bitmap as ImageBitmap);
   };
 
-  // Coalesce scroll/resize bursts into one reposition per frame to avoid thrash.
-  let repositionScheduled = false;
-  const scheduleReposition = (): void => {
-    if (repositionScheduled) return;
-    repositionScheduled = true;
-    requestAnimationFrame(() => {
-      repositionScheduled = false;
-      reposition();
-    });
-  };
+  // Place the canvas now, and keep it on the img's box through scroll, viewport
+  // resize and any change to the box itself.
+  const untrack = trackImageBox(img, reposition);
 
   // Initial paint.
-  reposition();
   draw(engine.state.index);
 
   // Redraw whenever the engine advances/seeks.
   const unsubscribe = engine.subscribe((s) => draw(s.index));
 
-  // Keep synced with scroll, viewport resize, and img box changes.
-  window.addEventListener("scroll", scheduleReposition, SCROLL_OPTS);
-  window.addEventListener("resize", scheduleReposition, { passive: true });
-  const resizeObserver = new ResizeObserver(scheduleReposition);
-  resizeObserver.observe(img);
-
   return {
     canvas,
     destroy() {
       destroyed = true; // an in-flight frame must not paint onto a dead canvas
-      // Restore the inline opacity we hid the img with on mount. Accepted edge
-      // case: if the page mutated the img's inline opacity while the player was
-      // active, this clobbers that newer value with the one captured at mount.
-      img.style.opacity = savedOpacity;
+      // Restore the inline opacity we hid the img with on mount — value and
+      // priority both, since we may have introduced the !important. Accepted
+      // edge case: if the page mutated the img's inline opacity while the player
+      // was active, this clobbers that newer value with the one from mount.
+      if (savedOpacity) img.style.setProperty("opacity", savedOpacity, savedOpacityPriority);
+      else img.style.removeProperty("opacity");
       unsubscribe();
-      window.removeEventListener("scroll", scheduleReposition, SCROLL_OPTS);
-      window.removeEventListener("resize", scheduleReposition);
-      resizeObserver.disconnect();
+      untrack();
       canvas.remove();
     },
   };

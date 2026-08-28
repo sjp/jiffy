@@ -27,7 +27,7 @@ export function handleControlKey(key: string, engine: Engine): boolean {
       engine.seekToIndex(0);
       return true;
     case "End":
-      engine.seekToTime(engine.state.duration);
+      engine.seekToIndex(engine.state.frameCount - 1);
       return true;
     default:
       return false;

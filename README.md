@@ -112,7 +112,10 @@ off there or in your browser's extension settings at any time:
 ## Privacy
 
 Jiffy does its work entirely on your own device. It doesn't collect data, send
-anything to a server, or track you.
+anything to a server, or track you. The Firefox build states that in its
+manifest, through the `data_collection_permissions` declaration AMO expects —
+which is also what sets the Firefox 142 floor, since earlier releases don't
+accept that key.
 
 ## Building from source
 

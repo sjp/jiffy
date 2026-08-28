@@ -28,8 +28,9 @@ const watch = process.argv.includes("--watch");
 
 // Version stamped into the built manifest. CI passes the release tag via
 // JIFFY_VERSION (e.g. "release/1.2.0" or "1.2.0"); local builds fall back to
-// package.json. This keeps the committed manifests on a static placeholder so
-// they never drift, and makes the release tag the single source of truth.
+// package.json, which scripts/release.sh bumps. The committed manifests keep a
+// static 0.0.0 placeholder that is always overwritten here, so a released
+// version has exactly one home: the tag.
 const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const version = resolveVersion(process.env.JIFFY_VERSION, pkg.version);
 

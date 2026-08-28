@@ -12,17 +12,17 @@ import type { Engine, EngineState } from "../engine/types.ts";
 import { handleControlKey } from "./keymap.ts";
 
 // ---- recording fake engine ------------------------------------------------
-// Records every call so we can assert the exact mapping. `duration` is fixed so
-// we can check that End seeks to it.
-const DURATION = 200;
+// Records every call so we can assert the exact mapping. `frameCount` is fixed
+// so we can check that End seeks to the last frame.
+const FRAME_COUNT = 3;
 function makeEngine() {
   const calls: string[] = [];
   const state: EngineState = {
     playing: false,
     index: 0,
-    frameCount: 3,
+    frameCount: FRAME_COUNT,
     currentTime: 0,
-    duration: DURATION,
+    duration: 200,
   };
   const engine = {
     state,
@@ -44,7 +44,7 @@ const cases: Array<[string, string]> = [
   ["ArrowLeft", "step(-1)"],
   ["ArrowRight", "step(1)"],
   ["Home", "seekToIndex(0)"],
-  ["End", `seekToTime(${DURATION})`],
+  ["End", `seekToIndex(${FRAME_COUNT - 1})`],
 ];
 
 for (const [key, expected] of cases) {
@@ -62,14 +62,14 @@ for (const key of ["a", "Enter", "Escape", "Tab", "ArrowUp", "ArrowDown"]) {
   assert.deepEqual(calls, [], `"${key}" leaves the engine untouched`);
 }
 
-// ---- End reads the live duration off the engine ---------------------------
+// ---- End reads the live frame count off the engine ------------------------
 // Regression guard: End must seek to whatever the engine currently reports as
-// its duration, not a captured constant.
+// its last frame, not a captured constant.
 {
   const { engine, calls } = makeEngine();
-  (engine.state as EngineState).duration = 1234;
+  (engine.state as EngineState).frameCount = 1234;
   handleControlKey("End", engine);
-  assert.deepEqual(calls, ["seekToTime(1234)"], "End uses the live duration");
+  assert.deepEqual(calls, ["seekToIndex(1233)"], "End uses the live frame count");
 }
 
 console.log("keymap.test: OK");

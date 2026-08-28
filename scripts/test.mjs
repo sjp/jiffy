@@ -1,10 +1,13 @@
 // Test runner for Jiffy.
 //
-// Node's --experimental-strip-types only ERASES types; it can't transform JSX.
-// Our UI tests render Preact components (TSX), so we bundle each test with
-// esbuild first (same JSX settings as the app build), then run the output with
-// node. `packages: 'external'` keeps node_modules (preact, jsdom, gifuct-js)
-// as real runtime imports — only our own source (incl. JSX) is transformed.
+// Node's type stripping only ERASES types; it can't transform JSX, and it has no
+// loader for a `.css` import. Our UI tests render Preact components (TSX) and the
+// controls mount imports controls.css as a string, so plain `node --test` can't
+// run this suite — it refuses a `.tsx` entry outright (ERR_UNKNOWN_FILE_EXTENSION).
+// So we bundle each test with esbuild first (same JSX settings as the app build),
+// then run the output with node. `packages: 'external'` keeps node_modules
+// (preact, jsdom, gifuct-js) as real runtime imports — only our own source
+// (incl. JSX) is transformed.
 //
 //   node scripts/test.mjs
 

@@ -11,12 +11,12 @@ import { Controls } from "../ui/Controls";
 import type { FrameActions } from "../ui/Controls";
 import type { FrameExport } from "./exportFrame";
 import { showToast } from "./toast";
+import { trackImageBox } from "./trackBox";
 
 import controlsCss from "../ui/controls.css";
 
 // Above the overlay canvas so the bar is clickable over the frame.
 const HOST_Z_INDEX = "2147483647";
-const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
 // Keep at least this much of the bar on screen when clamping a drag, so it can
 // never be lost entirely off the viewport edge.
 const MIN_VISIBLE_PX = 24;
@@ -176,27 +176,13 @@ export function mountControls(
     mountPoint,
   );
 
-  let scheduled = false;
-  const schedule = (): void => {
-    if (scheduled) return;
-    scheduled = true;
-    requestAnimationFrame(() => {
-      scheduled = false;
-      reposition();
-    });
-  };
-
-  reposition();
-  window.addEventListener("scroll", schedule, SCROLL_OPTS);
-  window.addEventListener("resize", schedule, { passive: true });
-  const resizeObserver = new ResizeObserver(schedule);
-  resizeObserver.observe(img);
+  // Anchor the bar now — the host is laid out, so reposition can measure it —
+  // and keep it on the img's box as the page scrolls, resizes, or reflows.
+  const untrack = trackImageBox(img, reposition);
 
   return () => {
     render(null, mountPoint);
-    window.removeEventListener("scroll", schedule, SCROLL_OPTS);
-    window.removeEventListener("resize", schedule);
-    resizeObserver.disconnect();
+    untrack();
     host.remove();
   };
 }
