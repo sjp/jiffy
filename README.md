@@ -9,7 +9,7 @@
 Jiffy adds a little video
 player to any animated **GIF, WebP, APNG, or AVIF** on the web.
 
-Works in **Firefox** (142+) and **Chrome** (120+).
+Works in **Firefox** (142+) and **Chrome** (137+).
 
 </div>
 

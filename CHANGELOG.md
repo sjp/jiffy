@@ -21,6 +21,11 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
 - Keyboard shortcuts scoped to the focused control bar (Space, ←/→, Home, End).
 - Draggable, repositionable control bar with snap-back-to-default.
 - On-demand player bundle: the script injected into every page is a ~7 KB
-  loader, and the decoders, engine and UI (~90 KB) are imported only when
+  loader, and the decoders, engine and UI (~97 KB) are imported only when
   you actually pick an image.
-- Firefox (130+) and Chrome (120+) builds.
+- Bounded decode memory: only every 16th frame is held as a full-canvas bitmap.
+  The frames in between are recomposited on demand from their (much smaller)
+  source patches, and animated AVIF is re-decoded by index from a live decoder,
+  so a long animation costs roughly an order of magnitude less than holding a
+  bitmap per frame.
+- Firefox (142+) and Chrome (137+) builds.
