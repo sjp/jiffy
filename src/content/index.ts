@@ -28,6 +28,7 @@
 import { isExitPickRequest, isPickGifRequest } from "../messages";
 import type { PickEndedRequest } from "../messages";
 import type { Controller, StatusFn } from "./controller";
+import { findImageAtPoint } from "./pick";
 import { showToast } from "./toast";
 
 /** The slice of the player bundle this loader drives. */
@@ -224,8 +225,26 @@ function onPickVisibilityChange(): void {
   if (document.hidden) exitPickMode();
 }
 
+/**
+ * Which image did this click mean? The point the user aimed at is the honest
+ * answer — an image is very often covered by a stretched link, a caption
+ * gradient or (once enhanced) Jiffy's own canvas, none of which the click target
+ * can see past. The `event.target` path stays as the fallback for clicks that
+ * carry no usable pointer position.
+ */
+function pickTarget(event: MouseEvent): HTMLImageElement | null {
+  // Keyboard-activated clicks (Enter on a focused link) report (0, 0) rather
+  // than a pointer position; hit-testing there would pick whatever happens to
+  // sit in the top-left corner of the viewport.
+  if (event.detail > 0 || event.clientX !== 0 || event.clientY !== 0) {
+    const hit = findImageAtPoint(event.clientX, event.clientY);
+    if (hit) return hit;
+  }
+  return (event.target as Element | null)?.closest("img") ?? null;
+}
+
 function onPickClick(event: MouseEvent): void {
-  const img = (event.target as Element | null)?.closest("img") as HTMLImageElement | null;
+  const img = pickTarget(event);
   // Clicking anything that isn't an image (empty space, a link, a button): just
   // leave pick mode and let the click behave normally — don't swallow it, so a
   // link still navigates and a button still presses.
@@ -233,9 +252,11 @@ function onPickClick(event: MouseEvent): void {
     endPick();
     return;
   }
-  // Landing on an image: consume the click so it doesn't reach the page (e.g. a
-  // link wrapping the GIF), then enhance it (or toggle it back off). Whether the
-  // bytes are actually animated is decode()'s call, reported via the toast.
+  // Landing on an image: consume the click so it doesn't reach the page (a link
+  // wrapping the GIF, or the overlay we found it underneath — that one would
+  // otherwise navigate away the moment the pick lands), then enhance it (or
+  // toggle it back off). Whether the bytes are actually animated is decode()'s
+  // call, reported via the toast.
   event.preventDefault();
   event.stopPropagation();
   endPick();

@@ -17,10 +17,11 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   GIF, WebP, APNG, and AVIF images.
 - Pick mode: click the toolbar button, then click an image to attach controls —
   including images embedded in an iframe; standalone image pages toggle controls
-  directly.
+  directly. The image is resolved by hit-testing the click point, so images
+  covered by a link overlay, a caption gradient or a lightbox trigger still pick.
 - Keyboard shortcuts scoped to the focused control bar (Space, ←/→, Home, End).
 - Draggable, repositionable control bar with snap-back-to-default.
-- On-demand player bundle: the script injected into every page is a ~7 KB
+- On-demand player bundle: the script injected into every page is a ~9 KB
   loader, and the decoders, engine and UI (~97 KB) are imported only when
   you actually pick an image.
 - Bounded decode memory: only every 16th frame is held as a full-canvas bitmap.

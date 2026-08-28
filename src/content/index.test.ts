@@ -157,6 +157,76 @@ lastStatus!("not-animated");
 assert.match(toastText(), /Not an animated image/, "not-animated surfaces a toast");
 reset();
 
+// ---- an image under an overlay is still picked ------------------------------
+// Card layouts stack a stretched link (or a caption gradient, or our own canvas
+// once the image is enhanced) over the image, so the click target is that
+// overlay and closest("img") sees nothing. The click POINT is hit-tested
+// instead — see ./pick. jsdom has no elementsFromPoint, so stand one in.
+{
+  const stackAt = new Map<string, Element[]>();
+  const doc = document as Document & { elementsFromPoint?: (x: number, y: number) => Element[] };
+  doc.elementsFromPoint = (x, y) => stackAt.get(`${x},${y}`) ?? [];
+  const at = (x: number, y: number, stack: Element[]) => stackAt.set(`${x},${y}`, stack);
+  // jsdom measures everything as 0×0; pick mode skips zero-size images.
+  const withBox = <T extends Element>(el: T): T => {
+    el.getBoundingClientRect = () => ({ width: 200, height: 100, top: 0, left: 0 }) as DOMRect;
+    return el;
+  };
+
+  reset();
+  const covered = withBox(imgWith("http://x/covered.gif"));
+  const link = document.createElement("a");
+  link.href = "http://x/elsewhere";
+  document.body.append(covered, link);
+  at(40, 60, [link, covered, document.body]);
+
+  enterPickMode();
+  const overlayClick = new window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    clientX: 40,
+    clientY: 60,
+  });
+  link.dispatchEvent(overlayClick);
+  await flush();
+  assert.equal(picked, covered, "an image beneath an overlay is picked");
+  // The overlay's own click must not also fire, or the page navigates away the
+  // moment the pick lands.
+  assert.equal(overlayClick.defaultPrevented, true, "the overlay's click is swallowed");
+  assert.notEqual(docEl.style.cursor, "crosshair", "the pick exits pick mode");
+
+  // Nothing under the point: the click cancels as before and is left alone.
+  reset();
+  const bare = document.createElement("div");
+  document.body.appendChild(bare);
+  enterPickMode();
+  const missClick = new window.MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+    clientX: 5,
+    clientY: 5,
+  });
+  bare.dispatchEvent(missClick);
+  await flush();
+  assert.equal(picked, null, "a point with no image picks nothing");
+  assert.equal(missClick.defaultPrevented, false, "a cancelling click still isn't swallowed");
+
+  // A direct hit on an image the hit test can't see (a hit stack that came back
+  // empty) still resolves through the click target.
+  reset();
+  const direct = imgWith("http://x/direct.gif");
+  document.body.appendChild(direct);
+  enterPickMode();
+  direct.dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true, cancelable: true, clientX: 9, clientY: 9 }),
+  );
+  await flush();
+  assert.equal(picked, direct, "the click target remains the fallback");
+
+  delete doc.elementsFromPoint;
+  reset();
+}
+
 // ---- a first pick before the bundle arrives shows "Loading…" ---------------
 // The warm-up in enterPickMode usually wins the race, but on a cold, slow load
 // the click must not look like it did nothing.
