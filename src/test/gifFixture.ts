@@ -1,0 +1,22 @@
+// A real, hand-built 2-frame GIF, shared by the tests that need genuine bytes.
+//
+// 2×1, 2-colour (black/white). Frame 0 = [black, white], frame 1 = [white,
+// black]. Each frame's GCE delay is 10 centiseconds (gifuct normalises → 100ms).
+// No NETSCAPE2.0 application extension, so it plays through once.
+// prettier-ignore
+export const GIF = new Uint8Array([
+  0x47, 0x49, 0x46, 0x38, 0x39, 0x61,             // "GIF89a"
+  0x02, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00,       // LSD: 2×1, global colour table (2)
+  0x00, 0x00, 0x00, 0xff, 0xff, 0xff,             // GCT: black, white
+  0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 0: delay=10cs
+  0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 0
+  0x02, 0x02, 0x44, 0x0a, 0x00,                   // LZW: pixels [0,1]
+  0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 1: delay=10cs
+  0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 1
+  0x02, 0x02, 0x0c, 0x0a, 0x00,                   // LZW: pixels [1,0]
+  0x3b,                                           // trailer
+]);
+
+/** The fixture as a standalone ArrayBuffer, which is what `decode` takes. */
+export const gifBytes = (): ArrayBuffer =>
+  GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength) as ArrayBuffer;

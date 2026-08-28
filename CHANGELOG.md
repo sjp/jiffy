@@ -24,6 +24,11 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
 - On-demand player bundle: the script injected into every page is a ~9 KB
   loader, and the decoders, engine and UI (~97 KB) are imported only when
   you actually pick an image.
+- Decoding runs in a Worker, so picking a large image no longer freezes the
+  page: scrolling, the page's own animations and the "Loading…" toast all keep
+  going while the frames are built. Cancelling with the toast's ✕ terminates the
+  worker, stopping the work rather than discarding its result. Where a worker
+  can't be spawned the decode falls back to the page's thread as before.
 - Bounded decode memory: only every 16th frame is held as a full-canvas bitmap.
   The frames in between are recomposited on demand from their (much smaller)
   source patches, and animated AVIF is re-decoded by index from a live decoder,

@@ -8,9 +8,9 @@
 //
 // Nothing here runs on import beyond wiring the controller: the loader drives it
 // entirely through the `controller` export.
-import { decode } from "../engine/decode";
 import { createEngine } from "../engine/engine";
 import { createController } from "./controller";
+import { decodeInWorker } from "./decodeInWorker";
 import { fetchGifBytes } from "./fetchGif";
 import { mountControls } from "./mount";
 import { createOverlay } from "./overlay";
@@ -18,7 +18,9 @@ import { createOverlay } from "./overlay";
 /** Default wiring used when running as the actual player. */
 export const controller = createController({
   fetchBytes: fetchGifBytes,
-  decode,
+  // The worker-backed decode, which falls back to `engine/decode` on this
+  // thread wherever a worker can't run (see ./decodeInWorker).
+  decode: decodeInWorker,
   createEngine,
   createOverlay,
   mountControls,

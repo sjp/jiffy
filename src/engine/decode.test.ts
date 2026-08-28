@@ -13,6 +13,7 @@
 import assert from "node:assert/strict";
 
 import { installFakeCanvas, pixelAt, type FakeImageBitmap } from "../test/fakeCanvas.ts";
+import { GIF, gifBytes } from "../test/gifFixture.ts";
 import {
   assertDecodeBudget,
   computeMaxDecodeBytes,
@@ -26,28 +27,11 @@ installFakeCanvas();
 
 const { decode, NotAnimatedError } = await import("./decode.ts");
 
-// ---- a real, hand-built 2-frame GIF --------------------------------------
-// 2×1, 2-colour (black/white). Frame 0 = [black, white], frame 1 = [white,
-// black]. Each frame's GCE delay is 10 centiseconds (gifuct normalises → 100ms).
-// prettier-ignore
-const GIF = new Uint8Array([
-  0x47, 0x49, 0x46, 0x38, 0x39, 0x61,             // "GIF89a"
-  0x02, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00,       // LSD: 2×1, global colour table (2)
-  0x00, 0x00, 0x00, 0xff, 0xff, 0xff,             // GCT: black, white
-  0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 0: delay=10cs
-  0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 0
-  0x02, 0x02, 0x44, 0x0a, 0x00,                   // LZW: pixels [0,1]
-  0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 1: delay=10cs
-  0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 1
-  0x02, 0x02, 0x0c, 0x0a, 0x00,                   // LZW: pixels [1,0]
-  0x3b,                                           // trailer
-]);
-
 // ---- assertions ----------------------------------------------------------
 
-const { frames, source, duration, loops } = await decode(
-  GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength),
-);
+// The fixture (see ../test/gifFixture) is 2×1, black/white, swapped between two
+// frames, each with a 10-centisecond delay and no loop extension.
+const { frames, source, duration, loops } = await decode(gifBytes());
 
 assert.equal(frames.length, 2, "frame count");
 assert.equal(source.frameCount, 2, "frame source frame count");
@@ -134,7 +118,7 @@ await assert.rejects(
 const aborted = new AbortController();
 aborted.abort();
 await assert.rejects(
-  () => decode(GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength), aborted.signal),
+  () => decode(gifBytes(), aborted.signal),
   (err: unknown) => err instanceof DOMException && err.name === "AbortError",
   "an aborted signal rejects the decode with AbortError",
 );

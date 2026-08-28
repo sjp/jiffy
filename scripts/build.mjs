@@ -6,7 +6,8 @@
 // copies the browser-specific manifest + static assets into the output directory.
 //
 // Two esbuild passes, because the outputs need different module formats:
-//   1. the classic scripts (background, content, popup) as IIFEs;
+//   1. the classic scripts (background, content, popup) and the decode worker
+//      as IIFEs;
 //   2. player.js as a real ES module, because the content script pulls it in
 //      with a dynamic `import()` of a web_accessible_resources URL (issue #09).
 // esbuild's `format` is per-build, so this can't be one pass.
@@ -142,12 +143,17 @@ const builds = [
   // Classic scripts, each self-contained in its own execution context. The
   // content script is the one injected into every page, so it deliberately
   // carries nothing but the loader, pick mode and the toast.
+  //
+  // decode-worker.js joins them because a classic worker is what `new Worker(url)`
+  // loads without a `{ type: "module" }` opt-in; the player spawns one per decode
+  // from its web_accessible_resources URL, so it is listed in each manifest too.
   {
     ...common,
     entryPoints: {
       background: path.join(root, "src/background.ts"),
       content: path.join(root, "src/content/index.ts"),
       popup: path.join(root, "src/popup/popup.ts"),
+      "decode-worker": path.join(root, "src/engine/decode.worker.ts"),
     },
     format: "iife",
     plugins: [...common.plugins, copyStaticPlugin],

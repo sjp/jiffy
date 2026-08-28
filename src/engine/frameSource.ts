@@ -21,6 +21,13 @@
 // `createImageBitmap` per displayed frame, instead of zero. Seeks cost up to
 // `KEYFRAME_INTERVAL` patch draws. A small LRU keeps recently produced frames
 // so scrubbing back and forth over the same neighbourhood stays cheap.
+//
+// The module is split along the seam between those two costs. `buildFrameSource`
+// is the one-off compositing pass — the expensive, blocking part — and returns
+// plain transferable data; `hydrateFrameSource` is the playback half that
+// replays from it. `createFrameSource` is the two back to back for callers that
+// don't care, while the worker decode path runs the build off the main thread
+// and hydrates the result on it (see src/content/decodeInWorker.ts).
 
 import { throwIfAborted } from "./types";
 
@@ -109,6 +116,15 @@ export interface FrameSource {
   readonly height: number;
   readonly frameCount: number;
   getBitmap(index: number): ImageBitmap | Promise<ImageBitmap>;
+  /**
+   * Surrender everything this source holds, leaving it closed and unusable.
+   * How the finished frames cross a thread boundary: the worker decode path
+   * builds a source, detaches it, and posts the data (see
+   * src/content/decodeInWorker.ts). Sources whose pixels can't be moved — a
+   * live AVIF decoder, `createBitmapSource` — leave it undefined, which is the
+   * signal to decode on this thread instead.
+   */
+  detach?(): FrameSourceData;
   /** Release every bitmap (and any decoder) this source holds. */
   close(): void;
 }
@@ -120,6 +136,10 @@ export interface FrameSource {
  * (no Xray) the value is returned unchanged. Canvas pixel APIs refuse to read a
  * typed array from another realm, so every write into an `ImageData` goes
  * through this first.
+ *
+ * Moving the build pass into a worker — a single realm, no Xray — doesn't retire
+ * this: the playback replay expands patches the same way, and that stays on the
+ * page's thread, inside the content script's sandbox.
  */
 const unwrapXray = <T>(value: T): T => (value as { wrappedJSObject?: T }).wrappedJSObject ?? value;
 
@@ -143,25 +163,106 @@ export interface FrameSourceOptions {
 }
 
 /**
- * Composite `steps` once, keeping every `keyframeInterval`-th result, and return
- * a source that can reproduce any frame from those keyframes plus the steps.
+ * Everything needed to reproduce any frame, as plain data: the composited
+ * keyframes plus the steps to replay from them.
  *
- * The single build pass is also the only place the disposal state machine runs
- * forwards from a clean canvas, so it doubles as the definition of "correct":
- * with `keyframeInterval: 1` every frame is a keyframe and the result is the
- * old all-bitmap behaviour, byte for byte.
+ * This is the build pass's output and the playback half's input, which also
+ * makes it the unit that crosses a thread boundary. Every field is
+ * structured-cloneable and the expensive ones are transferable (see
+ * `frameSourceTransferables`), so a worker can run the build pass and hand the
+ * result to the page's main thread (see src/content/decodeInWorker.ts).
  */
-export async function createFrameSource(opts: FrameSourceOptions): Promise<FrameSource> {
-  const {
-    width,
-    height,
-    steps,
-    seedFill = null,
-    disposeFill = null,
-    keyframeInterval = KEYFRAME_INTERVAL,
-    signal,
-  } = opts;
+export interface FrameSourceData {
+  width: number;
+  height: number;
+  steps: FrameStep[];
+  /**
+   * See `FrameSourceOptions.disposeFill`. Replay still needs it; `seedFill`
+   * doesn't survive here because playback always rewinds to a keyframe (frame 0
+   * is always one) and never to a blank canvas.
+   */
+  disposeFill: string | null;
+  keyframeInterval: number;
+  /** Retained frames, ascending by index — every `keyframeInterval`-th frame. */
+  keyframes: Keyframe[];
+}
 
+/** A retained, fully composited frame plus what its own disposal needs. */
+export interface Keyframe {
+  index: number;
+  bitmap: ImageBitmap;
+  /**
+   * Canvas state this keyframe's DISPOSE_PREVIOUS reverts to. Only a keyframe
+   * needs it stored: mid-run the replay produces its own snapshots, but a
+   * replay *starting* just after this frame would otherwise have no way to
+   * undo it.
+   */
+  restore: ImageData | null;
+}
+
+/**
+ * The parts of `data` whose backing memory should MOVE rather than be copied
+ * when it's posted between threads: the keyframe bitmaps and the indexed
+ * patches' pixel buffers, which together are the hundreds of MB a long
+ * animation holds.
+ *
+ * De-duplicated because frames of a GIF that share a colour table share one
+ * palette array, and naming the same buffer twice in a transfer list is a
+ * DataCloneError. `restore` is left to be copied: an ImageData can't be
+ * transferred, and only DISPOSE_PREVIOUS keyframes have one.
+ */
+export function frameSourceTransferables(data: FrameSourceData): Transferable[] {
+  const transfer = new Set<Transferable>();
+  for (const kf of data.keyframes) transfer.add(kf.bitmap);
+  for (const step of data.steps) {
+    const patch = step.patch;
+    if (patch?.kind === "indexed") {
+      transfer.add(patch.pixels.buffer as ArrayBuffer);
+      transfer.add(patch.palette.buffer as ArrayBuffer);
+    }
+  }
+  return [...transfer];
+}
+
+/** Free the bitmaps in `data` — for a build whose result is being discarded. */
+export function closeFrameSourceData(data: FrameSourceData): void {
+  for (const kf of data.keyframes) kf.bitmap.close();
+  data.keyframes.length = 0;
+}
+
+/**
+ * The disposal state machine over one work canvas: draw frame `i`, dispose
+ * frame `i`, plus the cursor saying which frame the canvas currently shows.
+ *
+ * Both halves of the module run the same machine — the build pass forwards from
+ * a clean canvas, the playback replay forwards from a keyframe — so it lives
+ * here once and each half owns its own instance.
+ */
+interface Compositor {
+  readonly canvas: OffscreenCanvas;
+  readonly ctx: OffscreenCanvasRenderingContext2D;
+  /**
+   * Frame the work canvas currently shows. -1 means "unknown" — before a build
+   * starts, and after a failed replay — and always forces a keyframe rewind.
+   */
+  cursor: number;
+  /** Snapshot the current frame's DISPOSE_PREVIOUS would restore. */
+  restoreSnapshot: ImageData | null;
+  /** Blank the canvas (applying `seedFill`) and forget where we are. */
+  seed(): void;
+  /** Draw frame `i`; frame `i-1`'s disposal must already have been applied. */
+  drawStep(i: number): Promise<void>;
+  /** Apply frame `i`'s disposal, readying the canvas for frame `i+1`. */
+  applyDispose(i: number): void;
+}
+
+function createCompositor(
+  width: number,
+  height: number,
+  steps: readonly FrameStep[],
+  seedFill: string | null,
+  disposeFill: string | null,
+): Compositor {
   const canvas = new OffscreenCanvas(width, height);
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("frameSource: failed to acquire 2D context");
@@ -171,38 +272,6 @@ export async function createFrameSource(opts: FrameSourceOptions): Promise<Frame
   // composites source-over and honours transparency.
   let stage: OffscreenCanvas | null = null;
   let stageCtx: OffscreenCanvasRenderingContext2D | null = null;
-
-  /** A retained, fully composited frame plus what its own disposal needs. */
-  interface Keyframe {
-    bitmap: ImageBitmap;
-    /**
-     * Canvas state this keyframe's DISPOSE_PREVIOUS reverts to. Only a keyframe
-     * needs it stored: mid-run the replay produces its own snapshots, but a
-     * replay *starting* just after this frame would otherwise have no way to
-     * undo it.
-     */
-    restore: ImageData | null;
-  }
-
-  const keyframes = new Map<number, Keyframe>();
-  const cache = new Map<number, ImageBitmap>(); // insertion-ordered → LRU
-  let closed = false;
-
-  // Replay cursor: the frame the work canvas currently shows, and the snapshot
-  // that frame's disposal would restore. -1 means "unknown" — before the build
-  // starts, and after a failed replay — and always forces a keyframe rewind.
-  let cursor = -1;
-  let restoreSnapshot: ImageData | null = null;
-
-  const seed = (): void => {
-    ctx.clearRect(0, 0, width, height);
-    if (seedFill) {
-      ctx.fillStyle = seedFill;
-      ctx.fillRect(0, 0, width, height);
-    }
-    cursor = -1;
-    restoreSnapshot = null;
-  };
 
   /** Paint an indexed patch through the staging canvas. */
   const drawIndexed = (step: FrameStep, patch: Extract<FramePatch, { kind: "indexed" }>): void => {
@@ -235,73 +304,132 @@ export async function createFrameSource(opts: FrameSourceOptions): Promise<Frame
     ctx.drawImage(stage, step.x, step.y);
   };
 
-  /** Draw frame `i` onto the work canvas; frame `i-1`'s disposal is already applied. */
-  const drawStep = async (i: number): Promise<void> => {
-    const step = steps[i]!;
-    // Snapshot BEFORE this frame's pixels land, so its disposal can undo it.
-    if (step.dispose === DISPOSE_PREVIOUS) {
-      restoreSnapshot = ctx.getImageData(0, 0, width, height);
-    }
-    if (step.clear) ctx.clearRect(step.x, step.y, step.width, step.height);
-    const patch = step.patch;
-    if (patch) {
-      if (patch.kind === "blob") {
-        const bitmap = await createImageBitmap(patch.blob);
-        ctx.drawImage(bitmap, step.x, step.y);
-        bitmap.close();
-      } else {
-        drawIndexed(step, patch);
+  const compositor: Compositor = {
+    canvas,
+    ctx,
+    cursor: -1,
+    restoreSnapshot: null,
+
+    seed(): void {
+      ctx.clearRect(0, 0, width, height);
+      if (seedFill) {
+        ctx.fillStyle = seedFill;
+        ctx.fillRect(0, 0, width, height);
       }
-    }
-    cursor = i;
+      compositor.cursor = -1;
+      compositor.restoreSnapshot = null;
+    },
+
+    async drawStep(i: number): Promise<void> {
+      const step = steps[i]!;
+      // Snapshot BEFORE this frame's pixels land, so its disposal can undo it.
+      if (step.dispose === DISPOSE_PREVIOUS) {
+        compositor.restoreSnapshot = ctx.getImageData(0, 0, width, height);
+      }
+      if (step.clear) ctx.clearRect(step.x, step.y, step.width, step.height);
+      const patch = step.patch;
+      if (patch) {
+        if (patch.kind === "blob") {
+          const bitmap = await createImageBitmap(patch.blob);
+          ctx.drawImage(bitmap, step.x, step.y);
+          bitmap.close();
+        } else {
+          drawIndexed(step, patch);
+        }
+      }
+      compositor.cursor = i;
+    },
+
+    applyDispose(i: number): void {
+      const step = steps[i]!;
+      if (step.dispose === DISPOSE_BACKGROUND) {
+        ctx.clearRect(step.x, step.y, step.width, step.height);
+        if (disposeFill) {
+          ctx.fillStyle = disposeFill;
+          ctx.fillRect(step.x, step.y, step.width, step.height);
+        }
+      } else if (step.dispose === DISPOSE_PREVIOUS && compositor.restoreSnapshot) {
+        ctx.putImageData(compositor.restoreSnapshot, 0, 0);
+      }
+    },
   };
 
-  /** Apply frame `i`'s disposal, readying the canvas for frame `i+1`. */
-  const applyDispose = (i: number): void => {
-    const step = steps[i]!;
-    if (step.dispose === DISPOSE_BACKGROUND) {
-      ctx.clearRect(step.x, step.y, step.width, step.height);
-      if (disposeFill) {
-        ctx.fillStyle = disposeFill;
-        ctx.fillRect(step.x, step.y, step.width, step.height);
-      }
-    } else if (step.dispose === DISPOSE_PREVIOUS && restoreSnapshot) {
-      ctx.putImageData(restoreSnapshot, 0, 0);
-    }
-  };
+  return compositor;
+}
 
-  // ---- build pass --------------------------------------------------------
-  // One forward composite of the whole animation, keeping every Nth result.
-  seed();
+/**
+ * Composite `steps` once from a clean canvas, keeping every
+ * `keyframeInterval`-th result. This is the expensive half — the palette
+ * expansion or per-frame blob decode for every frame in the animation — and the
+ * only part of the pipeline worth moving off the main thread.
+ *
+ * It's also the only place the disposal state machine runs forwards from
+ * nothing, so it doubles as the definition of "correct": with
+ * `keyframeInterval: 1` every frame is a keyframe and the result is the old
+ * all-bitmap behaviour, byte for byte.
+ */
+export async function buildFrameSource(opts: FrameSourceOptions): Promise<FrameSourceData> {
+  const {
+    width,
+    height,
+    steps,
+    seedFill = null,
+    disposeFill = null,
+    keyframeInterval = KEYFRAME_INTERVAL,
+    signal,
+  } = opts;
+
+  const compositor = createCompositor(width, height, steps, seedFill, disposeFill);
+  const keyframes: Keyframe[] = [];
+  compositor.seed();
   try {
     for (let i = 0; i < steps.length; i++) {
       throwIfAborted(signal);
-      if (i > 0) applyDispose(i - 1);
-      await drawStep(i);
+      if (i > 0) compositor.applyDispose(i - 1);
+      await compositor.drawStep(i);
       if (i % keyframeInterval === 0) {
-        keyframes.set(i, {
-          bitmap: await createImageBitmap(canvas),
-          restore: steps[i]!.dispose === DISPOSE_PREVIOUS ? restoreSnapshot : null,
+        keyframes.push({
+          index: i,
+          bitmap: await createImageBitmap(compositor.canvas),
+          restore: steps[i]!.dispose === DISPOSE_PREVIOUS ? compositor.restoreSnapshot : null,
         });
       }
     }
   } catch (err) {
-    // Cancelled or failed mid-build: the caller never sees the source, so free
-    // the keyframes here rather than leaking them.
-    for (const kf of keyframes.values()) kf.bitmap.close();
-    keyframes.clear();
+    // Cancelled or failed mid-build: the caller never sees the data, so free the
+    // keyframes here rather than leaking them.
+    for (const kf of keyframes) kf.bitmap.close();
     throw err;
   }
+  return { width, height, steps, disposeFill, keyframeInterval, keyframes };
+}
 
-  // ---- playback ----------------------------------------------------------
+/**
+ * The playback half: a source that reproduces any frame from `data`'s keyframes
+ * plus its steps. Synchronous, because all the compositing already happened in
+ * the build pass — which is what lets that pass run in a worker while playback
+ * stays here on the thread that draws.
+ *
+ * Takes ownership of the keyframe bitmaps; `close()` frees them.
+ */
+export function hydrateFrameSource(data: FrameSourceData): FrameSource {
+  const { width, height, steps, disposeFill, keyframeInterval } = data;
+  // No seed fill: every replay rewinds to a keyframe first (frame 0 is always
+  // one), so the blank-canvas state the seed produced is never revisited.
+  const compositor = createCompositor(width, height, steps, null, disposeFill);
+  const { ctx } = compositor;
+
+  const keyframes = new Map<number, Keyframe>(data.keyframes.map((kf) => [kf.index, kf]));
+  const cache = new Map<number, ImageBitmap>(); // insertion-ordered → LRU
+  let closed = false;
 
   /** Put the work canvas back to the state right after keyframe `key` was drawn. */
   const restoreKeyframe = (key: number): void => {
     const kf = keyframes.get(key)!;
     ctx.clearRect(0, 0, width, height);
     ctx.drawImage(kf.bitmap, 0, 0);
-    cursor = key;
-    restoreSnapshot = kf.restore;
+    compositor.cursor = key;
+    compositor.restoreSnapshot = kf.restore;
   };
 
   /** Bring the work canvas to frame `i`, replaying as few steps as possible. */
@@ -311,16 +439,16 @@ export async function createFrameSource(opts: FrameSourceOptions): Promise<Frame
     // Anything else (a seek, reverse) rewinds to the nearest keyframe first.
     // A cursor of -1 is "unknown", which is always before a keyframe, so it
     // forces the rewind.
-    if (cursor > i || cursor < key) restoreKeyframe(key);
+    if (compositor.cursor > i || compositor.cursor < key) restoreKeyframe(key);
     try {
-      for (let j = cursor + 1; j <= i; j++) {
-        applyDispose(j - 1);
-        await drawStep(j);
+      for (let j = compositor.cursor + 1; j <= i; j++) {
+        compositor.applyDispose(j - 1);
+        await compositor.drawStep(j);
       }
     } catch (err) {
       // A half-drawn frame leaves the canvas in a state no cursor describes.
       // Forget where we are so the next request starts from a keyframe again.
-      cursor = -1;
+      compositor.cursor = -1;
       throw err;
     }
   };
@@ -346,7 +474,7 @@ export async function createFrameSource(opts: FrameSourceOptions): Promise<Frame
       const hit = cache.get(i);
       if (hit) return hit;
       await advanceTo(i);
-      const bitmap = await createImageBitmap(canvas);
+      const bitmap = await createImageBitmap(compositor.canvas);
       if (closed) {
         bitmap.close();
         throw new Error("frameSource: closed");
@@ -375,6 +503,18 @@ export async function createFrameSource(opts: FrameSourceOptions): Promise<Frame
       }
       return render(i);
     },
+    detach(): FrameSourceData {
+      // The keyframes are about to belong to someone else (another thread), so
+      // stop being a source: refuse further renders and drop everything that
+      // isn't being handed over. The replay cache is discarded rather than
+      // moved — it's reproducible from the keyframes.
+      closed = true;
+      const detached = [...keyframes.values()];
+      keyframes.clear();
+      for (const bitmap of cache.values()) bitmap.close();
+      cache.clear();
+      return { width, height, steps, disposeFill, keyframeInterval, keyframes: detached };
+    },
     close(): void {
       closed = true;
       for (const kf of keyframes.values()) kf.bitmap.close();
@@ -383,6 +523,16 @@ export async function createFrameSource(opts: FrameSourceOptions): Promise<Frame
       cache.clear();
     },
   };
+}
+
+/**
+ * Composite `steps` and return a source that can reproduce any frame — the
+ * build pass and the playback half back to back, on this thread. The
+ * single-threaded path every decoder takes; the worker path splits the two (see
+ * `buildFrameSource` / `hydrateFrameSource`).
+ */
+export async function createFrameSource(opts: FrameSourceOptions): Promise<FrameSource> {
+  return hydrateFrameSource(await buildFrameSource(opts));
 }
 
 /**
