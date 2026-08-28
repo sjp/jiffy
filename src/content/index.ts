@@ -110,7 +110,7 @@ let pickTimer: ReturnType<typeof setTimeout> | undefined;
 function toastReporter(clientX: number, clientY: number, onCancel?: () => void): StatusFn {
   let toast: ReturnType<typeof showToast> | null = null;
   const ensure = () => (toast ??= showToast(clientX, clientY, onCancel));
-  return (status) => {
+  return (status, detail) => {
     switch (status) {
       case "loading":
         ensure().set("Loading…");
@@ -122,7 +122,12 @@ function toastReporter(clientX: number, clientY: number, onCancel?: () => void):
         ensure().set("Not an animated image", 2000);
         break;
       case "too-large":
-        ensure().set("Image too large to play", 2500);
+        // The size is what makes this actionable — otherwise "too large" reads
+        // as a bug rather than a limit the image genuinely blew past.
+        ensure().set(
+          detail ? `Image too large to play (${detail})` : "Image too large to play",
+          2500,
+        );
         break;
       case "error":
         ensure().set("Couldn't load this image", 2500);

@@ -20,7 +20,7 @@
 // where the user picked and then closed everything carries zero observers.
 import { NotAnimatedError } from "../engine/decode";
 import type { FrameSource } from "../engine/frameSource";
-import { DecodeBudgetError } from "../engine/types";
+import { DecodeBudgetError, formatBytes } from "../engine/types";
 import type { DecodeResult, Engine, Frame } from "../engine/types";
 import type { Overlay } from "./overlay";
 
@@ -30,11 +30,17 @@ import type { Overlay } from "./overlay";
  *   loading       — fetch/decode started (show a transient "Loading…")
  *   ready         — overlay mounted, controls live (clear the loading message)
  *   not-animated  — single-frame or no animated sniffer matched
- *   too-large     — decode would exceed the pixel/memory budget
+ *   too-large     — decode would exceed the memory budget
  *   error         — genuine fetch/decode failure
  */
 export type ProcessStatus = "loading" | "ready" | "not-animated" | "too-large" | "error";
-export type StatusFn = (status: ProcessStatus) => void;
+/**
+ * `detail` is a short human phrase the message may fold in — set only for
+ * `too-large`, where it is the decode's estimated size ("~1.8 GB"). Formatted
+ * here rather than in the content script so the always-loaded script keeps no
+ * dependency on the engine bundle.
+ */
+export type StatusFn = (status: ProcessStatus, detail?: string) => void;
 
 /** Collaborators for the per-GIF pipeline (injectable for tests). */
 export interface PipelineDeps {
@@ -140,7 +146,12 @@ export function createController(deps: PipelineDeps): Controller {
             : err instanceof DecodeBudgetError
               ? "too-large"
               : "error";
-        onStatus?.(status);
+        // Size is only known when the decoder measured it before bailing.
+        const detail =
+          err instanceof DecodeBudgetError && err.bytes !== undefined
+            ? `~${formatBytes(err.bytes)}`
+            : undefined;
+        onStatus?.(status, detail);
       }
     } finally {
       pending.delete(img);

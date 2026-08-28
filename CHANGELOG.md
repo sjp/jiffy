@@ -29,6 +29,11 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   source patches, and animated AVIF is re-decoded by index from a live decoder,
   so a long animation costs roughly an order of magnitude less than holding a
   bitmap per frame.
+- Decode memory ceiling sized to the machine: on Chromium it is a share of
+  `navigator.deviceMemory`, elsewhere a fixed ~1.2 GB. An image whose decode
+  would go over it is refused before any pixels are allocated, and the toast
+  names the size it would have needed, so an outsized image can no longer take
+  the tab down with it.
 - Two-tier image fetch: the content script fetches the bytes itself first, so it
   reuses the browser's cache, carries the page's cookies and Referer (images that
   a cookie-less background fetch 403s), and can read `blob:` sources. The

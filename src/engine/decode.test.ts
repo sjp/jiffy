@@ -13,7 +13,14 @@
 import assert from "node:assert/strict";
 
 import { installFakeCanvas, pixelAt, type FakeImageBitmap } from "../test/fakeCanvas.ts";
-import { assertDecodeBudget, DecodeBudgetError, MAX_DECODE_BYTES } from "./types.ts";
+import {
+  assertDecodeBudget,
+  computeMaxDecodeBytes,
+  DecodeBudgetError,
+  DEFAULT_MAX_DECODE_BYTES,
+  MAX_DECODE_BYTES,
+  MIN_MAX_DECODE_BYTES,
+} from "./types.ts";
 
 installFakeCanvas();
 
@@ -132,15 +139,67 @@ await assert.rejects(
   "an aborted signal rejects the decode with AbortError",
 );
 
+// ---- the ceiling adapts to the machine -----------------------------------
+// `navigator.deviceMemory` is Chromium-only, so the fallback has to be the
+// static default; where it is available the ceiling is a share of the reported
+// RAM, floored so a small machine can still play an ordinary animation and
+// capped so a large one doesn't go back to promising gigabytes.
+assert.equal(
+  computeMaxDecodeBytes(undefined),
+  DEFAULT_MAX_DECODE_BYTES,
+  "no deviceMemory (Firefox) falls back to the static default",
+);
+assert.equal(
+  computeMaxDecodeBytes(8),
+  DEFAULT_MAX_DECODE_BYTES,
+  "the largest deviceMemory the spec reports is capped at the static default",
+);
+assert.equal(
+  computeMaxDecodeBytes(4),
+  4 * 1024 ** 3 * 0.15,
+  "a mid-range machine gets its share of RAM",
+);
+assert.equal(
+  computeMaxDecodeBytes(0.25),
+  MIN_MAX_DECODE_BYTES,
+  "the smallest deviceMemory is floored, not shrunk to nothing",
+);
+const ceilings = [0.25, 0.5, 1, 2, 4, 8].map((gib) => computeMaxDecodeBytes(gib));
+assert.deepEqual(
+  ceilings,
+  [...ceilings].sort((a, b) => a - b),
+  "more RAM never means a smaller ceiling",
+);
+assert.ok(
+  MAX_DECODE_BYTES >= MIN_MAX_DECODE_BYTES && MAX_DECODE_BYTES <= DEFAULT_MAX_DECODE_BYTES,
+  "the resolved ceiling stays inside the floor/default band",
+);
+
 // ---- decode budget rejects an oversized image ----------------------------
-// The budget is now the bytes a decode will RETAIN — keyframe bitmaps plus the
-// patches between them — rather than 4 bytes per canvas pixel per frame.
+// The budget is the bytes a decode will RETAIN — keyframe bitmaps plus the
+// patches between them — rather than 4 bytes per canvas pixel per frame. Tests
+// pass an explicit limit so they don't depend on the RAM of the machine running
+// them.
+const LIMIT = 1_000_000_000;
 assert.throws(
-  () => assertDecodeBudget(MAX_DECODE_BYTES + 1),
+  () => assertDecodeBudget(LIMIT + 1, LIMIT),
   (err: unknown) => err instanceof DecodeBudgetError,
   "an over-budget image throws DecodeBudgetError",
 );
-assert.doesNotThrow(() => assertDecodeBudget(MAX_DECODE_BYTES), "the ceiling itself passes");
+assert.doesNotThrow(() => assertDecodeBudget(LIMIT, LIMIT), "the ceiling itself passes");
+
+// The size travels with the error so the toast can say why the image was
+// refused, rather than leaving the user to guess how far over it was.
+const budgetErr = (() => {
+  try {
+    assertDecodeBudget(1_800_000_000, LIMIT);
+  } catch (err) {
+    return err as DecodeBudgetError;
+  }
+  return undefined;
+})();
+assert.equal(budgetErr?.bytes, 1_800_000_000, "the error carries the estimated size");
+assert.match(budgetErr!.message, /1\.8 GB/, "the message reports the size in human units");
 
 // A GIF over the ceiling is rejected before a single pixel is decompressed: the
 // check runs on `gif.lsd` and the raw frame count, ahead of decompressFrames.

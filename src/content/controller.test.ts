@@ -228,14 +228,17 @@ ctrl.teardownAll();
 }
 
 // ---- an over-budget decode reports "too-large" -----------------------------
-// A DecodeBudgetError (image exceeds the pixel/memory ceiling) is surfaced as a
-// distinct status, not a generic error, so the toast can say so.
+// A DecodeBudgetError (image exceeds the memory ceiling) is surfaced as a
+// distinct status, not a generic error, so the toast can say so — with the size
+// the decoder measured, formatted here so the content script needn't import the
+// engine to render it.
 {
   const statuses: string[] = [];
+  let reported: string | undefined;
   const budgetDeps = {
     fetchBytes: async () => new ArrayBuffer(8),
     decode: async () => {
-      throw new DecodeBudgetError();
+      throw new DecodeBudgetError(1_800_000_000, 1_200_000_000);
     },
     createEngine: () => ({
       setLoop: () => {},
@@ -250,12 +253,16 @@ ctrl.teardownAll();
     mountControls: () => () => {},
   } as never;
   const budgetCtrl = createController(budgetDeps);
-  await budgetCtrl.processImage(imgWith("http://x/huge.gif"), (s) => statuses.push(s));
+  await budgetCtrl.processImage(imgWith("http://x/huge.gif"), (s, detail) => {
+    statuses.push(s);
+    if (detail) reported = detail;
+  });
   assert.deepEqual(
     statuses,
     ["loading", "too-large"],
     "an over-budget decode reports loading then too-large",
   );
+  assert.equal(reported, "~1.8 GB", "the estimated size travels with the status");
   assert.equal(budgetCtrl.instances.size, 0, "no instance created for an over-budget image");
 }
 

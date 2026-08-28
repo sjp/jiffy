@@ -43,6 +43,10 @@ Prefer to build it yourself? See [Building from source](#building-from-source).
 > 💡 **On a standalone image page** — like when you open a `.gif` link directly —
 > just click the toolbar button and the controls appear instantly. No need to pick.
 
+> ⚠️ **Very large animations** — if decoding an image would need more memory than
+> the machine can spare, Jiffy declines it and tells you the size it would have
+> taken, rather than risking the tab.
+
 ### Controls
 
 | Control            | What it does                               |
