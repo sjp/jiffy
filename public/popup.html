@@ -41,9 +41,30 @@
       button:hover {
         background: #7c3aed;
       }
-      button:focus-visible {
+      button:focus-visible,
+      input:focus-visible {
         outline: 2px solid #8b5cf6;
         outline-offset: 2px;
+      }
+      #status {
+        margin: 10px 0 0;
+        opacity: 1;
+        color: #b91c1c;
+      }
+      @media (prefers-color-scheme: dark) {
+        #status {
+          color: #fca5a5;
+        }
+      }
+      .all-sites {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 12px 0 0;
+      }
+      .hint {
+        margin: 4px 0 0;
+        font-size: 12px;
       }
     </style>
   </head>
@@ -51,6 +72,15 @@
     <h1>Jiffy</h1>
     <p>Pause, scrub, and replay animated images.</p>
     <button id="pick" type="button">Choose an image</button>
+    <p id="status" role="status" hidden></p>
+    <label class="all-sites">
+      <input id="all-sites" type="checkbox" />
+      Allow on all sites
+    </label>
+    <p class="hint">
+      Optional. Needed for images inside embedded frames, and images a site won't hand over on its
+      own.
+    </p>
     <script src="popup.js"></script>
   </body>
 </html>

@@ -8,10 +8,13 @@
 // downloaded for the <img>, it can resolve `blob:` URLs (which exist only in that
 // origin), and it yields an ArrayBuffer with no base64 round-trip.
 //
-// Tier 2 — ask the background script (see ../messages). Its fetch is granted
-// `host_permissions`, so it's the only one that can reach a cross-origin server
-// sending no CORS headers at all — but it re-downloads the bytes and pays a ~33%
-// base64 transfer overhead, so it's the fallback, not the default.
+// Tier 2 — ask the background script (see ../messages). Its fetch runs on the
+// extension's own host access, so it's the only one that can reach a cross-origin
+// server sending no CORS headers at all — but it re-downloads the bytes and pays
+// a ~33% base64 transfer overhead, so it's the fallback, not the default. That
+// access is optional and off by default (the popup's "all sites" checkbox), so
+// this tier can also come back empty-handed; the caller reports that like any
+// other failure.
 import {
   assertDeclaredSize,
   DIRECT_SCHEMES,

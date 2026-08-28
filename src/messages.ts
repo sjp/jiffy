@@ -1,9 +1,11 @@
 // Shared messaging contract for cross-origin GIF fetching.
 //
 // A content script has an <img>, not raw bytes, and same-origin `fetch` is
-// blocked by CORS for cross-origin images. The background script — granted
-// `host_permissions` — can fetch those bytes and hand them back over
-// `runtime.sendMessage`.
+// blocked by CORS for cross-origin images. The background script — running on
+// whatever host access the extension holds — can fetch those bytes and hand them
+// back over `runtime.sendMessage`. Host access beyond the active tab is the
+// user's call (see src/popup/popup.ts), so a cross-origin fetch here may itself
+// be refused; that comes back as an ordinary error response.
 //
 // Wire format is base64, NOT a raw `ArrayBuffer`. Firefox structured-clones
 // message payloads so an `ArrayBuffer` would round-trip intact there, but Chrome

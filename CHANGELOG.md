@@ -21,9 +21,15 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   covered by a link overlay, a caption gradient or a lightbox trigger still pick.
 - Keyboard shortcuts scoped to the focused control bar (Space, ←/→, Home, End).
 - Draggable, repositionable control bar with snap-back-to-default.
-- On-demand player bundle: the script injected into every page is a ~9 KB
-  loader, and the decoders, engine and UI (~97 KB) are imported only when
-  you actually pick an image.
+- Nothing is asked for at install: no content script is declared and no host
+  permission is required, so there's no "read and change all your data on all
+  websites" warning. Clicking the toolbar button grants access to that tab alone
+  and injects the picker on the spot. Access to every site is an optional
+  checkbox in the popup, off by default, needed only for images inside
+  cross-origin frames and images whose server won't let another page read them.
+- On-demand player bundle: what gets injected when you click the toolbar button
+  is a ~9 KB loader, and the decoders, engine and UI (~97 KB) are imported only
+  when you actually pick an image.
 - Decoding runs in a Worker, so picking a large image no longer freezes the
   page: scrolling, the page's own animations and the "Loading…" toast all keep
   going while the frames are built. Cancelling with the toast's ✕ terminates the

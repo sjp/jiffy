@@ -1,4 +1,5 @@
-// Content-script loader — the only code injected into every page.
+// Content-script loader — the only code Jiffy injects into a page, and only once
+// the user has asked for it.
 //
 // This script is deliberately tiny: a runtime message listener, the pick-mode
 // state machine, and the status toast. Everything with real weight (Preact,
@@ -7,18 +8,25 @@
 // `import()`s the first time the user actually picks an image. The overwhelming
 // majority of tabs never activate Jiffy, and those pay for this file alone.
 //
-// Discovery scope: ON-DEMAND via the toolbar popup. The popup's
-// "Select a GIF" button sends PICK_GIF to this content script, which enters a
-// one-shot "pick mode": the next click on an <img> enhances it (or tears it down
-// if already enhanced); Esc or clicking anything else cancels. Only images the
-// user opts into spin up an engine/overlay/controls.
+// Discovery scope: ON-DEMAND via the toolbar popup. Nothing is declared in the
+// manifest's content_scripts; the popup injects this file into the active tab
+// (the access `activeTab` grants when the toolbar button is clicked) and then
+// sends PICK_GIF, which enters a one-shot "pick mode": the next click on an <img>
+// enhances it (or tears it down if already enhanced); Esc or clicking anything
+// else cancels. Only images the user opts into spin up an engine/overlay/controls.
 //
-// Frames: this script is injected into every frame, because plenty of animated
-// images live inside embeds (forum posts, comment widgets, sandboxed previews)
-// rather than the top document. PICK_GIF is broadcast to the whole tab, so every
-// frame arms itself and the one the user actually clicks in resolves the pick —
-// then announces it (endPick) so the others disarm. See PickEndedRequest. Each
-// frame loads its own copy of the player bundle, on its own first pick.
+// Because injection is per-click, the same frame can be handed this file again on
+// the next pick — the bootstrap at the bottom makes the second and later
+// injections no-ops, so a frame never ends up with two message listeners.
+//
+// Frames: the popup injects into every frame of the tab, because plenty of
+// animated images live inside embeds (forum posts, comment widgets, sandboxed
+// previews) rather than the top document. PICK_GIF is broadcast to the whole tab,
+// so every frame arms itself and the one the user actually clicks in resolves the
+// pick — then announces it (endPick) so the others disarm. See PickEndedRequest.
+// Each frame loads its own copy of the player bundle, on its own first pick.
+// (`activeTab` reaches the tab's own origin, so cross-origin embeds are only
+// injected into once the user turns on all-sites access from the popup.)
 //
 // Any <img> is a valid pick — there is deliberately no URL/extension pre-filter.
 // Plenty of animated images live behind extension-less CDN paths, signed URLs,
@@ -334,4 +342,11 @@ export function init(): () => void {
   };
 }
 
-init();
+// One document, one loader. The popup injects this file on every pick, and the
+// isolated world it lands in persists for the life of the document, so a flag
+// there is what tells a repeat injection that the listeners are already up.
+const scope = globalThis as { __jiffyLoaded?: boolean };
+if (!scope.__jiffyLoaded) {
+  scope.__jiffyLoaded = true;
+  init();
+}

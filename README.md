@@ -43,6 +43,10 @@ Prefer to build it yourself? See [Building from source](#building-from-source).
 > 💡 **On a standalone image page** — like when you open a `.gif` link directly —
 > just click the toolbar button and the controls appear instantly. No need to pick.
 
+> 🔒 **Images in embedded frames** — a GIF inside an embed from another site (an
+> ad slot, a comment widget, an embedded post) is out of reach until you tick
+> **Allow on all sites** in the popup. See [Permissions](#permissions).
+
 > ⚠️ **Very large animations** — if decoding an image would need more memory than
 > the machine can spare, Jiffy declines it and tells you the size it would have
 > taken, rather than risking the tab.
@@ -73,6 +77,23 @@ Click the player bar (or Tab to it) to focus it, then:
 
 Shortcuts only affect the player bar you've focused — they won't disturb other
 GIFs on the page or get in the way when you're typing in a text box.
+
+## Permissions
+
+Jiffy installs with **no access to any site** — none of the "read and change all
+your data on all websites" that browsers warn about. Clicking the toolbar button
+is what lets it into the page you're on, and the picker is injected only then;
+navigate away and that access lapses.
+
+Two things need more reach than a single page, so the popup carries an optional
+**Allow on all sites** checkbox. It's off by default, and you can turn it back
+off there or in your browser's extension settings at any time:
+
+- **Images inside an embedded frame from another site** — Jiffy can't offer them
+  for picking without it.
+- **Images a site won't hand over** — some servers refuse to let another page
+  read their images. Jiffy then can't get the bytes to decode and says
+  "Couldn't load this image"; with all-sites access it fetches them itself.
 
 ## Privacy
 
