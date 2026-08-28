@@ -19,6 +19,8 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   including images embedded in an iframe; standalone image pages toggle controls
   directly. The image is resolved by hit-testing the click point, so images
   covered by a link overlay, a caption gradient or a lightbox trigger still pick.
+  While picking, the image under the cursor is outlined — with a reminder that
+  Esc cancels — so on a dense page the pick is never a guess.
 - Keyboard shortcuts scoped to the focused control bar (Space, ←/→, Home, End).
 - Draggable, repositionable control bar with snap-back-to-default.
 - Nothing is asked for at install: no content script is declared and no host
@@ -28,7 +30,7 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   checkbox in the popup, off by default, needed only for images inside
   cross-origin frames and images whose server won't let another page read them.
 - On-demand player bundle: what gets injected when you click the toolbar button
-  is a ~9 KB loader, and the decoders, engine and UI (~97 KB) are imported only
+  is a ~13 KB loader, and the decoders, engine and UI (~105 KB) are imported only
   when you actually pick an image.
 - Decoding runs in a Worker, so picking a large image no longer freezes the
   page: scrolling, the page's own animations and the "Loading…" toast all keep

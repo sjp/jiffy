@@ -2,7 +2,7 @@
 // the user has asked for it.
 //
 // This script is deliberately tiny: a runtime message listener, the pick-mode
-// state machine, and the status toast. Everything with real weight (Preact,
+// state machine (with its hover highlight), and the status toast. Everything with real weight (Preact,
 // gifuct-js, the decoders, the engine, the overlay, the controls UI) lives in
 // ./player, an ESM bundle listed in `web_accessible_resources` that this module
 // `import()`s the first time the user actually picks an image. The overwhelming
@@ -36,6 +36,8 @@
 import { isExitPickRequest, isPickGifRequest } from "../messages";
 import type { PickEndedRequest } from "../messages";
 import type { Controller, StatusFn } from "./controller";
+import { createHighlight } from "./highlight";
+import type { Highlight } from "./highlight";
 import { findImageAtPoint } from "./pick";
 import { showToast } from "./toast";
 
@@ -107,6 +109,64 @@ const PICK_TIMEOUT_MS = 60_000;
 let picking = false;
 let previousCursor = "";
 let pickTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Pointer/scroll tracking never blocks the page, and beats a page that stops propagation. */
+const TRACK_OPTS: AddEventListenerOptions = { passive: true, capture: true };
+
+/** The hover outline, created on the first candidate and destroyed on exit. */
+let highlight: Highlight | null = null;
+/** Last pointer position seen while picking, in viewport coordinates. */
+let hoverX = 0;
+let hoverY = 0;
+/** False until the pointer has actually moved: (0, 0) is a real point, not "unknown". */
+let hovered = false;
+/** Pending rAF for the hover update, or 0. Real rAF ids start at 1. */
+let hoverFrame = 0;
+
+/**
+ * Resolve the image under the last known pointer position and outline it, so the
+ * user can see which image the click would land on before committing to it. The
+ * candidate comes from the same hit test the click uses, so the box can't
+ * promise one image and the click deliver another.
+ */
+function updateHighlight(): void {
+  hoverFrame = 0;
+  if (!picking) return;
+  const img = findImageAtPoint(hoverX, hoverY);
+  if (!img) {
+    highlight?.hide();
+    return;
+  }
+  // Created on the first candidate rather than on entering pick mode, so a pick
+  // that never hovers an image adds nothing to the page.
+  (highlight ??= createHighlight()).show(img.getBoundingClientRect());
+}
+
+/**
+ * Coalesce to one hit test per frame. `pointermove` fires far more often than
+ * the screen updates, and each test walks a hit stack (plus any open shadow
+ * roots below it), which is not work to do on every event.
+ */
+function scheduleHighlight(): void {
+  if (hoverFrame !== 0) return;
+  hoverFrame = requestAnimationFrame(updateHighlight);
+}
+
+function onPickPointerMove(event: PointerEvent): void {
+  hoverX = event.clientX;
+  hoverY = event.clientY;
+  hovered = true;
+  scheduleHighlight();
+}
+
+/**
+ * A scroll moves the page under a stationary cursor, so the outlined image is no
+ * longer the one that would be picked — re-resolve from the last pointer
+ * position. Captured, because the scroll may well be an inner scroller's.
+ */
+function onPickScroll(): void {
+  if (hovered) scheduleHighlight();
+}
 
 /**
  * Build a status callback that drives a toast anchored at the given viewport
@@ -192,6 +252,8 @@ export function enterPickMode(): void {
   document.documentElement.style.cursor = "crosshair";
   document.addEventListener("click", onPickClick, true);
   document.addEventListener("keydown", onPickKey, true);
+  document.addEventListener("pointermove", onPickPointerMove, TRACK_OPTS);
+  window.addEventListener("scroll", onPickScroll, TRACK_OPTS);
   // Self-disarming safety nets, all local to this frame (see endPick).
   document.addEventListener("visibilitychange", onPickVisibilityChange);
   window.addEventListener("blur", exitPickMode);
@@ -205,9 +267,18 @@ export function exitPickMode(): void {
   document.documentElement.style.cursor = previousCursor;
   document.removeEventListener("click", onPickClick, true);
   document.removeEventListener("keydown", onPickKey, true);
+  document.removeEventListener("pointermove", onPickPointerMove, TRACK_OPTS);
+  window.removeEventListener("scroll", onPickScroll, TRACK_OPTS);
   document.removeEventListener("visibilitychange", onPickVisibilityChange);
   window.removeEventListener("blur", exitPickMode);
   clearTimeout(pickTimer);
+  // A queued hover update would run after the exit and redraw a box nobody can
+  // dismiss, so drop it along with the box itself.
+  if (hoverFrame !== 0) cancelAnimationFrame(hoverFrame);
+  hoverFrame = 0;
+  hovered = false;
+  highlight?.destroy();
+  highlight = null;
 }
 
 /**

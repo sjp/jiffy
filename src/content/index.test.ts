@@ -20,6 +20,9 @@ const imgWith = (src: string) => {
   return img;
 };
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** Let a rAF-throttled update (the hover highlight) run, then settle its microtasks. */
+const nextFrame = () =>
+  new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 const docEl = document.documentElement;
 
 /** Text of every toast currently on the page (each lives in its own shadow root). */
@@ -27,6 +30,12 @@ const toastText = () =>
   [...document.body.querySelectorAll("div")]
     .map((el) => el.shadowRoot?.textContent ?? "")
     .join(" ");
+
+/** The hover highlight's host, if one is mounted (it's the shadow root with a .box). */
+const highlightHost = () =>
+  ([...document.body.children] as HTMLElement[]).find((el) =>
+    el.shadowRoot?.querySelector(".box"),
+  ) ?? null;
 
 // ---- stub player -----------------------------------------------------------
 // Stands in for the lazily-imported ./player module. `imports` counts how many
@@ -222,6 +231,83 @@ reset();
   );
   await flush();
   assert.equal(picked, direct, "the click target remains the fallback");
+
+  delete doc.elementsFromPoint;
+  reset();
+}
+
+// ---- hovering in pick mode outlines the image that would be picked ---------
+// The crosshair says Jiffy is armed but not what it's aimed at, which on a dense
+// page (or an image under an overlay) is exactly the ambiguity. The box is
+// resolved with the same hit test the click uses, so what it outlines is what
+// the click delivers.
+{
+  const stackAt = new Map<string, Element[]>();
+  const doc = document as Document & { elementsFromPoint?: (x: number, y: number) => Element[] };
+  doc.elementsFromPoint = (x, y) => stackAt.get(`${x},${y}`) ?? [];
+  const at = (x: number, y: number, stack: Element[]) => stackAt.set(`${x},${y}`, stack);
+  const move = (x: number, y: number) =>
+    document.dispatchEvent(
+      new window.MouseEvent("pointermove", { bubbles: true, clientX: x, clientY: y }),
+    );
+
+  reset();
+  usePlayer();
+  const target = imgWith("http://x/hover.gif");
+  target.getBoundingClientRect = () => ({ top: 30, left: 60, width: 240, height: 120 }) as DOMRect;
+  document.body.appendChild(target);
+  at(80, 90, [target, document.body]);
+
+  enterPickMode();
+  assert.equal(highlightHost(), null, "an untouched pick mode adds nothing to the page");
+
+  move(80, 90);
+  await nextFrame();
+  const boxHost = highlightHost();
+  assert.ok(boxHost, "hovering an image mounts the highlight");
+  assert.equal(boxHost!.style.left, "60px", "the box is placed over the image's box");
+  assert.equal(boxHost!.style.top, "30px");
+  assert.equal(boxHost!.style.width, "240px");
+  assert.equal(boxHost!.style.height, "120px");
+  assert.equal(boxHost!.style.display, "block", "the box is visible");
+
+  // Moving off the image hides the box (the same host is kept for the next one).
+  move(400, 400);
+  await nextFrame();
+  assert.equal(highlightHost(), boxHost, "the host is reused rather than rebuilt");
+  assert.equal(boxHost!.style.display, "none", "no candidate under the pointer → no box");
+
+  // Scrolling moves the page under a stationary cursor, so the candidate is
+  // re-resolved from the last pointer position rather than left stale.
+  at(400, 400, [target, document.body]);
+  window.dispatchEvent(new window.Event("scroll"));
+  await nextFrame();
+  assert.equal(boxHost!.style.display, "block", "a scroll re-resolves the candidate");
+
+  // Clicking picks the image the box was pointing at.
+  move(80, 90);
+  await nextFrame();
+  target.dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true, cancelable: true, clientX: 80, clientY: 90 }),
+  );
+  await flush();
+  assert.equal(picked, target, "the click picks the highlighted image");
+  assert.equal(highlightHost(), null, "resolving the pick removes the highlight");
+
+  // Nothing is left listening once pick mode is over.
+  move(80, 90);
+  await nextFrame();
+  assert.equal(highlightHost(), null, "pointer moves after the pick draw nothing");
+
+  // Leaving pick mode without picking clears the box too.
+  reset();
+  document.body.appendChild(target);
+  enterPickMode();
+  move(80, 90);
+  await nextFrame();
+  assert.ok(highlightHost(), "the box is back for the next pick");
+  exitPickMode();
+  assert.equal(highlightHost(), null, "exiting pick mode removes the highlight");
 
   delete doc.elementsFromPoint;
   reset();

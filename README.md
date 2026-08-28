@@ -34,8 +34,10 @@ Prefer to build it yourself? See [Building from source](#building-from-source).
 
 1. **Click the Jiffy button** in your browser toolbar. Your cursor turns into a
    crosshair.
-2. **Click the animated image** you want to control. A small player bar appears
-   attached to it.
+2. **Click the animated image** you want to control. The one under your cursor
+   is outlined as you move, so you can see which image you'll get before you
+   commit — handy in a gallery, or where a link or caption sits over the image.
+   A small player bar appears attached to it.
 3. **Play with it** — pause, step through frames, scrub, change speed, and more
    (see the controls below).
 4. **Click the ✕** (or click the image again) when you're done.
