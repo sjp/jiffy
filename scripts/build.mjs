@@ -5,6 +5,12 @@
 // IIFE), compiles TypeScript + Preact TSX via the automatic JSX runtime, and
 // copies the browser-specific manifest + static assets into the output directory.
 //
+// Two esbuild passes, because the outputs need different module formats:
+//   1. the classic scripts (background, content, popup) as IIFEs;
+//   2. player.js as a real ES module, because the content script pulls it in
+//      with a dynamic `import()` of a web_accessible_resources URL (issue #09).
+// esbuild's `format` is per-build, so this can't be one pass.
+//
 //   node scripts/build.mjs --firefox          one-off Firefox build  → dist-firefox/
 //   node scripts/build.mjs --chrome           one-off Chrome build   → dist-chrome/
 //   node scripts/build.mjs --firefox --watch  Firefox dev (rebuild on change)
@@ -114,16 +120,10 @@ const patchPreactInnerHTML = {
   },
 };
 
-/** @type {import('esbuild').BuildOptions} */
-const options = {
-  entryPoints: {
-    background: path.join(root, "src/background.ts"),
-    content: path.join(root, "src/content/index.ts"),
-    popup: path.join(root, "src/popup/popup.ts"),
-  },
+/** Settings shared by both passes. @type {import('esbuild').BuildOptions} */
+const common = {
   outdir,
   bundle: true,
-  format: "iife",
   platform: "browser",
   target: ["firefox115", "chrome120"],
   sourcemap: true,
@@ -134,15 +134,42 @@ const options = {
   // controls.css is consumed as a string for an adopted stylesheet (PRD §7),
   // not injected as a stylesheet — load it as text.
   loader: { ".css": "text" },
-  plugins: [patchPreactInnerHTML, copyStaticPlugin],
+  plugins: [patchPreactInnerHTML],
 };
 
+/** @type {import('esbuild').BuildOptions[]} */
+const builds = [
+  // Classic scripts, each self-contained in its own execution context. The
+  // content script is the one injected into every page, so it deliberately
+  // carries nothing but the loader, pick mode and the toast.
+  {
+    ...common,
+    entryPoints: {
+      background: path.join(root, "src/background.ts"),
+      content: path.join(root, "src/content/index.ts"),
+      popup: path.join(root, "src/popup/popup.ts"),
+    },
+    format: "iife",
+    plugins: [...common.plugins, copyStaticPlugin],
+  },
+  // The on-demand player: Preact, gifuct-js, the decoders, engine, overlay and
+  // controls UI. ESM because the content script reaches it via `import()`, and
+  // listed in each manifest's `web_accessible_resources` so that URL loads.
+  {
+    ...common,
+    entryPoints: { player: path.join(root, "src/content/player.ts") },
+    format: "esm",
+  },
+];
+
 if (watch) {
-  const ctx = await esbuild.context(options);
-  await ctx.watch();
+  for (const options of builds) {
+    const ctx = await esbuild.context(options);
+    await ctx.watch();
+  }
   console.log(`[jiffy] watching for changes… (${browser} → ${outdir})`);
 } else {
   await rm(outdir, { recursive: true, force: true });
-  await esbuild.build(options);
+  await Promise.all(builds.map((options) => esbuild.build(options)));
   console.log(`[jiffy] build complete → ${outdir}`);
 }

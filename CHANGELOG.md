@@ -20,4 +20,7 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   directly.
 - Keyboard shortcuts scoped to the focused control bar (Space, ←/→, Home, End).
 - Draggable, repositionable control bar with snap-back-to-default.
+- On-demand player bundle: the script injected into every page is a ~7 KB
+  loader, and the decoders, engine and UI (~90 KB) are imported only when
+  you actually pick an image.
 - Firefox (130+) and Chrome (120+) builds.

@@ -1,238 +1,12 @@
-// Content-script entry + per-image pipeline.
+// Content-script loader — the only code injected into every page.
 //
-// For each animated image on the page we run: fetch bytes → decode → engine
-// → overlay canvas → controls, tracking every instance so it can be torn down
-// cleanly. One engine + overlay + controls per image; a decode failure on one
-// must not break the others.
+// This script is deliberately tiny: a runtime message listener, the pick-mode
+// state machine, and the status toast. Everything with real weight (Preact,
+// gifuct-js, the decoders, the engine, the overlay, the controls UI) lives in
+// ./player, an ESM bundle listed in `web_accessible_resources` that this module
+// `import()`s the first time the user actually picks an image. The overwhelming
+// majority of tabs never activate Jiffy, and those pay for this file alone.
 //
-// The pipeline's collaborators are injected (createController) so the discovery /
-// registry / teardown logic is unit-testable headless without a real canvas or
-// the background channel.
-//
-// DOM-lifecycle reconciliation: a debounced MutationObserver tears down a GIF's
-// player when its <img> leaves the document (lazy unmount, SPA route change),
-// reusing the idempotent registry + teardown so no rAF loop, listener or bitmap
-// leaks. Because discovery is ON-DEMAND (the user picks GIFs via the popup), the
-// observer does NOT auto-enhance inserted GIFs — it only reconciles removals.
-// The observer is attached lazily — only while ≥1 player is live — so an idle
-// page (no GIF ever enhanced) carries zero observers and zero listeners.
-import { decode, NotAnimatedError } from "../engine/decode";
-import { createEngine } from "../engine/engine";
-import { DecodeBudgetError } from "../engine/types";
-import type { DecodeResult, Engine, Frame } from "../engine/types";
-import { isExitPickRequest, isPickGifRequest } from "../messages";
-import type { PickEndedRequest } from "../messages";
-import { fetchGifBytes } from "./fetchGif";
-import { mountControls } from "./mount";
-import { createOverlay, type Overlay } from "./overlay";
-import { showToast } from "./toast";
-
-/**
- * Outcomes of running an image through the pipeline, reported to an optional
- * callback so the content script can surface feedback:
- *   loading       — fetch/decode started (show a transient "Loading…")
- *   ready         — overlay mounted, controls live (clear the loading message)
- *   not-animated  — single-frame or no animated sniffer matched
- *   too-large     — decode would exceed the pixel/memory budget
- *   error         — genuine fetch/decode failure
- */
-export type ProcessStatus = "loading" | "ready" | "not-animated" | "too-large" | "error";
-type StatusFn = (status: ProcessStatus) => void;
-
-/** Collaborators for the per-GIF pipeline (injectable for tests). */
-export interface PipelineDeps {
-  fetchBytes: (url: string, signal?: AbortSignal) => Promise<ArrayBuffer>;
-  decode: (bytes: ArrayBuffer, signal?: AbortSignal) => Promise<DecodeResult>;
-  createEngine: (frames: Frame[], duration: number) => Engine;
-  createOverlay: (img: HTMLImageElement, engine: Engine, frames: Frame[]) => Overlay;
-  mountControls: (img: HTMLImageElement, engine: Engine, onClose: () => void) => () => void;
-}
-
-/** A live, controllable GIF on the page. */
-interface Instance {
-  engine: Engine;
-  overlay: Overlay;
-  teardownControls: () => void;
-  /** Composited frames owned by this instance; their bitmaps are closed on teardown. */
-  frames: Frame[];
-}
-
-/**
- * Release the native/GPU memory backing decoded frame bitmaps. ImageBitmap.close()
- * frees deterministically (rather than waiting for GC), so we call it on every
- * teardown and on the decode early-return paths to avoid leaking full-res frames.
- */
-function closeFrames(frames: Frame[]): void {
-  for (const frame of frames) frame.bitmap.close();
-}
-
-export interface Controller {
-  /** Process one image through the pipeline (de-duplicated). */
-  processImage(img: HTMLImageElement, onStatus?: StatusFn): Promise<void>;
-  /** Tear down a single image's instance. */
-  teardown(img: HTMLImageElement): void;
-  /** Tear down everything. */
-  teardownAll(): void;
-  /** Tear down any instance whose <img> has left the document. */
-  reconcile(): void;
-  /** Live registry (exposed for tests). */
-  readonly instances: ReadonlyMap<HTMLImageElement, Instance>;
-}
-
-export function createController(deps: PipelineDeps): Controller {
-  const instances = new Map<HTMLImageElement, Instance>();
-  // In-flight loads, each paired with the AbortController that cancels it. Aborting
-  // unwinds the fetch wait and breaks the decode loop (see throwIfAborted), so a
-  // cancel during a slow large-GIF load stops the work rather than just discarding
-  // its result. teardown() is the single place that aborts.
-  const pending = new Map<HTMLImageElement, AbortController>();
-
-  // DOM-removal watcher, lazily attached. The observer + popstate listener exist
-  // ONLY while at least one player is live: with an empty registry reconcile()
-  // has nothing to do, so on the overwhelming majority of pages — where the user
-  // never activates the extension — we install no MutationObserver and no
-  // listener at all. Started on the 0→1 instance transition, torn down on 1→0.
-  let stopWatcher: (() => void) | null = null;
-  const ensureWatching = (): void => {
-    if (!stopWatcher) stopWatcher = startWatcher();
-  };
-  const stopWatchingIfIdle = (): void => {
-    if (stopWatcher && instances.size === 0) {
-      stopWatcher();
-      stopWatcher = null;
-    }
-  };
-
-  async function processImage(img: HTMLImageElement, onStatus?: StatusFn): Promise<void> {
-    if (instances.has(img) || pending.has(img)) return; // never double-process
-    const ac = new AbortController();
-    pending.set(img, ac);
-    onStatus?.("loading");
-    try {
-      const url = img.currentSrc || img.src;
-      const bytes = await deps.fetchBytes(url, ac.signal);
-      const { frames, duration, loops } = await deps.decode(bytes, ac.signal);
-
-      // Torn down mid-flight (reconcile / teardownAll): drop the frames silently.
-      if (!pending.has(img)) {
-        closeFrames(frames);
-        return;
-      }
-      // A single frame is nothing to control — same outcome the user cares about
-      // as a non-animated sniff: report it as not-animated, not a loaded player.
-      if (frames.length <= 1) {
-        closeFrames(frames);
-        onStatus?.("not-animated");
-        return;
-      }
-
-      const engine = deps.createEngine(frames, duration);
-      // Seed the loop setting from the source so the controls default matches how
-      // the image normally plays (e.g. a one-shot GIF starts with looping off).
-      engine.setLoop(loops);
-      const overlay = deps.createOverlay(img, engine, frames);
-      const teardownControls = deps.mountControls(img, engine, () => teardown(img));
-      instances.set(img, { engine, overlay, teardownControls, frames });
-      ensureWatching(); // first live player → start watching for DOM removals
-      onStatus?.("ready");
-    } catch (err) {
-      // One bad GIF shouldn't break the rest. Distinguish "not an animated image"
-      // (expected — the user can click any <img>, and most images are static) from
-      // a genuine failure so the feedback can be specific. Stay silent if torn
-      // down mid-flight.
-      console.debug("[jiffy] skipping image", img.currentSrc || img.src, err);
-      if (pending.has(img)) {
-        const status: ProcessStatus =
-          err instanceof NotAnimatedError
-            ? "not-animated"
-            : err instanceof DecodeBudgetError
-              ? "too-large"
-              : "error";
-        onStatus?.(status);
-      }
-    } finally {
-      pending.delete(img);
-    }
-  }
-
-  function teardown(img: HTMLImageElement): void {
-    // Abort first: if the image is still loading this cancels the fetch wait and
-    // breaks the decode loop; if it's already a live instance there's no pending
-    // controller and this is a no-op.
-    pending.get(img)?.abort();
-    pending.delete(img);
-    const instance = instances.get(img);
-    if (!instance) return;
-    instance.overlay.destroy();
-    instance.teardownControls();
-    // Overlay has stopped drawing, so freeing the frame bitmaps is now safe.
-    closeFrames(instance.frames);
-    instances.delete(img);
-    stopWatchingIfIdle(); // last player gone → detach the watcher
-  }
-
-  function teardownAll(): void {
-    for (const ac of pending.values()) ac.abort();
-    pending.clear();
-    for (const instance of instances.values()) {
-      instance.overlay.destroy();
-      instance.teardownControls();
-      closeFrames(instance.frames);
-    }
-    instances.clear();
-    stopWatchingIfIdle(); // registry emptied → detach the watcher
-  }
-
-  // Tear down players whose <img> is no longer in the document. Cheap (O(live
-  // players)) and idempotent, so it's safe to call from a noisy observer.
-  function reconcile(): void {
-    for (const img of instances.keys()) {
-      if (!img.isConnected) teardown(img);
-    }
-  }
-
-  // Attach the DOM-removal watcher and return a stop fn. Called lazily by
-  // ensureWatching() once a player is live — never on an idle page.
-  function startWatcher(): () => void {
-    // Coalesce a burst of mutations (infinite scroll, an SPA swapping a whole
-    // subtree) into a single reconcile on the next microtask.
-    let scheduled = false;
-    const schedule = (): void => {
-      if (scheduled) return;
-      scheduled = true;
-      queueMicrotask(() => {
-        scheduled = false;
-        reconcile();
-      });
-    };
-    const observer =
-      typeof MutationObserver !== "undefined" ? new MutationObserver(schedule) : null;
-    observer?.observe(document, { childList: true, subtree: true });
-    // SPA route changes can swap DOM via history navigation; reconcile then too.
-    const onPopState = (): void => schedule();
-    if (typeof window !== "undefined") {
-      window.addEventListener("popstate", onPopState);
-    }
-    return () => {
-      observer?.disconnect();
-      if (typeof window !== "undefined") {
-        window.removeEventListener("popstate", onPopState);
-      }
-    };
-  }
-
-  return { processImage, teardown, teardownAll, reconcile, instances };
-}
-
-/** Default wiring used when running as the actual content script. */
-export const controller = createController({
-  fetchBytes: fetchGifBytes,
-  decode,
-  createEngine,
-  createOverlay,
-  mountControls,
-});
-
 // Discovery scope: ON-DEMAND via the toolbar popup. The popup's
 // "Select a GIF" button sends PICK_GIF to this content script, which enters a
 // one-shot "pick mode": the next click on an <img> enhances it (or tears it down
@@ -243,16 +17,74 @@ export const controller = createController({
 // images live inside embeds (forum posts, comment widgets, sandboxed previews)
 // rather than the top document. PICK_GIF is broadcast to the whole tab, so every
 // frame arms itself and the one the user actually clicks in resolves the pick —
-// then announces it (endPick) so the others disarm. See PickEndedRequest.
+// then announces it (endPick) so the others disarm. See PickEndedRequest. Each
+// frame loads its own copy of the player bundle, on its own first pick.
 //
 // Any <img> is a valid pick — there is deliberately no URL/extension pre-filter.
 // Plenty of animated images live behind extension-less CDN paths, signed URLs,
 // or blob:/data: sources, and rejecting those made pick mode look broken. The
 // byte-sniff in decode() is the authority: it throws NotAnimatedError for static
 // bytes, which surfaces as a "Not an animated image" toast.
+import { isExitPickRequest, isPickGifRequest } from "../messages";
+import type { PickEndedRequest } from "../messages";
+import type { Controller, StatusFn } from "./controller";
+import { showToast } from "./toast";
 
-/** The controller surface pick mode drives (injectable for tests). */
-type PickTarget = Pick<Controller, "processImage" | "teardown" | "instances">;
+/** The slice of the player bundle this loader drives. */
+export type Player = Pick<Controller, "processImage" | "teardown" | "teardownAll" | "instances">;
+
+/** Shape of the lazily-imported ./player module. */
+export interface PlayerModule {
+  readonly controller: Player;
+}
+
+/** Built output name of the player bundle (see scripts/build.mjs + the manifests). */
+const PLAYER_BUNDLE = "player.js";
+
+/**
+ * How the player bundle is obtained. Firefox and Chrome both allow a content
+ * script to `import()` an extension URL that is web-accessible; the specifier
+ * has to be built at runtime because the origin is per-profile (Firefox) or
+ * per-extension (Chrome). Swappable so the headless tests can drive pick mode
+ * without an extension runtime — the same dependency-injection seam the
+ * pipeline uses (see PipelineDeps).
+ */
+let importPlayer = (): Promise<PlayerModule> =>
+  import(browser.runtime.getURL(PLAYER_BUNDLE)) as Promise<PlayerModule>;
+
+/** Replace the player import (tests). Also drops any already-loaded player. */
+export function setPlayerLoader(load: () => Promise<PlayerModule>): void {
+  importPlayer = load;
+  player = null;
+  loading = null;
+}
+
+/** The loaded player, once the bundle has arrived. Null until the first pick. */
+let player: Player | null = null;
+/** In-flight import, so two quick picks share one load. */
+let loading: Promise<Player | null> | null = null;
+
+/**
+ * Resolve the player, importing the bundle on first use. A failure (the page
+ * blocked the request, the extension was reloaded mid-pick) resolves to null and
+ * clears the memo so a later pick retries rather than being stuck forever.
+ */
+function ensurePlayer(): Promise<Player | null> {
+  if (player) return Promise.resolve(player);
+  // `.then(importPlayer)` rather than calling it directly: `browser.runtime`
+  // throws outright once the extension context is invalidated (reloaded or
+  // updated mid-pick), and that must surface as a rejected load, not as an
+  // exception thrown back into the click handler.
+  loading ??= Promise.resolve()
+    .then(importPlayer)
+    .then((module) => (player = module.controller))
+    .catch((err: unknown) => {
+      console.debug("[jiffy] could not load the player bundle", err);
+      loading = null;
+      return null;
+    });
+  return loading;
+}
 
 /**
  * How long an armed frame waits before disarming itself. A resolved pick disarms
@@ -265,7 +97,6 @@ const PICK_TIMEOUT_MS = 60_000;
 
 let picking = false;
 let previousCursor = "";
-let pickTarget: PickTarget = controller;
 let pickTimer: ReturnType<typeof setTimeout> | undefined;
 
 /**
@@ -299,10 +130,50 @@ function toastReporter(clientX: number, clientY: number, onCancel?: () => void):
   };
 }
 
-export function enterPickMode(target: PickTarget = controller): void {
+/**
+ * Toggle Jiffy on `img`: enhance it, or tear it down if it's already enhanced.
+ * Feedback is anchored at the viewport point the user acted on.
+ *
+ * On the frame's very first pick the player bundle has to come across before
+ * anything can happen, so the "Loading…" toast goes up straight away — the same
+ * one the fetch/decode then keeps writing to, so the user sees one continuous
+ * message rather than a dead pause followed by a toast. Cancelling during that
+ * window stops the pick; the module load itself is left to finish and is reused
+ * by the next one.
+ */
+async function togglePlayer(
+  img: HTMLImageElement,
+  clientX: number,
+  clientY: number,
+): Promise<void> {
+  let cancelled = false;
+  const report = toastReporter(clientX, clientY, () => {
+    cancelled = true;
+    player?.teardown(img);
+  });
+
+  let target = player;
+  if (!target) {
+    report("loading");
+    target = await ensurePlayer();
+    if (!target) {
+      report("error");
+      return;
+    }
+    if (cancelled) return;
+  }
+
+  if (target.instances.has(img)) target.teardown(img);
+  else void target.processImage(img, report);
+}
+
+export function enterPickMode(): void {
   if (picking) return;
   picking = true;
-  pickTarget = target;
+  // The user has declared intent, so warm the bundle now rather than on the
+  // click: by the time they've aimed at an image it has usually arrived, and the
+  // pick lands with no "Loading…" step at all.
+  void ensurePlayer();
   previousCursor = document.documentElement.style.cursor;
   document.documentElement.style.cursor = "crosshair";
   document.addEventListener("click", onPickClick, true);
@@ -365,16 +236,10 @@ function onPickClick(event: MouseEvent): void {
   // Landing on an image: consume the click so it doesn't reach the page (e.g. a
   // link wrapping the GIF), then enhance it (or toggle it back off). Whether the
   // bytes are actually animated is decode()'s call, reported via the toast.
-  const target = pickTarget;
   event.preventDefault();
   event.stopPropagation();
   endPick();
-  if (target.instances.has(img)) target.teardown(img);
-  else
-    void target.processImage(
-      img,
-      toastReporter(event.clientX, event.clientY, () => target.teardown(img)),
-    );
+  void togglePlayer(img, event.clientX, event.clientY);
 }
 
 function onPickKey(event: KeyboardEvent): void {
@@ -392,8 +257,10 @@ const animatedMimeTypes = ["image/gif", "image/webp", "image/png", "image/apng",
  * Returns `true` when this is a standalone animated-image document (caller should
  * skip pick mode), `false` on a normal page so the caller falls back to pick mode.
  * Guarded by content type so it never fires on pages that merely contain images.
+ * The guards are all cheap and synchronous, so a normal page reaches this and
+ * bails without touching the player bundle.
  */
-export function enhanceStandaloneImage(target: PickTarget = controller): boolean {
+export function enhanceStandaloneImage(): boolean {
   if (typeof document === "undefined") return false;
   // Top frame only. A standalone image document is also what an <iframe> pointed
   // straight at a .gif renders, and a page can hold any number of those; toggling
@@ -403,16 +270,9 @@ export function enhanceStandaloneImage(target: PickTarget = controller): boolean
   const ct = document.contentType;
   if (!animatedMimeTypes.some((m) => m === ct)) return false;
   const img = document.querySelector("img");
-  if (img) {
-    if (target.instances.has(img)) target.teardown(img);
-    // No cursor here (toolbar click on a full-page image) — anchor feedback at the
-    // top-centre of the viewport.
-    else
-      void target.processImage(
-        img,
-        toastReporter(window.innerWidth / 2, 56, () => target.teardown(img)),
-      );
-  }
+  // No cursor here (toolbar click on a full-page image) — anchor feedback at the
+  // top-centre of the viewport.
+  if (img) void togglePlayer(img, window.innerWidth / 2, 56);
   return true; // a standalone image document — handled here, don't enter pick mode
 }
 
@@ -444,7 +304,7 @@ export function init(): () => void {
   return () => {
     browser.runtime.onMessage.removeListener(onMessage);
     exitPickMode();
-    controller.teardownAll();
+    player?.teardownAll();
   };
 }
 
