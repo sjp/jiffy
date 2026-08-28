@@ -29,4 +29,9 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   source patches, and animated AVIF is re-decoded by index from a live decoder,
   so a long animation costs roughly an order of magnitude less than holding a
   bitmap per frame.
+- Two-tier image fetch: the content script fetches the bytes itself first, so it
+  reuses the browser's cache, carries the page's cookies and Referer (images that
+  a cookie-less background fetch 403s), and can read `blob:` sources. The
+  background's privileged fetch remains the fallback for cross-origin images that
+  send no CORS headers.
 - Firefox (142+) and Chrome (137+) builds.

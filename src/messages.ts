@@ -16,6 +16,14 @@
 // This module is environment-agnostic (no `browser.*`): both the background
 // entry and the content client import from it, and it's unit-testable headless.
 
+import {
+  assertDeclaredSize,
+  BACKGROUND_SCHEMES,
+  isAllowedUrl,
+  MAX_BYTES,
+  readCapped,
+} from "./fetchLimits";
+
 /** Content → background: please fetch this GIF's bytes. */
 export interface FetchGifRequest {
   readonly type: "FETCH_GIF";
@@ -107,60 +115,12 @@ export function isExitPickRequest(message: unknown): message is ExitPickRequest 
   return hasType(message, "EXIT_PICK");
 }
 
-// Fetch hardening. The URL is attacker-influenced (the page supplies
-// the <img> src the user clicks), so bound the request: restrict the scheme, cap
-// the size (the whole body is buffered then structured-cloned across the message
-// boundary — an unbounded image risks OOM/jank), and time it out so a hung request
-// can't hold the message channel open forever.
-const MAX_BYTES = 256 * 1024 * 1024; // 256 MB
+// Fetch hardening. The URL is attacker-influenced (the page supplies the <img>
+// src the user clicks), so bound the request: restrict the scheme and cap the
+// size (both shared with the content-script tier in ./fetchLimits), and time it
+// out so a hung request can't hold the message channel open forever.
 const FETCH_TIMEOUT_MS = 120_000; // 2 min — large images on slow links; the
 // loading banner's cancel button covers impatience.
-// data: is allowed so pages that inline an animated image as a data URI still work;
-// everything else (file:, blob:, ftp:, …) is refused.
-const ALLOWED_SCHEMES = new Set(["http:", "https:", "data:"]);
-
-function isAllowedUrl(url: string): boolean {
-  try {
-    return ALLOWED_SCHEMES.has(new URL(url).protocol);
-  } catch {
-    return false; // not a parseable absolute URL
-  }
-}
-
-/**
- * Read a response body into an ArrayBuffer, aborting if it exceeds `maxBytes`.
- * Streams so an oversized body is rejected without buffering the whole thing
- * (and catches servers that omit or understate Content-Length). Falls back to
- * buffering when the response exposes no readable stream.
- */
-async function readCapped(response: Response, maxBytes: number): Promise<ArrayBuffer> {
-  if (!response.body) {
-    const buf = await response.arrayBuffer();
-    if (buf.byteLength > maxBytes) throw new Error(`Image exceeds ${maxBytes} byte limit`);
-    return buf;
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel();
-      throw new Error(`Image exceeds ${maxBytes} byte limit`);
-    }
-    chunks.push(value);
-  }
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out.buffer;
-}
 
 /**
  * Perform the actual cross-origin fetch (runs in the background context). Never
@@ -175,24 +135,22 @@ export async function handleFetchGif(
     timeoutMs = FETCH_TIMEOUT_MS,
   }: { maxBytes?: number; timeoutMs?: number } = {},
 ): Promise<FetchGifResponse> {
-  if (!isAllowedUrl(url)) {
+  if (!isAllowedUrl(url, BACKGROUND_SCHEMES)) {
     return { ok: false, error: "Refusing to fetch a non-http(s)/data URL" };
   }
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    // `force-cache` reuses whatever the browser already downloaded for the page
+    // instead of paying for the bytes a second time.
+    const response = await fetch(url, { cache: "force-cache", signal: controller.signal });
     if (!response.ok) {
       return {
         ok: false,
         error: `HTTP ${response.status} ${response.statusText}`,
       };
     }
-    // Reject early when the server declares an oversized body, before reading it.
-    const declared = Number(response.headers.get("content-length"));
-    if (Number.isFinite(declared) && declared > maxBytes) {
-      return { ok: false, error: `Image exceeds ${maxBytes} byte limit` };
-    }
+    assertDeclaredSize(response, maxBytes);
     const buf = await readCapped(response, maxBytes);
     return { ok: true, data: bytesToBase64(new Uint8Array(buf)) };
   } catch (err) {
