@@ -8,6 +8,9 @@ import { render } from "preact";
 
 import type { Engine } from "../engine/types";
 import { Controls } from "../ui/Controls";
+import type { FrameActions } from "../ui/Controls";
+import type { FrameExport } from "./exportFrame";
+import { showToast } from "./toast";
 
 import controlsCss from "../ui/controls.css";
 
@@ -17,15 +20,22 @@ const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
 // Keep at least this much of the bar on screen when clamping a drag, so it can
 // never be lost entirely off the viewport edge.
 const MIN_VISIBLE_PX = 24;
+// How long a "Frame copied" / "Frame saved" confirmation stays up.
+const EXPORT_TOAST_MS = 2000;
 
 /**
  * Mount the controls in a shadow root anchored to `img`. Returns a teardown
  * function that unmounts Preact, detaches listeners, and removes the host.
+ *
+ * `frameExport` is what the menu's copy/save rows drive; the outcome is
+ * reported here, next to the bar, because the export itself has no UI of its
+ * own (a copy is invisible, and a download may or may not raise browser chrome).
  */
 export function mountControls(
   img: HTMLImageElement,
   engine: Engine,
   onClose: () => void,
+  frameExport?: FrameExport,
 ): () => void {
   const host = document.createElement("div");
   host.style.position = "absolute";
@@ -123,6 +133,34 @@ export function mountControls(
     grip.addEventListener("pointercancel", onUp as EventListener);
   };
 
+  // Report an export's outcome just above the bar. The bar is where the user
+  // asked for it and may have been dragged anywhere by now, so its own box —
+  // not the image's — is the honest anchor.
+  const notify = (text: string): void => {
+    const rect = host.getBoundingClientRect();
+    showToast(rect.left, rect.top).set(text, EXPORT_TOAST_MS);
+  };
+
+  const report = (work: Promise<void>, done: string, failed: string): void => {
+    work.then(
+      () => notify(done),
+      (err: unknown) => {
+        // Blocked clipboard access, a page that forbids downloads, a frame that
+        // couldn't be recomposited: the user gets the plain outcome, the
+        // console gets the reason.
+        console.debug("[jiffy] frame export failed", err);
+        notify(failed);
+      },
+    );
+  };
+
+  // Kept as plain calls (not `await`ed here) so the clipboard write starts
+  // inside the click that asked for it — see ./exportFrame.
+  const frameActions: FrameActions | undefined = frameExport && {
+    copy: (index) => report(frameExport.copy(index), "Frame copied", "Couldn't copy this frame"),
+    save: (index) => report(frameExport.save(index), "Frame saved", "Couldn't save this frame"),
+  };
+
   // Render into a dedicated mount point so Preact's diffing never touches the
   // sibling <style> node.
   const mountPoint = document.createElement("div");
@@ -133,6 +171,7 @@ export function mountControls(
       onDragStart={beginDrag}
       onResetPosition={resetPosition}
       onClose={onClose}
+      frameActions={frameActions}
     />,
     mountPoint,
   );

@@ -62,9 +62,17 @@ Prefer to build it yourself? See [Building from source](#building-from-source).
 | Scrubber           | Click or drag to seek to any frame         |
 | Speed              | Slow down or speed up playback             |
 | Direction          | Forward, reverse, or ping-pong (bounce)    |
+| Copy frame         | Put the frame on screen on the clipboard   |
+| Save frame…        | Download the frame on screen as a PNG      |
 | Grip handle        | Drag to move the player bar out of the way |
 | Double-click grip  | Snap the bar back to its default spot      |
 | ✕ Close            | Remove the controls                        |
+
+> 💾 **Getting a frame out** — speed, direction, loop and the two frame-export
+> actions live behind the ⚙ button, which keeps the bar small enough to sit on
+> top of the image. Step to the moment you want, then **Copy frame** to paste it
+> straight into an editor or chat, or **Save frame…** to write a PNG named after
+> the image and the frame number (`cat-f012.png`).
 
 ### Keyboard shortcuts
 
@@ -86,6 +94,10 @@ Jiffy installs with **no access to any site** — none of the "read and change a
 your data on all websites" that browsers warn about. Clicking the toolbar button
 is what lets it into the page you're on, and the picker is injected only then;
 navigate away and that access lapses.
+
+Copying a frame to the clipboard uses the `clipboardWrite` permission. It grants
+no access to any page and browsers don't prompt for it; saving a frame needs
+nothing at all.
 
 Two things need more reach than a single page, so the popup carries an optional
 **Allow on all sites** checkbox. It's off by default, and you can turn it back

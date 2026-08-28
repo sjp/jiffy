@@ -171,5 +171,47 @@ press("Escape");
 assert.equal(cog.getAttribute("aria-expanded"), "false", "Escape closes menu");
 assert.equal(container.querySelector('[role="menu"]'), null, "popover removed after Escape");
 
+// ---- frame export --------------------------------------------------------
+// Copy/save are menu rows rather than buttons in the bar, and they act on the
+// frame that's on screen at the moment they're picked.
+const rowLabelled = (label: string) => buttons().find((b) => (b.textContent ?? "").includes(label));
+
+act(() => cog.click());
+assert.equal(rowLabelled("Copy frame"), undefined, "no export rows without an exporter");
+act(() => cog.click());
+
+const exported: Array<[string, number]> = [];
+const rerender = (withExport: boolean): void => {
+  act(() => {
+    render(
+      <Controls
+        engine={engine}
+        frameActions={
+          withExport
+            ? {
+                copy: (i) => exported.push(["copy", i]),
+                save: (i) => exported.push(["save", i]),
+              }
+            : undefined
+        }
+      />,
+      container,
+    );
+  });
+};
+
+rerender(true);
+act(() => engine.seekToIndex(2));
+
+act(() => cog.click());
+act(() => rowLabelled("Copy frame")!.click());
+assert.deepEqual(exported.at(-1), ["copy", 2], "copy acts on the frame on screen");
+assert.equal(cog.getAttribute("aria-expanded"), "false", "the menu closes after an action");
+
+act(() => cog.click());
+act(() => engine.seekToIndex(0));
+act(() => rowLabelled("Save frame…")!.click());
+assert.deepEqual(exported.at(-1), ["save", 0], "save acts on the frame on screen");
+
 render(null, container);
 console.log("Controls.test: OK");

@@ -19,7 +19,7 @@
       "96": "icons/icon.svg"
     }
   },
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "clipboardWrite"],
   "web_accessible_resources": [
     {
       "resources": ["player.js", "decode-worker.js"],

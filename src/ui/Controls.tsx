@@ -7,6 +7,8 @@ import type { Engine } from "../engine/types";
 import {
   CloseIcon,
   CogIcon,
+  CopyIcon,
+  DownloadIcon,
   GripIcon,
   PauseIcon,
   PlayIcon,
@@ -18,8 +20,22 @@ import { Readout } from "./Readout";
 import { Scrubber } from "./Scrubber";
 import { applySettings, changeSetting, initialSettings, SETTINGS_CONFIG } from "./settings";
 import type { Settings } from "./settings";
+import type { MenuAction } from "./SettingsMenu";
 import { SettingsMenu } from "./SettingsMenu";
 import { useEngineState } from "./useEngineState";
+
+/**
+ * Getting the frame on screen out of the player. Both take the frame index so
+ * the caller doesn't have to track playback itself; the results (a toast, an
+ * error) are the caller's business, so nothing is returned here. Properties
+ * rather than methods, because the menu rows pass them along as bare callbacks.
+ */
+export interface FrameActions {
+  /** Put the frame at `index` on the clipboard. */
+  copy: (index: number) => void;
+  /** Download the frame at `index`. */
+  save: (index: number) => void;
+}
 
 /** Props for the top-level controls component. */
 export interface ControlsProps {
@@ -35,6 +51,12 @@ export interface ControlsProps {
   onResetPosition?: () => void;
   /** Called when the user clicks the close button; tears down the player. */
   onClose?: () => void;
+  /**
+   * Export the frame currently on screen. Surfaced as rows in the settings
+   * menu rather than buttons in the bar, which keeps the bar compact. Omitted
+   * — e.g. in component tests — means no export rows at all.
+   */
+  frameActions?: FrameActions;
 }
 
 const useScrubResume = () => {
@@ -48,7 +70,13 @@ const useScrubResume = () => {
 };
 
 /** Top-level controls bar. */
-export function Controls({ engine, onDragStart, onResetPosition, onClose }: ControlsProps) {
+export function Controls({
+  engine,
+  onDragStart,
+  onResetPosition,
+  onClose,
+  frameActions,
+}: ControlsProps) {
   const { playing, index, frameCount, currentTime, duration } = useEngineState(engine);
 
   // With a single frame there's nothing to play or step through. At the ends we
@@ -98,6 +126,30 @@ export function Controls({ engine, onDragStart, onResetPosition, onClose }: Cont
     setMenuOpen(false);
     cogRef.current?.focus();
   };
+
+  // Export rows for the menu. The action runs BEFORE the menu closes so the
+  // clipboard write starts inside this click, while its user activation is
+  // still live (see content/exportFrame).
+  const runAction = (action: (index: number) => void) => (): void => {
+    action(index);
+    closeMenu();
+  };
+  const menuActions: MenuAction[] = frameActions
+    ? [
+        {
+          id: "copy-frame",
+          label: "Copy frame",
+          icon: <CopyIcon />,
+          run: runAction(frameActions.copy),
+        },
+        {
+          id: "save-frame",
+          label: "Save frame…",
+          icon: <DownloadIcon />,
+          run: runAction(frameActions.save),
+        },
+      ]
+    : [];
 
   return (
     // Focus-scoped keyboard shortcuts: the bar is focusable so
@@ -204,6 +256,7 @@ export function Controls({ engine, onDragStart, onResetPosition, onClose }: Cont
               onChange={(id, value) =>
                 setSettings((prev) => changeSetting(SETTINGS_CONFIG, prev, id, value))
               }
+              actions={menuActions}
             />
           </div>
         )}

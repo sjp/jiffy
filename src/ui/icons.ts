@@ -90,3 +90,16 @@ export const BackIcon = ({ size = 16 }: IconProps): VNode =>
 // Checkmark on the active option in a sub-panel.
 export const CheckIcon = ({ size = 16 }: IconProps): VNode =>
   glyph(size, h("path", { d: "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" }));
+
+// Two offset sheets: "copy this to the clipboard".
+export const CopyIcon = ({ size = 16 }: IconProps): VNode =>
+  glyph(
+    size,
+    h("path", {
+      d: "M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z",
+    }),
+  );
+
+// Arrow into a tray: "save this to a file".
+export const DownloadIcon = ({ size = 16 }: IconProps): VNode =>
+  glyph(size, h("path", { d: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" }));

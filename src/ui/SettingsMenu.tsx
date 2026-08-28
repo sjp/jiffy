@@ -5,14 +5,32 @@
 // checkmark on the active one. Selecting returns to the main panel so several
 // settings can be adjusted in a row.
 //
+// The menu also carries one-shot ACTIONS (copy/save the current frame) below
+// the settings. They live here rather than as buttons in the bar so the bar
+// stays compact; they hold no value, so they're a separate prop rather than a
+// third `kind` of settings entry.
+//
 // Pure/presentational like <Scrubber>/<Readout>: it owns only ephemeral
 // navigation state (which sub-panel is open); the selected VALUES live in
 // <Controls> and arrive via props, so reset-on-teardown is handled there.
+import type { VNode } from "preact";
 import { useState } from "preact/hooks";
 
 import { BackIcon, CheckIcon, ChevronRightIcon } from "./icons";
 import type { Settings, SettingsEntry, SettingValue } from "./settings";
 import { valueLabel } from "./settings";
+
+/** A row that does something when picked, instead of holding a value. */
+export interface MenuAction {
+  /** Stable key. */
+  id: string;
+  /** Row label, e.g. "Copy frame". */
+  label: string;
+  /** Optional leading glyph, shown in the same slot as an option's checkmark. */
+  icon?: VNode;
+  /** Perform the action. */
+  run: () => void;
+}
 
 export interface SettingsMenuProps {
   /** Menu definition (SETTINGS_CONFIG, or a mock in tests). */
@@ -21,9 +39,11 @@ export interface SettingsMenuProps {
   settings: Settings;
   /** Commit a new value for an entry. */
   onChange: (id: string, value: SettingValue) => void;
+  /** Action rows appended below the settings. */
+  actions?: MenuAction[];
 }
 
-export function SettingsMenu({ config, settings, onChange }: SettingsMenuProps) {
+export function SettingsMenu({ config, settings, onChange, actions = [] }: SettingsMenuProps) {
   // id of the open sub-panel; null = the main list. Ephemeral nav state only.
   const [openId, setOpenId] = useState<string | null>(null);
   const entry = openId ? (config.find((e) => e.id === openId) ?? null) : null;
@@ -66,17 +86,10 @@ export function SettingsMenu({ config, settings, onChange }: SettingsMenuProps) 
     );
   }
 
-  // Main panel.
-  if (config.length === 0) {
-    return (
-      <div class="menu-panel" role="menu" aria-label="Settings">
-        <div class="menu-empty">No settings</div>
-      </div>
-    );
-  }
-
+  // Main panel: the settings, then the actions under a divider.
   return (
     <div class="menu-panel" role="menu" aria-label="Settings">
+      {config.length === 0 && actions.length === 0 && <div class="menu-empty">No settings</div>}
       {config.map((e) =>
         e.kind === "toggle" ? (
           // Inline toggle: clicking flips the value in place, with a leading
@@ -109,6 +122,19 @@ export function SettingsMenu({ config, settings, onChange }: SettingsMenuProps) 
           </button>
         ),
       )}
+      {config.length > 0 && actions.length > 0 && <div class="menu-sep" role="separator" />}
+      {actions.map((action) => (
+        <button
+          key={action.id}
+          type="button"
+          class="menu-row"
+          role="menuitem"
+          onClick={() => action.run()}
+        >
+          <span class="menu-check">{action.icon}</span>
+          <span class="menu-label">{action.label}</span>
+        </button>
+      ))}
     </div>
   );
 }

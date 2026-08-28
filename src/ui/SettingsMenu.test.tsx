@@ -116,5 +116,48 @@ assert.deepEqual(toggleChanges.at(-1), ["loop", false], "click flips to false");
 renderToggle();
 assert.equal(toggleRow().getAttribute("aria-checked"), "false", "now unchecked");
 
+// ---- action rows ---------------------------------------------------------
+// Actions are one-shot rows below the settings, separated by a rule so the two
+// kinds of row don't read as one list.
+const ran: string[] = [];
+const renderWithActions = (entries: SettingsEntry[]): void => {
+  act(() => {
+    render(
+      <SettingsMenu
+        config={entries}
+        settings={{ loop: true }}
+        onChange={() => {}}
+        actions={[
+          { id: "copy", label: "Copy frame", run: () => ran.push("copy") },
+          { id: "save", label: "Save frame…", run: () => ran.push("save") },
+        ]}
+      />,
+      container,
+    );
+  });
+};
+
+renderWithActions(toggleConfig);
+const actionRow = (label: string) =>
+  rows().find((r) => (r.textContent ?? "").includes(label)) as HTMLElement;
+assert.equal(rows().length, 3, "the toggle plus the two actions");
+assert.ok(container.querySelector('[role="separator"]'), "a rule divides settings from actions");
+assert.equal(actionRow("Copy frame").getAttribute("role"), "menuitem", "actions are menuitems");
+assert.equal(
+  actionRow("Copy frame").getAttribute("aria-checked"),
+  null,
+  "an action holds no value, so it is not checkable",
+);
+
+act(() => actionRow("Save frame…").click());
+assert.deepEqual(ran, ["save"], "picking a row runs that action");
+
+// Actions alone still make a menu — the "No settings" placeholder is for a
+// genuinely empty one, and no rule is drawn with nothing above it.
+renderWithActions([]);
+assert.equal(rows().length, 2, "just the actions");
+assert.equal(container.querySelector(".menu-empty"), null, "not treated as empty");
+assert.equal(container.querySelector('[role="separator"]'), null, "no rule with nothing above it");
+
 render(null, container);
 console.log("SettingsMenu.test: OK");

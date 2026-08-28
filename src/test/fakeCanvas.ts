@@ -216,6 +216,15 @@ export class FakeOffscreenCanvas implements Pixels {
     this.ctx ??= new FakeCtx(this);
     return this.ctx;
   }
+
+  /**
+   * "Encode" the canvas. Node has no PNG encoder, so the blob carries the raw
+   * RGBA bytes under the requested type — enough for a test to check what came
+   * out was a non-empty image blob of the type it asked for.
+   */
+  async convertToBlob(options?: { type?: string }): Promise<Blob> {
+    return new Blob([this.data], { type: options?.type ?? "image/png" });
+  }
 }
 
 /**

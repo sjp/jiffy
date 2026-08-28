@@ -166,6 +166,14 @@
   justify-content: center;
 }
 
+/* Rule between the settings rows and the one-shot actions below them, so the
+   two kinds of row don't read as one undifferentiated list. */
+.menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
 .menu-back {
   margin-bottom: 4px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);

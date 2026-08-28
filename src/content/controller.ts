@@ -22,6 +22,8 @@ import { NotAnimatedError } from "../engine/decode";
 import type { FrameSource } from "../engine/frameSource";
 import { DecodeBudgetError, formatBytes } from "../engine/types";
 import type { DecodeResult, Engine, Frame } from "../engine/types";
+import { createFrameExport } from "./exportFrame";
+import type { FrameExport } from "./exportFrame";
 import type { Overlay } from "./overlay";
 
 /**
@@ -48,7 +50,12 @@ export interface PipelineDeps {
   decode: (bytes: ArrayBuffer, signal?: AbortSignal) => Promise<DecodeResult>;
   createEngine: (frames: Frame[], duration: number) => Engine;
   createOverlay: (img: HTMLImageElement, engine: Engine, source: FrameSource) => Overlay;
-  mountControls: (img: HTMLImageElement, engine: Engine, onClose: () => void) => () => void;
+  mountControls: (
+    img: HTMLImageElement,
+    engine: Engine,
+    onClose: () => void,
+    frameExport: FrameExport,
+  ) => () => void;
 }
 
 /** A live, controllable GIF on the page. */
@@ -129,7 +136,15 @@ export function createController(deps: PipelineDeps): Controller {
       // the image normally plays (e.g. a one-shot GIF starts with looping off).
       engine.setLoop(loops);
       const overlay = deps.createOverlay(img, engine, source);
-      const teardownControls = deps.mountControls(img, engine, () => teardown(img));
+      // The controls export frames straight out of the source that feeds the
+      // overlay, so a saved frame is exactly the one on screen — and the image's
+      // URL is what names the file.
+      const teardownControls = deps.mountControls(
+        img,
+        engine,
+        () => teardown(img),
+        createFrameExport(source, url),
+      );
       instances.set(img, { engine, overlay, teardownControls, source });
       ensureWatching(); // first live player → start watching for DOM removals
       onStatus?.("ready");
