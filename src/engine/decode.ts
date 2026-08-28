@@ -1,24 +1,35 @@
-// gifuct-js wrapper + precompute to full-canvas bitmaps.
+// gifuct-js wrapper + format dispatch.
 //
 // Bytes in, frames out — zero playback/DOM awareness. Each raw GIF frame is a
-// (possibly partial) patch governed by a disposal method; we composite every
-// frame ONCE, up front, into a full-canvas ImageBitmap and record a cumulative
-// time array. That precompute is what makes step *and* seek O(1) at playback
-// time instead of replaying from a keyframe.
+// (possibly partial) patch governed by a disposal method. We do NOT composite
+// here: the raw frames are translated into the format-agnostic `FrameStep[]`
+// that ./frameSource understands, and it does the single compositing pass,
+// keeping a full-canvas bitmap only every KEYFRAME_INTERVAL frames.
 //
-// Memory tradeoff (known, deferred): N frames → N full-resolution bitmaps held
-// in memory. Fine for typical GIFs.
+// The patch we retain is gifuct's palette-indexed output rather than its RGBA
+// expansion: one byte per pixel plus a ≤768-byte palette, a quarter of the RGBA
+// cost, and it's what the LZW decode produced anyway. Expanding it back to RGBA
+// happens per patch draw during playback (see frameSource's drawIndexed).
 
 import { parseGIF, decompressFrames } from "gifuct-js";
-import type { FrameDims } from "gifuct-js";
+import type { ParsedFrame } from "gifuct-js";
 
 import { decodeApng, isAnimatedPng } from "./decodeApng";
 import { decodeAvif, isAnimatedAvif } from "./decodeAvif";
 import { decodeWebP, isAnimatedWebP } from "./decodeWebP";
 import {
+  createFrameSource,
+  keyframeCount,
+  DISPOSE_BACKGROUND,
+  DISPOSE_NONE,
+  DISPOSE_PREVIOUS,
+  type Dispose,
+  type FrameStep,
+} from "./frameSource";
+import {
   MIN_DELAY_MS,
   assertDecodeBudget,
-  throwIfAborted,
+  bitmapBytes,
   type DecodeResult,
   type Frame,
 } from "./types";
@@ -51,47 +62,6 @@ function isGif(bytes: ArrayBuffer): boolean {
 }
 
 /**
- * Firefox content scripts run in a sandbox realm while the `OffscreenCanvas`
- * pixel buffer lives in the page realm, exposed through an Xray wrapper.
- * `.wrappedJSObject` returns the underlying page-realm object; on Chrome / Node
- * (no Xray) the value is returned unchanged.
- */
-const unwrapXray = <T>(value: T): T => (value as { wrappedJSObject?: T }).wrappedJSObject ?? value;
-
-/**
- * Copy gifuct's `patch` bytes into the canvas-backed ImageData.
- *
- * On Chrome / Node a plain `.set` works. In a Firefox content script the patch
- * is a sandbox-realm typed array while the canvas buffer is a page-realm one,
- * and `TypedArray.set(src)` refuses to read a source from another realm
- * ("Permission denied to access object"). `cloneInto` can't help here because
- * the sandbox `globalThis` isn't the page realm, so it clones into the wrong
- * realm. The reliable bridge is an element-wise copy through unwrapped views:
- * it only ever touches numeric indices, never an object across the boundary.
- *
- * The realm boundary is a property of the environment, not of any individual
- * frame, so we probe `.set` once and cache the result — otherwise Firefox would
- * throw+catch on *every* patch of *every* GIF (the fast path never taken). Once
- * we know `.set` is blocked, go straight to the element-wise copy.
- */
-let setWorksAcrossRealm: boolean | undefined;
-
-function copyPatchInto(dest: Uint8ClampedArray, patch: Uint8ClampedArray): void {
-  if (setWorksAcrossRealm !== false) {
-    try {
-      dest.set(patch);
-      setWorksAcrossRealm = true;
-      return;
-    } catch {
-      setWorksAcrossRealm = false;
-    }
-  }
-  const d = unwrapXray(dest);
-  const s = unwrapXray(patch);
-  for (let i = 0; i < s.length; i++) d[i] = s[i]!;
-}
-
-/**
  * Delay clamp. GIF delays are unreliable — `0`/`1` centiseconds are
  * common and browsers historically clamp to a floor — so we clamp ourselves so
  * the timeline matches user expectation. gifuct-js already normalises `delay`
@@ -103,11 +73,70 @@ const clampDelay = (ms: number): number => Math.max(ms, MIN_DELAY_MS);
 //   0 unspecified / 1 do-not-dispose → leave the canvas as-is
 //   2 restore-to-background          → clear the frame's rect
 //   3 restore-to-previous            → revert to the canvas before this frame
-const DISPOSAL_RESTORE_BACKGROUND = 2;
-const DISPOSAL_RESTORE_PREVIOUS = 3;
+/**
+ * Bytes per pixel gifuct's LZW output costs while a decode is in flight. It
+ * decompresses into `new Array(pixelCount)` — a plain JS array of small
+ * integers, ~8 bytes an element in V8 — which we convert to a Uint8Array per
+ * frame, but only after the whole GIF has been decompressed.
+ */
+const DECOMPRESS_BYTES_PER_PIXEL = 8;
+
+const GIF_DISPOSAL_RESTORE_BACKGROUND = 2;
+const GIF_DISPOSAL_RESTORE_PREVIOUS = 3;
+
+const toDispose = (disposalType: number): Dispose =>
+  disposalType === GIF_DISPOSAL_RESTORE_BACKGROUND
+    ? DISPOSE_BACKGROUND
+    : disposalType === GIF_DISPOSAL_RESTORE_PREVIOUS
+      ? DISPOSE_PREVIOUS
+      : DISPOSE_NONE;
 
 /**
- * Decode GIF bytes into pre-composited full-canvas frames + total duration.
+ * Flatten gifuct's `[r,g,b][]` colour table into the packed triples the frame
+ * source indexes. Frames of a GIF using the global colour table share one array
+ * instance, so the flattened palette is shared too — a per-frame copy would cost
+ * 768 bytes × frameCount for nothing.
+ */
+function flattenPalette(
+  colorTable: ReadonlyArray<readonly [number, number, number]>,
+  cache: Map<unknown, Uint8Array>,
+): Uint8Array {
+  const hit = cache.get(colorTable);
+  if (hit) return hit;
+  const flat = new Uint8Array(colorTable.length * 3);
+  for (let i = 0; i < colorTable.length; i++) {
+    const c = colorTable[i]!;
+    flat[i * 3] = c[0];
+    flat[i * 3 + 1] = c[1];
+    flat[i * 3 + 2] = c[2];
+  }
+  cache.set(colorTable, flat);
+  return flat;
+}
+
+/** Translate one gifuct frame into the frame source's replayable step. */
+function toStep(rf: ParsedFrame, palettes: Map<unknown, Uint8Array>): FrameStep {
+  const { left, top, width, height } = rf.dims;
+  return {
+    // gifuct hands `pixels` back as a plain number[]; a Uint8Array of the same
+    // values is 8× smaller and is what we hold for the life of the player.
+    patch: {
+      kind: "indexed",
+      pixels: Uint8Array.from(rf.pixels),
+      palette: flattenPalette(rf.colorTable, palettes),
+      transparentIndex: rf.transparentIndex ?? -1,
+    },
+    x: left,
+    y: top,
+    width,
+    height,
+    clear: false, // GIF patches always blend over the canvas
+    dispose: toDispose(rf.disposalType),
+  };
+}
+
+/**
+ * Decode GIF bytes into a frame timeline + a frame source, plus total duration.
  *
  * Time convention: `frames[i].time` is the cumulative ms at which frame `i`
  * **ends** (end-of-frame), so `duration` equals the final frame's `time`.
@@ -125,8 +154,23 @@ export async function decode(bytes: ArrayBuffer, signal?: AbortSignal): Promise<
   // on non-GIF bytes, so the content script can surface "Not an animated image".
   if (!isGif(bytes)) throw new NotAnimatedError();
   const gif = parseGIF(bytes);
-  // `true` → build per-frame RGBA `patch` arrays for us.
-  const rawFrames = decompressFrames(gif, true);
+
+  const { width, height } = gif.lsd;
+  // Budget check BEFORE decompressing, because decompression is the peak. What
+  // we end up holding is small — one indexed byte per pixel per frame (worst
+  // case: a full-canvas patch every frame) plus a keyframe bitmap every
+  // KEYFRAME_INTERVAL — but gifuct expands the whole GIF's pixels in one go into
+  // plain JS arrays first, and that transient dwarfs it, so the peak is what the
+  // budget has to guard. `gif.frames` also holds non-image blocks (the loop
+  // extension, comments), so its length is an upper bound on the frame count —
+  // the safe direction for a guard.
+  const rawCount = gif.frames.length;
+  const pixels = width * height * rawCount;
+  const retained = pixels + bitmapBytes(width, height) * keyframeCount(rawCount);
+  assertDecodeBudget(Math.max(pixels * DECOMPRESS_BYTES_PER_PIXEL, retained));
+
+  // `false` → skip gifuct's RGBA patch expansion; we keep the indexed pixels.
+  const rawFrames = decompressFrames(gif, false);
 
   // Loop setting from the NETSCAPE2.0 application extension. Its presence means
   // the GIF repeats (count 0 = infinite, count N = N repeats); a GIF without it
@@ -136,82 +180,17 @@ export async function decode(bytes: ArrayBuffer, signal?: AbortSignal): Promise<
     (f) => f.application?.id === "NETSCAPE2.0",
   );
 
-  const { width, height } = gif.lsd;
-  // Reject an image whose pre-composited frames would blow the memory budget,
-  // before we start building bitmaps.
-  assertDecodeBudget(width, height, rawFrames.length);
-
-  // Work canvas at the GIF's native (logical screen) resolution. The snapshots
-  // we take from it are full-canvas at native resolution, ready to blit.
-  const canvas = new OffscreenCanvas(width, height);
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("decode: failed to acquire 2D context");
-
+  const palettes = new Map<unknown, Uint8Array>();
+  const steps: FrameStep[] = [];
   const frames: Frame[] = [];
   let elapsed = 0;
-
-  // Disposal bookkeeping carried from the PREVIOUS frame — disposal is applied
-  // before drawing the *next* patch (off-by-one here is the classic source of
-  // garbage frames).
-  let prevDisposalType = 0;
-  let prevDims: FrameDims | null = null;
-  // Canvas snapshot saved before a restore-to-previous frame is drawn.
-  let restoreSnapshot: ImageData | null = null;
-
   for (const rf of rawFrames) {
-    // Cancelled mid-decode (large GIF, user hit ✕): stop compositing and free
-    // the frames built so far instead of grinding to the end of the loop.
-    throwIfAborted(signal, frames);
-
-    // 1. Apply the previous frame's disposal to the work canvas.
-    if (prevDims) {
-      if (prevDisposalType === DISPOSAL_RESTORE_BACKGROUND) {
-        ctx.clearRect(prevDims.left, prevDims.top, prevDims.width, prevDims.height);
-      } else if (prevDisposalType === DISPOSAL_RESTORE_PREVIOUS && restoreSnapshot) {
-        ctx.putImageData(restoreSnapshot, 0, 0);
-      }
-    }
-
-    // 2. If THIS frame is restore-to-previous, snapshot the canvas as it stands
-    //    now (after prev disposal, before this patch) so the next iteration can
-    //    revert to it.
-    if (rf.disposalType === DISPOSAL_RESTORE_PREVIOUS) {
-      restoreSnapshot = ctx.getImageData(0, 0, width, height);
-    }
-
-    // 3. Composite this frame's patch onto the work canvas with correct alpha.
-    //    - putImageData straight onto the work canvas would clobber transparency
-    //      (the patch's alpha-0 pixels overwrite real ones), so we stage the patch
-    //      on its own transparent temp canvas and drawImage it (source-over).
-    //    - In a Firefox content script the gifuct patch lives in the extension
-    //      sandbox realm while the canvas buffer lives in the page realm (seen
-    //      through an Xray wrapper). Canvas pixel APIs refuse to read a typed
-    //      array across that boundary ("Failed to extract Uint8ClampedArray" /
-    //      "Permission denied to access object" / "Accessing from Xray wrapper is
-    //      not supported"). We make the copy same-realm by unwrapping the
-    //      destination (page realm) and cloning the source patch INTO it. Both
-    //      helpers are no-ops outside Firefox.
-    if (rf.patch) {
-      const { width: pw, height: ph, left, top } = rf.dims;
-      const patchCanvas = new OffscreenCanvas(pw, ph);
-      const patchCtx = patchCanvas.getContext("2d");
-      if (!patchCtx) throw new Error("decode: failed to acquire patch 2D context");
-      const patchData = patchCtx.createImageData(pw, ph);
-      copyPatchInto(patchData.data, rf.patch);
-      patchCtx.putImageData(patchData, 0, 0);
-      ctx.drawImage(patchCanvas, left, top);
-    }
-
-    // 4. Snapshot the full composited canvas → ready-to-blit bitmap.
-    const bitmap = await createImageBitmap(canvas);
-
+    steps.push(toStep(rf, palettes));
     const delay = clampDelay(rf.delay);
     elapsed += delay;
-    frames.push({ bitmap, time: elapsed, delay });
-
-    prevDisposalType = rf.disposalType;
-    prevDims = rf.dims;
+    frames.push({ time: elapsed, delay });
   }
 
-  return { frames, duration: elapsed, loops };
+  const source = await createFrameSource({ width, height, steps, signal });
+  return { frames, source, duration: elapsed, loops };
 }

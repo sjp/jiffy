@@ -30,9 +30,9 @@ function runTickAt(newT: number) {
 
 // Two 100ms frames; cumulative end-times [100, 200]; duration 200.
 const frames = [
-  { bitmap: {}, time: 100, delay: 100 },
-  { bitmap: {}, time: 200, delay: 100 },
-] as never;
+  { time: 100, delay: 100 },
+  { time: 200, delay: 100 },
+];
 
 const engine = createEngine(frames, 200, clock);
 

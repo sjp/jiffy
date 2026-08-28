@@ -4,64 +4,17 @@
 // decodeApng bookkeeping — frame count, monotonic cumulative-time array,
 // duration, delay clamping — using a hand-built minimal 2-frame APNG.
 //
-// Canvas/bitmap APIs are shimmed exactly like decode.test.ts; pixel
+// Node can't decode a real PNG bitstream, so the software canvas treats each
+// reconstructed frame blob as an empty image: the container parsing and the
+// frame/timeline wiring are covered here, while the compositing those blobs feed
+// is pinned against the all-bitmap path in frameSource.test.ts. Pixel
 // correctness requires a real browser and is verified manually.
 
 import assert from "node:assert/strict";
 
-// ---- minimal canvas shim (same as decode.test.ts) -------------------------
+import { installFakeCanvas } from "../test/fakeCanvas.ts";
 
-class FakeImageData {
-  data: Uint8ClampedArray;
-  width: number;
-  height: number;
-  constructor(a: Uint8ClampedArray | number, b: number, c?: number) {
-    if (typeof a === "number") {
-      this.width = a;
-      this.height = b;
-      this.data = new Uint8ClampedArray(a * b * 4);
-    } else {
-      this.data = a;
-      this.width = b;
-      this.height = c ?? 1;
-    }
-  }
-}
-
-class FakeCtx {
-  w: number;
-  h: number;
-  constructor(w: number, h: number) {
-    this.w = w;
-    this.h = h;
-  }
-  clearRect() {}
-  drawImage() {}
-  putImageData() {}
-  getImageData() {
-    return new FakeImageData(this.w, this.h);
-  }
-  createImageData(w: number, h: number) {
-    return new FakeImageData(w, h);
-  }
-}
-
-class FakeOffscreenCanvas {
-  width: number;
-  height: number;
-  constructor(w: number, h: number) {
-    this.width = w;
-    this.height = h;
-  }
-  getContext() {
-    return new FakeCtx(this.width, this.height);
-  }
-}
-
-const g = globalThis as Record<string, unknown>;
-g.ImageData = FakeImageData;
-g.OffscreenCanvas = FakeOffscreenCanvas;
-g.createImageBitmap = async () => ({ close() {} });
+installFakeCanvas();
 
 const { isAnimatedPng, decodeApng } = await import("./decodeApng.ts");
 
@@ -203,11 +156,14 @@ const APNG = new Uint8Array([
   0x00, 0x00, 0x00, 0x00,
 ]);
 
-const { frames, duration, loops } = await decodeApng(
+const { frames, source, duration, loops } = await decodeApng(
   APNG.buffer.slice(APNG.byteOffset, APNG.byteOffset + APNG.byteLength),
 );
 
 assert.equal(frames.length, 2, "frame count");
+assert.equal(source.frameCount, 2, "frame source frame count");
+assert.equal(source.width, 1, "frame source width from IHDR");
+assert.equal(source.height, 1, "frame source height from IHDR");
 
 // acTL num_plays is 0 (infinite) → loops.
 assert.equal(loops, true, "num_plays 0 (infinite) → loops");
@@ -222,7 +178,16 @@ assert.ok(frames[1]!.time > frames[0]!.time, "time array is monotonic");
 
 assert.equal(duration, 150, "total duration");
 
-for (const f of frames) assert.ok(f.bitmap, "frame has a bitmap");
+// Frame 0 is always a keyframe, so it comes back without recompositing; frame 1
+// is replayed from it on demand.
+assert.ok(!(source.getBitmap(0) instanceof Promise), "frame 0 is a resident keyframe");
+assert.ok(await source.getBitmap(1), "frame 1 is recomposited on demand");
+source.close();
+await assert.rejects(
+  async () => source.getBitmap(1),
+  /closed/,
+  "a closed source hands out nothing",
+);
 
 // ---- a pre-aborted signal cancels the decode -----------------------------
 const abortedApng = new AbortController();

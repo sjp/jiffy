@@ -1,73 +1,21 @@
-// Headless smoke test for the decode + precompute module.
+// Headless tests for the GIF decode + frame-source handoff.
 //
-// Run: `npm test` (→ node --experimental-strip-types src/engine/decode.test.ts).
+// Run: `npm test`.
 //
-// Node has no canvas APIs (OffscreenCanvas / createImageBitmap / ImageData), so
-// we shim a minimal, non-rendering canvas surface. That means this test verifies
-// the *bookkeeping* — frame count, monotonic cumulative-time array, duration,
-// delay clamping, and the disposal control flow — on a real GIF decoded by
-// gifuct-js, but not actual pixel output (which needs a real canvas). Pixel
-// correctness is best verified manually in the browser.
+// Node has no canvas APIs, so we install the software canvas from
+// ../test/fakeCanvas — enough of OffscreenCanvas / createImageBitmap / ImageData
+// to composite for real. That means this test covers both the *bookkeeping*
+// (frame count, monotonic cumulative-time array, duration, delay clamping) and
+// the actual pixels the frame source produces for a real GIF decoded by
+// gifuct-js. The disposal state machine itself is pinned against the
+// all-bitmap path in frameSource.test.ts.
 
 import assert from "node:assert/strict";
 
-import { assertDecodeBudget, DecodeBudgetError } from "./types.ts";
+import { installFakeCanvas, pixelAt, type FakeImageBitmap } from "../test/fakeCanvas.ts";
+import { assertDecodeBudget, DecodeBudgetError, MAX_DECODE_BYTES } from "./types.ts";
 
-// ---- minimal canvas shim -------------------------------------------------
-
-class FakeImageData {
-  data: Uint8ClampedArray;
-  width: number;
-  height: number;
-  constructor(a: Uint8ClampedArray | number, b: number, c?: number) {
-    if (typeof a === "number") {
-      this.width = a;
-      this.height = b;
-      this.data = new Uint8ClampedArray(a * b * 4);
-    } else {
-      this.data = a;
-      this.width = b;
-      this.height = c ?? 1;
-    }
-  }
-}
-
-class FakeCtx {
-  w: number;
-  h: number;
-  constructor(w: number, h: number) {
-    this.w = w;
-    this.h = h;
-  }
-  clearRect() {}
-  drawImage() {}
-  putImageData() {}
-  getImageData() {
-    return new FakeImageData(this.w, this.h);
-  }
-  createImageData(w: number, h: number) {
-    return new FakeImageData(w, h);
-  }
-}
-
-class FakeOffscreenCanvas {
-  width: number;
-  height: number;
-  constructor(width: number, height: number) {
-    this.width = width;
-    this.height = height;
-  }
-  getContext() {
-    return new FakeCtx(this.width, this.height);
-  }
-}
-
-// Install shims before invoking decode (decode only touches these inside its
-// function body, so setting them now — after the static import — is fine).
-const g = globalThis as Record<string, unknown>;
-g.ImageData = FakeImageData;
-g.OffscreenCanvas = FakeOffscreenCanvas;
-g.createImageBitmap = async () => ({ close() {} });
+installFakeCanvas();
 
 const { decode, NotAnimatedError } = await import("./decode.ts");
 
@@ -81,20 +29,23 @@ const GIF = new Uint8Array([
   0x00, 0x00, 0x00, 0xff, 0xff, 0xff,             // GCT: black, white
   0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 0: delay=10cs
   0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 0
-  0x02, 0x02, 0x44, 0x05, 0x00,                   // LZW: pixels [0,1]
+  0x02, 0x02, 0x44, 0x0a, 0x00,                   // LZW: pixels [0,1]
   0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 1: delay=10cs
   0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 1
-  0x02, 0x02, 0x0c, 0x05, 0x00,                   // LZW: pixels [1,0]
+  0x02, 0x02, 0x0c, 0x0a, 0x00,                   // LZW: pixels [1,0]
   0x3b,                                           // trailer
 ]);
 
 // ---- assertions ----------------------------------------------------------
 
-const { frames, duration, loops } = await decode(
+const { frames, source, duration, loops } = await decode(
   GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength),
 );
 
 assert.equal(frames.length, 2, "frame count");
+assert.equal(source.frameCount, 2, "frame source frame count");
+assert.equal(source.width, 2, "frame source width");
+assert.equal(source.height, 1, "frame source height");
 
 // No NETSCAPE2.0 application extension → the GIF plays through once.
 assert.equal(loops, false, "GIF without a loop extension does not loop");
@@ -111,8 +62,25 @@ assert.ok(frames[1]!.time > frames[0]!.time, "time array is monotonic");
 // duration == final cumulative time.
 assert.equal(duration, 200, "duration");
 
-// Every frame carries a (shimmed) full-canvas bitmap.
-for (const f of frames) assert.ok(f.bitmap, "frame has a bitmap");
+// Pixels: the GIF is 2×1 black/white, swapped between the two frames. Frame 0
+// is a keyframe (index 0 always is) and comes back directly; frame 1 has to be
+// recomposited from it — the two paths must agree with the source bytes.
+const black: [number, number, number, number] = [0, 0, 0, 255];
+const white: [number, number, number, number] = [255, 255, 255, 255];
+
+const frame0 = (await source.getBitmap(0)) as unknown as FakeImageBitmap;
+assert.deepEqual(pixelAt(frame0, 0, 0), black, "frame 0 left pixel is black");
+assert.deepEqual(pixelAt(frame0, 1, 0), white, "frame 0 right pixel is white");
+
+const frame1 = (await source.getBitmap(1)) as unknown as FakeImageBitmap;
+assert.deepEqual(pixelAt(frame1, 0, 0), white, "frame 1 left pixel is white");
+assert.deepEqual(pixelAt(frame1, 1, 0), black, "frame 1 right pixel is black");
+
+// Seeking back to a keyframe must not disturb the recomposited frame.
+const frame0Again = (await source.getBitmap(0)) as unknown as FakeImageBitmap;
+assert.deepEqual(pixelAt(frame0Again, 0, 0), black, "frame 0 still correct after a seek");
+
+source.close();
 
 // ---- a looping GIF: same frames + a NETSCAPE2.0 loop extension -----------
 // The application extension after the GCT marks the GIF as repeating (count 0 =
@@ -127,10 +95,10 @@ const LOOPING_GIF = new Uint8Array([
   0x03, 0x01, 0x00, 0x00, 0x00,                   // sub-block: id 1, loop count 0, terminator
   0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 0: delay=10cs
   0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 0
-  0x02, 0x02, 0x44, 0x05, 0x00,                   // LZW: pixels [0,1]
+  0x02, 0x02, 0x44, 0x0a, 0x00,                   // LZW: pixels [0,1]
   0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 1: delay=10cs
   0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 1
-  0x02, 0x02, 0x0c, 0x05, 0x00,                   // LZW: pixels [1,0]
+  0x02, 0x02, 0x0c, 0x0a, 0x00,                   // LZW: pixels [1,0]
   0x3b,                                           // trailer
 ]);
 
@@ -139,6 +107,7 @@ const looping = await decode(
 );
 assert.equal(looping.frames.length, 2, "looping GIF still decodes 2 frames");
 assert.equal(looping.loops, true, "GIF with NETSCAPE2.0 extension loops");
+looping.source.close();
 
 // ---- non-animated bytes throw a typed error ------------------------------
 // Bytes matching no animated sniffer and lacking a GIF signature must throw
@@ -164,16 +133,35 @@ await assert.rejects(
 );
 
 // ---- decode budget rejects an oversized image ----------------------------
-// The budget is total composited pixels (≈ frameCount × resolution): over the
-// ceiling throws DecodeBudgetError up front; under it passes.
+// The budget is now the bytes a decode will RETAIN — keyframe bitmaps plus the
+// patches between them — rather than 4 bytes per canvas pixel per frame.
 assert.throws(
-  () => assertDecodeBudget(40000, 40000, 1), // 1.6 Gpx > 1.5 Gpx ceiling
+  () => assertDecodeBudget(MAX_DECODE_BYTES + 1),
   (err: unknown) => err instanceof DecodeBudgetError,
   "an over-budget image throws DecodeBudgetError",
 );
-assert.doesNotThrow(
-  () => assertDecodeBudget(1000, 1000, 100), // 0.1 Gpx, well under
-  "a within-budget image passes",
+assert.doesNotThrow(() => assertDecodeBudget(MAX_DECODE_BYTES), "the ceiling itself passes");
+
+// A GIF over the ceiling is rejected before a single pixel is decompressed: the
+// check runs on `gif.lsd` and the raw frame count, ahead of decompressFrames.
+// 4000×4000 × 100 frames would need 12.8 GB just to hold gifuct's LZW output.
+const huge = new Uint8Array(GIF);
+huge.set([0xa0, 0x0f, 0xa0, 0x0f], 6); // logical screen size → 4000×4000
+// prettier-ignore
+const frameBlock = [
+  0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00,
+  0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00,
+  0x02, 0x02, 0x44, 0x0a, 0x00,
+];
+const manyFrames = Uint8Array.from([
+  ...huge.slice(0, 19), // header + LSD + global colour table
+  ...Array.from({ length: 100 }, () => frameBlock).flat(),
+  0x3b,
+]);
+await assert.rejects(
+  () => decode(manyFrames.buffer.slice(0) as ArrayBuffer),
+  (err: unknown) => err instanceof DecodeBudgetError,
+  "an over-budget GIF is rejected before decompression",
 );
 
 console.log("decode.test: OK — %d frames, duration %dms", frames.length, duration);

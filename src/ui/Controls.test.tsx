@@ -20,9 +20,9 @@ const clock: EngineClock = {
 };
 
 const frames = [
-  { bitmap: {}, time: 100, delay: 100 },
-  { bitmap: {}, time: 200, delay: 100 },
-  { bitmap: {}, time: 300, delay: 100 },
+  { time: 100, delay: 100 },
+  { time: 200, delay: 100 },
+  { time: 300, delay: 100 },
 ] as never;
 const engine = createEngine(frames, 300, clock);
 

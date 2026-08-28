@@ -2,39 +2,20 @@
 //
 // Covers isAnimatedWebP (pure RIFF/VP8X byte scanning, no canvas needed) and the
 // decodeWebP bookkeeping — frame count, monotonic cumulative-time array,
-// duration, and delay clamping — against a hand-built minimal 2-frame WebP.
-// Canvas/bitmap APIs are shimmed like decode.test.ts; real VP8 pixel decode
+// duration, delay clamping, and the frame source it hands back — against a
+// hand-built minimal 2-frame WebP.
+//
+// Node can't decode a real VP8 bitstream, so the software canvas treats each
+// frame blob as an empty image: the container parsing and the frame/timeline
+// wiring are covered here, while the compositing those blobs feed is pinned
+// against the all-bitmap path in frameSource.test.ts. Real VP8 pixel output
 // needs a browser and is verified manually.
 
 import assert from "node:assert/strict";
 
-// ---- canvas shim (same shape as decode.test.ts) ---------------------------
+import { installFakeCanvas } from "../test/fakeCanvas.ts";
 
-class FakeCtx {
-  fillStyle = "";
-  clearRect() {}
-  drawImage() {}
-  fillRect() {}
-}
-class FakeOffscreenCanvas {
-  width: number;
-  height: number;
-  constructor(w: number, h: number) {
-    this.width = w;
-    this.height = h;
-  }
-  getContext() {
-    return new FakeCtx();
-  }
-}
-const g = globalThis as Record<string, unknown>;
-g.OffscreenCanvas = FakeOffscreenCanvas;
-g.createImageBitmap = async () => ({ close() {} });
-// createImageBitmap is shimmed, so the actual frame bitstream is never decoded —
-// the bytes only need to parse structurally and carry a readable fourCC.
-g.Blob = class {
-  constructor(public parts: unknown[]) {}
-};
+installFakeCanvas();
 
 const { isAnimatedWebP, decodeWebP } = await import("./decodeWebP.ts");
 
@@ -133,9 +114,12 @@ const file = buildWebP([
   chunk("ANMF", anmf(100)),
 ]);
 
-const { frames, duration, loops } = await decodeWebP(ab(file));
+const { frames, source, duration, loops } = await decodeWebP(ab(file));
 
 assert.equal(frames.length, 2, "frame count");
+assert.equal(source.frameCount, 2, "frame source frame count");
+assert.equal(source.width, 4, "frame source width from VP8X");
+assert.equal(source.height, 4, "frame source height from VP8X");
 
 // ANIM loop count is 0 (infinite) → loops.
 assert.equal(loops, true, "loop count 0 (infinite) → loops");
@@ -147,7 +131,9 @@ const playOnce = buildWebP([
   chunk("ANMF", anmf(10)),
   chunk("ANMF", anmf(100)),
 ]);
-assert.equal((await decodeWebP(ab(playOnce))).loops, false, "loop count 1 → plays once");
+const once = await decodeWebP(ab(playOnce));
+assert.equal(once.loops, false, "loop count 1 → plays once");
+once.source.close();
 
 assert.equal(frames[0]!.delay, 20, "frame 0 delay clamped to the 20ms floor");
 assert.equal(frames[1]!.delay, 100, "frame 1 delay (100ms, above floor)");
@@ -159,7 +145,16 @@ assert.ok(frames[1]!.time > frames[0]!.time, "time array is monotonic");
 
 assert.equal(duration, 120, "total duration == final cumulative time");
 
-for (const f of frames) assert.ok(f.bitmap, "frame has a bitmap");
+// Frame 0 is always a keyframe, so it comes back without recompositing; frame 1
+// is replayed from it on demand.
+assert.ok(!(source.getBitmap(0) instanceof Promise), "frame 0 is a resident keyframe");
+assert.ok(await source.getBitmap(1), "frame 1 is recomposited on demand");
+source.close();
+await assert.rejects(
+  async () => source.getBitmap(1),
+  /closed/,
+  "a closed source hands out nothing",
+);
 
 // ---- malformed input rejects ----------------------------------------------
 await assert.rejects(

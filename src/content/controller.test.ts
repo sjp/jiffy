@@ -22,16 +22,22 @@ let controls = 0;
 let destroyed = 0;
 let unmounted = 0;
 let frameCount = 3;
-let closedBitmaps = 0;
+let closedSources = 0;
 
 const deps = {
   fetchBytes: async () => new ArrayBuffer(8),
   decode: async () => ({
-    frames: Array.from({ length: frameCount }, () => ({
-      bitmap: { close: () => closedBitmaps++ },
-      time: 100,
+    frames: Array.from({ length: frameCount }, (_, i) => ({
+      time: 100 * (i + 1),
       delay: 100,
     })),
+    source: {
+      width: 4,
+      height: 4,
+      frameCount,
+      getBitmap: () => ({}),
+      close: () => closedSources++,
+    },
     duration: 100 * frameCount,
     loops: true,
   }),
@@ -70,20 +76,20 @@ assert.equal(ctrl.instances.size, 1);
 
 // ---- single-frame image is skipped ----------------------------------------
 frameCount = 1;
-closedBitmaps = 0;
+closedSources = 0;
 await ctrl.processImage(imgWith("http://x/single.gif"));
 assert.equal(ctrl.instances.size, 1, "single-frame image gets no controls");
 assert.equal(overlays, 1);
-assert.equal(closedBitmaps, 1, "bitmap of the skipped single-frame image is closed");
+assert.equal(closedSources, 1, "the skipped single-frame image's frame source is closed");
 
 // ---- per-element teardown --------------------------------------------------
 frameCount = 3;
-closedBitmaps = 0;
+closedSources = 0;
 ctrl.teardown(gif);
 assert.equal(destroyed, 1, "overlay destroyed");
 assert.equal(unmounted, 1, "controls unmounted");
 assert.equal(ctrl.instances.size, 0);
-assert.equal(closedBitmaps, 3, "torn-down instance's frame bitmaps are closed");
+assert.equal(closedSources, 1, "the torn-down instance's frame source is closed");
 
 // ---- multiple instances + global teardown ---------------------------------
 frameCount = 3;
@@ -174,9 +180,10 @@ ctrl.teardownAll();
   assert.equal(capturedSignal!.aborted, true, "teardown aborts the in-flight decode signal");
 
   // A late-resolving decode (e.g. the loop hadn't reached its next abort check)
-  // must have its frames dropped, not mounted.
+  // must have its frame source dropped, not mounted.
   resolveDecode({
-    frames: [{ bitmap: { close: () => closed++ }, time: 1, delay: 1 }],
+    frames: [{ time: 1, delay: 1 }],
+    source: { width: 1, height: 1, frameCount: 1, getBitmap: () => ({}), close: () => closed++ },
     duration: 1,
     loops: false,
   });
@@ -188,7 +195,7 @@ ctrl.teardownAll();
     "a cancelled load reports neither ready nor error",
   );
   assert.equal(cancelCtrl.instances.size, 0, "no instance left after cancel");
-  assert.equal(closed, 1, "a late decode result's frames are closed, not leaked");
+  assert.equal(closed, 1, "a late decode result's frame source is closed, not leaked");
 }
 
 // ---- teardownAll aborts in-flight loads ------------------------------------

@@ -5,7 +5,8 @@
 // in place (preserving layout + styling) and an absolutely-positioned canvas is
 // laid exactly over its box, covering it, and we drive that canvas from the
 // engine's current frame.
-import type { Engine, Frame } from "../engine/types";
+import type { FrameSource } from "../engine/frameSource";
+import type { Engine } from "../engine/types";
 
 export interface Overlay {
   canvas: HTMLCanvasElement;
@@ -68,15 +69,17 @@ const SCROLL_OPTS: AddEventListenerOptions = { passive: true, capture: true };
  * Position a canvas exactly over `img` and blit the engine's current frame,
  * keeping the canvas synced on scroll/resize. The canvas drawing buffer is set
  * to the GIF's native resolution.
+ *
+ * Frames come from `source` by index rather than being held here: most of them
+ * aren't resident, so asking for one can be asynchronous (see engine/frameSource).
  */
-export function createOverlay(img: HTMLImageElement, engine: Engine, frames: Frame[]): Overlay {
+export function createOverlay(img: HTMLImageElement, engine: Engine, source: FrameSource): Overlay {
   const canvas = document.createElement("canvas");
 
-  // Drawing buffer = GIF native pixel size (device pixels). The composited
-  // bitmaps are full-canvas at native resolution, so frame 0 carries the size.
-  const native = frames[0]?.bitmap;
-  canvas.width = native?.width ?? img.naturalWidth;
-  canvas.height = native?.height ?? img.naturalHeight;
+  // Drawing buffer = GIF native pixel size (device pixels). The source composites
+  // at the image's native resolution, so its dimensions are the buffer's.
+  canvas.width = source.width || img.naturalWidth;
+  canvas.height = source.height || img.naturalHeight;
 
   // Base styling. The display box (CSS width/height) is set per-reposition.
   // Copying the img's object-fit/position lets the canvas — a replaced element
@@ -115,13 +118,36 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, frames: Fra
     canvas.style.height = `${rect.height}px`;
   };
 
+  // Bumped on every draw request, so a bitmap that arrives after a newer frame
+  // was asked for is dropped instead of painting a stale frame over it.
+  let drawSeq = 0;
+  let destroyed = false;
+
+  const blit = (bitmap: ImageBitmap): void => {
+    if (!ctx || destroyed) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0);
+  };
+
   /** Blit the frame at `index` (clear first so transparency shows through). */
   const draw = (index: number): void => {
-    if (!ctx) return;
-    const frame = frames[index];
-    if (!frame) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(frame.bitmap, 0, 0);
+    if (!ctx || destroyed) return;
+    const seq = ++drawSeq;
+    const bitmap = source.getBitmap(index);
+    // Duck-typed rather than `instanceof Promise`: the source may build its
+    // promise in another realm (Firefox's page/sandbox split).
+    if (typeof (bitmap as Partial<PromiseLike<ImageBitmap>>).then === "function") {
+      // Recomposited on demand. Teardown and cancellation reject the promise;
+      // there is nothing to paint either way, so swallow it.
+      (bitmap as Promise<ImageBitmap>).then(
+        (resolved) => {
+          if (seq === drawSeq) blit(resolved);
+        },
+        () => {},
+      );
+      return;
+    }
+    blit(bitmap as ImageBitmap);
   };
 
   // Coalesce scroll/resize bursts into one reposition per frame to avoid thrash.
@@ -151,6 +177,7 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, frames: Fra
   return {
     canvas,
     destroy() {
+      destroyed = true; // an in-flight frame must not paint onto a dead canvas
       // Restore the inline opacity we hid the img with on mount. Accepted edge
       // case: if the page mutated the img's inline opacity while the player was
       // active, this clobbers that newer value with the one captured at mount.

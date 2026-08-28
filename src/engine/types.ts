@@ -1,5 +1,7 @@
 // Shared engine types — the central engine↔UI contract.
 
+import type { FrameSource } from "./frameSource";
+
 /**
  * Floor for per-frame delays, in ms. Frame delays are unreliable across all the
  * formats we decode — `0`/`1` are common and browsers historically clamp to a
@@ -9,15 +11,24 @@
 export const MIN_DELAY_MS = 20;
 
 /**
- * Memory ceiling for a single decode, as total composited pixels
- * (≈ frameCount × full-canvas resolution). Every frame is held as a full-canvas
- * RGBA ImageBitmap (4 bytes/px), so this bounds the bitmap memory one image can
- * pin (~1.5 Gpx ≈ 6 GB worst case). A pathological image — a huge canvas times
- * many frames — is rejected up front instead of exhausting memory mid-decode.
+ * Memory ceiling for a single decode, in bytes.
+ *
+ * Frames are no longer one full-canvas RGBA bitmap each (see ./frameSource):
+ * only every KEYFRAME_INTERVAL-th frame keeps a bitmap, and the frames between
+ * keep their much smaller source patch. So the budget is expressed in bytes and
+ * each decoder works out its own peak — keyframe bitmaps (4 bytes/px) plus
+ * retained patches, or whatever transient the decode itself needs, whichever is
+ * larger — rather than everyone assuming 4 bytes per canvas pixel per frame.
+ *
+ * The ceiling is the same ~6 GB it has always effectively been (the old 1.5 Gpx
+ * × 4 bytes). It is still far too generous to protect the tab — lowering it, and
+ * deriving it from `navigator.deviceMemory`, is
+ * `issues/06-realistic-decode-budget.md`. What changed here is the *cost model*,
+ * so that when the number does come down it is applied to something real.
  */
-export const MAX_DECODE_PIXELS = 1_500_000_000;
+export const MAX_DECODE_BYTES = 6_000_000_000;
 
-/** Thrown when a decode's total composited pixels would exceed MAX_DECODE_PIXELS. */
+/** Thrown when a decode's retained bytes would exceed MAX_DECODE_BYTES. */
 export class DecodeBudgetError extends Error {
   constructor(message = "image too large to play") {
     super(message);
@@ -25,20 +36,26 @@ export class DecodeBudgetError extends Error {
   }
 }
 
+/** Bytes one full-canvas RGBA bitmap costs. */
+export const bitmapBytes = (width: number, height: number): number => width * height * 4;
+
 /**
- * Reject a decode whose pre-composited frames would blow the pixel budget, before
- * any compositing work happens. `width`×`height` is the full-canvas resolution;
- * `frameCount` the number of frames (each kept as a bitmap).
+ * Reject a decode that would retain more than the budget allows, before any
+ * compositing work happens. `bytes` is what the finished `FrameSource` will
+ * hold: keyframe bitmaps plus retained patches.
  */
-export function assertDecodeBudget(width: number, height: number, frameCount: number): void {
-  if (width * height * frameCount > MAX_DECODE_PIXELS) {
+export function assertDecodeBudget(bytes: number): void {
+  if (bytes > MAX_DECODE_BYTES) {
     throw new DecodeBudgetError();
   }
 }
 
-/** A pre-composited, ready-to-blit full-canvas frame. */
+/**
+ * A frame's place on the timeline. Pixels live in the `FrameSource` — a frame
+ * is addressed by index, and the overlay asks the source for its bitmap — so a
+ * `Frame` is pure bookkeeping and costs nothing to hold.
+ */
 export interface Frame {
-  bitmap: ImageBitmap;
   /** Cumulative ms, end-of-frame convention (pick one and keep it). */
   time: number;
   /** Clamped frame delay in ms. */
@@ -47,15 +64,13 @@ export interface Frame {
 
 /**
  * Bail out of an in-progress decode when its `signal` has been aborted (the user
- * cancelled the load, or it was torn down). Called once per frame inside each
- * decoder's compositing loop. The decode rejects, so its caller never sees the
- * `frames` it built up — close them here so the partial work doesn't leak GPU
- * memory. Throws a standard `AbortError` (matching the fetch convention) which the
- * pipeline treats as a silent cancel, not an error.
+ * cancelled the load, or it was torn down). Called once per frame inside the
+ * compositing loop. Throws a standard `AbortError` (matching the fetch
+ * convention) which the pipeline treats as a silent cancel, not an error. The
+ * caller is responsible for releasing whatever it has built so far.
  */
-export function throwIfAborted(signal: AbortSignal | undefined, frames: Frame[]): void {
+export function throwIfAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
-    for (const f of frames) f.bitmap.close();
     throw new DOMException("decode aborted", "AbortError");
   }
 }
@@ -100,7 +115,10 @@ export interface Engine {
 
 /** Output of the decode + precompute step. */
 export interface DecodeResult {
+  /** Timeline only — one entry per frame, in order. */
   frames: Frame[];
+  /** Pixels, addressed by frame index. Owned by the caller; `close()` it. */
+  source: FrameSource;
   duration: number;
   /** Whether the source is meant to repeat (e.g. GIF NETSCAPE loop, APNG num_plays). */
   loops: boolean;

@@ -12,12 +12,14 @@
 //
 // DOM-lifecycle reconciliation: a debounced MutationObserver tears down a GIF's
 // player when its <img> leaves the document (lazy unmount, SPA route change),
-// reusing the idempotent registry + teardown so no rAF loop, listener or bitmap
-// leaks. Because discovery is ON-DEMAND (the user picks GIFs via the popup), the
-// observer does NOT auto-enhance inserted GIFs — it only reconciles removals.
+// reusing the idempotent registry + teardown so no rAF loop, listener or frame
+// source leaks. Because discovery is ON-DEMAND (the user picks GIFs via the
+// popup), the observer does NOT auto-enhance inserted GIFs — it only reconciles
+// removals.
 // The observer is attached lazily — only while ≥1 player is live — so a page
 // where the user picked and then closed everything carries zero observers.
 import { NotAnimatedError } from "../engine/decode";
+import type { FrameSource } from "../engine/frameSource";
 import { DecodeBudgetError } from "../engine/types";
 import type { DecodeResult, Engine, Frame } from "../engine/types";
 import type { Overlay } from "./overlay";
@@ -39,7 +41,7 @@ export interface PipelineDeps {
   fetchBytes: (url: string, signal?: AbortSignal) => Promise<ArrayBuffer>;
   decode: (bytes: ArrayBuffer, signal?: AbortSignal) => Promise<DecodeResult>;
   createEngine: (frames: Frame[], duration: number) => Engine;
-  createOverlay: (img: HTMLImageElement, engine: Engine, frames: Frame[]) => Overlay;
+  createOverlay: (img: HTMLImageElement, engine: Engine, source: FrameSource) => Overlay;
   mountControls: (img: HTMLImageElement, engine: Engine, onClose: () => void) => () => void;
 }
 
@@ -48,17 +50,12 @@ interface Instance {
   engine: Engine;
   overlay: Overlay;
   teardownControls: () => void;
-  /** Composited frames owned by this instance; their bitmaps are closed on teardown. */
-  frames: Frame[];
-}
-
-/**
- * Release the native/GPU memory backing decoded frame bitmaps. ImageBitmap.close()
- * frees deterministically (rather than waiting for GC), so we call it on every
- * teardown and on the decode early-return paths to avoid leaking full-res frames.
- */
-function closeFrames(frames: Frame[]): void {
-  for (const frame of frames) frame.bitmap.close();
+  /**
+   * Frame pixels owned by this instance. Holds keyframe bitmaps (or, for AVIF, a
+   * live decoder), so it must be closed on teardown — ImageBitmap.close() frees
+   * deterministically rather than waiting for GC.
+   */
+  source: FrameSource;
 }
 
 export interface Controller {
@@ -106,17 +103,17 @@ export function createController(deps: PipelineDeps): Controller {
     try {
       const url = img.currentSrc || img.src;
       const bytes = await deps.fetchBytes(url, ac.signal);
-      const { frames, duration, loops } = await deps.decode(bytes, ac.signal);
+      const { frames, source, duration, loops } = await deps.decode(bytes, ac.signal);
 
       // Torn down mid-flight (reconcile / teardownAll): drop the frames silently.
       if (!pending.has(img)) {
-        closeFrames(frames);
+        source.close();
         return;
       }
       // A single frame is nothing to control — same outcome the user cares about
       // as a non-animated sniff: report it as not-animated, not a loaded player.
       if (frames.length <= 1) {
-        closeFrames(frames);
+        source.close();
         onStatus?.("not-animated");
         return;
       }
@@ -125,9 +122,9 @@ export function createController(deps: PipelineDeps): Controller {
       // Seed the loop setting from the source so the controls default matches how
       // the image normally plays (e.g. a one-shot GIF starts with looping off).
       engine.setLoop(loops);
-      const overlay = deps.createOverlay(img, engine, frames);
+      const overlay = deps.createOverlay(img, engine, source);
       const teardownControls = deps.mountControls(img, engine, () => teardown(img));
-      instances.set(img, { engine, overlay, teardownControls, frames });
+      instances.set(img, { engine, overlay, teardownControls, source });
       ensureWatching(); // first live player → start watching for DOM removals
       onStatus?.("ready");
     } catch (err) {
@@ -160,8 +157,8 @@ export function createController(deps: PipelineDeps): Controller {
     if (!instance) return;
     instance.overlay.destroy();
     instance.teardownControls();
-    // Overlay has stopped drawing, so freeing the frame bitmaps is now safe.
-    closeFrames(instance.frames);
+    // Overlay has stopped drawing, so freeing the frame pixels is now safe.
+    instance.source.close();
     instances.delete(img);
     stopWatchingIfIdle(); // last player gone → detach the watcher
   }
@@ -172,7 +169,7 @@ export function createController(deps: PipelineDeps): Controller {
     for (const instance of instances.values()) {
       instance.overlay.destroy();
       instance.teardownControls();
-      closeFrames(instance.frames);
+      instance.source.close();
     }
     instances.clear();
     stopWatchingIfIdle(); // registry emptied → detach the watcher

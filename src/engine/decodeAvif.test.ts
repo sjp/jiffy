@@ -1,33 +1,17 @@
 // Headless tests for the AVIF decoder (WebCodecs ImageDecoder strategy).
 //
 // Covers isAnimatedAvif (pure ftyp byte scanning), the "ImageDecoder
-// unavailable" guard, and the decodeAvif bookkeeping — frame count, monotonic
-// cumulative-time array, duration, delay clamping — against a mock ImageDecoder
-// / VideoFrame. Canvas/bitmap APIs are shimmed like decode.test.ts. Real pixel
-// decode needs a browser with WebCodecs (verified manually).
+// unavailable" guard, the decodeAvif bookkeeping — frame count, monotonic
+// cumulative-time array, duration, delay clamping — and the decoder-backed
+// frame source, against a mock ImageDecoder / VideoFrame. Real pixel decode
+// needs a browser with WebCodecs (verified manually).
 
 import assert from "node:assert/strict";
 
-// ---- canvas shim ----------------------------------------------------------
+import { installFakeCanvas } from "../test/fakeCanvas.ts";
 
-class FakeCtx {
-  clearRect() {}
-  drawImage() {}
-}
-class FakeOffscreenCanvas {
-  width: number;
-  height: number;
-  constructor(w: number, h: number) {
-    this.width = w;
-    this.height = h;
-  }
-  getContext() {
-    return new FakeCtx();
-  }
-}
+installFakeCanvas();
 const g = globalThis as Record<string, unknown>;
-g.OffscreenCanvas = FakeOffscreenCanvas;
-g.createImageBitmap = async () => ({ close() {} });
 
 const { isAnimatedAvif, decodeAvif, canDecodeAvif } = await import("./decodeAvif.ts");
 
@@ -92,19 +76,26 @@ await assert.rejects(
 // ---- decodeAvif bookkeeping (mock ImageDecoder) ---------------------------
 // 3 frames, each duration 100000µs = 100ms → cumulative 100/200/300.
 
+let liveFrames = 0;
 class FakeVideoFrame {
   displayWidth = 4;
   displayHeight = 4;
   duration: number | null;
   constructor(durationUs: number | null) {
     this.duration = durationUs;
+    liveFrames++;
   }
-  close() {}
+  close() {
+    liveFrames--;
+  }
 }
 const decodedIndexes: number[] = [];
 let closed = false;
 class FakeImageDecoder {
-  tracks = {
+  tracks: {
+    ready: Promise<void>;
+    selectedTrack: { frameCount: number; animated: boolean } | null;
+  } = {
     ready: Promise.resolve(),
     selectedTrack: { frameCount: 3, animated: true },
   };
@@ -121,20 +112,52 @@ g.ImageDecoder = FakeImageDecoder;
 
 assert.equal(canDecodeAvif(), true, "ImageDecoder present → can decode");
 
-const { frames, duration, loops } = await decodeAvif(ab(avisMajor));
+const { frames, source, duration, loops } = await decodeAvif(ab(avisMajor));
 
 assert.equal(frames.length, 3, "frame count");
 // ImageDecoder doesn't expose loop count, so AVIF defaults to looping.
 assert.equal(loops, true, "AVIF defaults to looping (loop count unavailable)");
+// The timeline pass has to visit every frame to read its duration...
 assert.deepEqual(decodedIndexes, [0, 1, 2], "decoded every frame index in order");
+// ...but it retains none of them: each VideoFrame is closed as soon as its
+// duration has been read, which is the whole point of the lazy source.
+assert.equal(liveFrames, 0, "the timeline pass retains no decoded frames");
 assert.equal(frames[0]!.delay, 100, "frame 0 delay (100000µs → 100ms)");
 assert.equal(frames[0]!.time, 100, "frame 0 cumulative time");
 assert.equal(frames[1]!.time, 200, "frame 1 cumulative time");
 assert.equal(frames[2]!.time, 300, "frame 2 cumulative time");
 assert.ok(frames[2]!.time > frames[1]!.time, "time array is monotonic");
 assert.equal(duration, 300, "total duration");
-assert.ok(closed, "decoder closed after decode");
-for (const f of frames) assert.ok(f.bitmap, "frame has a bitmap");
+assert.equal(source.frameCount, 3, "frame source frame count");
+assert.equal(source.width, 4, "frame source width from the first decoded frame");
+assert.equal(source.height, 4, "frame source height from the first decoded frame");
+
+// ---- the frame source re-decodes by index --------------------------------
+// AVIF frames are inter-coded, so they can't be replayed from patches; the
+// source keeps the decoder alive and asks it again, caching recent results.
+assert.ok(!closed, "the decoder stays open for the frame source");
+
+decodedIndexes.length = 0;
+assert.ok(await source.getBitmap(2), "frame 2 decoded on demand");
+assert.deepEqual(decodedIndexes, [2], "asked the decoder for exactly that frame");
+
+// A second request for a cached frame is answered synchronously, without going
+// back to the decoder.
+assert.ok(!(source.getBitmap(2) instanceof Promise), "a cached frame is synchronous");
+assert.deepEqual(decodedIndexes, [2], "a cache hit doesn't re-decode");
+
+// Out-of-range indices clamp.
+decodedIndexes.length = 0;
+assert.ok(await source.getBitmap(99), "an out-of-range index clamps to the last frame");
+assert.deepEqual(decodedIndexes, [], "clamping landed on the cached last frame");
+
+source.close();
+assert.ok(closed, "close() closes the decoder");
+await assert.rejects(
+  async () => source.getBitmap(0),
+  /closed/,
+  "a closed source refuses to decode",
+);
 
 // ---- a pre-aborted signal cancels the decode -----------------------------
 const abortedAvif = new AbortController();
@@ -144,5 +167,17 @@ await assert.rejects(
   (err: unknown) => err instanceof DOMException && err.name === "AbortError",
   "an aborted signal rejects the AVIF decode with AbortError",
 );
+
+// ---- a failed decode closes the decoder ---------------------------------
+// Nothing takes ownership when we never reach the frame source, so decodeAvif
+// must close the decoder itself rather than leaking it.
+closed = false;
+class NoTrackDecoder extends FakeImageDecoder {
+  override tracks = { ready: Promise.resolve(), selectedTrack: null };
+}
+g.ImageDecoder = NoTrackDecoder;
+await assert.rejects(() => decodeAvif(ab(avisMajor)), /no image track/, "no track rejects");
+assert.ok(closed, "a failed decode closes the decoder");
+g.ImageDecoder = FakeImageDecoder;
 
 console.log("decodeAvif.test: OK — %d frames, duration %dms", frames.length, duration);

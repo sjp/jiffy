@@ -1,19 +1,31 @@
 // Animated WebP decoder.
 //
 // Animated WebP uses a RIFF container with ANMF chunks for each frame. Each
-// frame's VP8/VP8L bitstream is extracted, wrapped in a minimal standalone WebP
-// envelope, and decoded via createImageBitmap (browser-native — no WASM needed).
-// Compositing mirrors the GIF decode strategy: all frames are pre-composited into
-// full-canvas ImageBitmaps at load time so playback and seeking are O(1).
+// frame's VP8/VP8L bitstream is extracted and wrapped in a minimal standalone
+// WebP envelope so createImageBitmap can decode it natively (no WASM needed).
+//
+// Those per-frame envelopes ARE the retained representation: they're the
+// compressed bitstream, typically two orders of magnitude smaller than the
+// pixels, so ./frameSource keeps them and re-decodes on demand rather than
+// holding a full-canvas bitmap per frame. Compositing (and keyframe capture)
+// happens there; this module only parses the container into `FrameStep[]`.
 //
 // WebP disposal/blending (per WebP Container Specification):
 //   ANMF flags byte, bit 0 (Disposal):  0 = leave canvas,  1 = fill rect with bg
 //   ANMF flags byte, bit 1 (Blending):  0 = alpha-blend,   1 = overwrite
 
 import {
+  createFrameSource,
+  keyframeCount,
+  patchBytes,
+  DISPOSE_BACKGROUND,
+  DISPOSE_NONE,
+  type FrameStep,
+} from "./frameSource";
+import {
   MIN_DELAY_MS,
   assertDecodeBudget,
-  throwIfAborted,
+  bitmapBytes,
   type DecodeResult,
   type Frame,
 } from "./types";
@@ -152,7 +164,7 @@ function makeFrameBlob(frameData: ArrayBuffer, width: number, height: number): B
   });
 }
 
-/** Decode animated WebP bytes into pre-composited full-canvas frames + duration. */
+/** Decode animated WebP bytes into a frame timeline + a frame source. */
 export async function decodeWebP(bytes: ArrayBuffer, signal?: AbortSignal): Promise<DecodeResult> {
   const {
     canvasWidth,
@@ -162,59 +174,48 @@ export async function decodeWebP(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     frames: rawFrames,
   } = parseAnimatedWebP(bytes);
 
-  assertDecodeBudget(canvasWidth, canvasHeight, rawFrames.length);
-
-  const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("decodeWebP: failed to acquire 2D context");
-
   const [r, g, b, a] = bgRGBA;
-  const bgCss = `rgba(${r},${g},${b},${a / 255})`;
+  // Declared background colour, seeded under frame 0 and repainted on disposal
+  // so transparent areas match what the browser shows for the native <img>. A
+  // fully transparent background means "leave the canvas clear".
+  const bgCss = a > 0 ? `rgba(${r},${g},${b},${a / 255})` : null;
 
-  // Seed the canvas with the declared background colour so that transparent
-  // frame areas match what the browser shows for the native <img>.
-  if (a > 0) {
-    ctx.fillStyle = bgCss;
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-  }
-
+  const steps: FrameStep[] = [];
   const frames: Frame[] = [];
   let elapsed = 0;
-  let prev: RawFrame | null = null;
-
   for (const rf of rawFrames) {
-    throwIfAborted(signal, frames);
-
-    // 1. Apply the previous frame's disposal before drawing the next frame.
-    if (prev?.disposeToBackground) {
-      ctx.clearRect(prev.x, prev.y, prev.width, prev.height);
-      if (a > 0) {
-        ctx.fillStyle = bgCss;
-        ctx.fillRect(prev.x, prev.y, prev.width, prev.height);
-      }
-    }
-
-    // 2. Decode this frame's compressed bitstream via browser-native WebP.
-    const frameBmp = await createImageBitmap(makeFrameBlob(rf.frameData, rf.width, rf.height));
-
-    // 3. Composite onto the work canvas.
-    //    Overwrite: clear the frame rect first so the frame's transparent pixels
-    //    replace whatever was underneath (clear + source-over = copy semantics).
-    if (rf.overwrite) ctx.clearRect(rf.x, rf.y, rf.width, rf.height);
-    ctx.drawImage(frameBmp, rf.x, rf.y);
-    frameBmp.close();
-
-    // 4. Snapshot full composited canvas → ready-to-blit bitmap.
-    const bitmap = await createImageBitmap(canvas);
+    steps.push({
+      patch: { kind: "blob", blob: makeFrameBlob(rf.frameData, rf.width, rf.height) },
+      x: rf.x,
+      y: rf.y,
+      width: rf.width,
+      height: rf.height,
+      // Overwrite blending: clear the rect first so the frame's transparent
+      // pixels replace what was underneath (clear + source-over = copy).
+      clear: rf.overwrite,
+      dispose: rf.disposeToBackground ? DISPOSE_BACKGROUND : DISPOSE_NONE,
+    });
     const delay = Math.max(rf.durationMs, MIN_DELAY_MS);
     elapsed += delay;
-    frames.push({ bitmap, time: elapsed, delay });
-
-    prev = rf;
+    frames.push({ time: elapsed, delay });
   }
 
+  // Retained cost: the keyframe bitmaps plus every frame's compressed envelope.
+  let retained = bitmapBytes(canvasWidth, canvasHeight) * keyframeCount(steps.length);
+  for (const step of steps) retained += patchBytes(step);
+  assertDecodeBudget(retained);
+
+  const source = await createFrameSource({
+    width: canvasWidth,
+    height: canvasHeight,
+    steps,
+    seedFill: bgCss,
+    disposeFill: bgCss,
+    signal,
+  });
+
   // loopCount 1 = play exactly once; 0 (infinite) or ≥2 means it repeats.
-  return { frames, duration: elapsed, loops: loopCount !== 1 };
+  return { frames, source, duration: elapsed, loops: loopCount !== 1 };
 }
 
 /**

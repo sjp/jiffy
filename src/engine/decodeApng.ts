@@ -5,9 +5,11 @@
 //   fcTL  Frame Control:     position, size, delay, disposal, blend
 //   fdAT  Frame Data:        compressed pixels (like IDAT but with a 4-byte seq prefix)
 //
-// Strategy mirrors decodeWebP: parse chunks once, reconstruct each frame as a
-// standalone PNG blob, decode via browser-native createImageBitmap, composite
-// onto OffscreenCanvas. CRC-32 is required here (unlike WebP RIFF) because the
+// Strategy mirrors decodeWebP: parse chunks once and reconstruct each frame as
+// a standalone PNG blob. Those blobs are what we retain — the compressed
+// sub-image, far smaller than its pixels — and ./frameSource composites them,
+// keeping a full-canvas bitmap only every KEYFRAME_INTERVAL frames and decoding
+// the rest on demand. CRC-32 is required here (unlike WebP RIFF) because the
 // browser PNG decoder validates chunk checksums.
 //
 // APNG disposal ops (per APNG spec §4.3):
@@ -20,9 +22,19 @@
 //   1 OVER    alpha-blend onto canvas (drawImage default / source-over)
 
 import {
+  createFrameSource,
+  keyframeCount,
+  patchBytes,
+  DISPOSE_BACKGROUND,
+  DISPOSE_NONE,
+  DISPOSE_PREVIOUS,
+  type Dispose,
+  type FrameStep,
+} from "./frameSource";
+import {
   MIN_DELAY_MS,
   assertDecodeBudget,
-  throwIfAborted,
+  bitmapBytes,
   type DecodeResult,
   type Frame,
 } from "./types";
@@ -253,7 +265,48 @@ export function isAnimatedPng(bytes: ArrayBuffer): boolean {
   return false;
 }
 
-/** Decode an animated PNG into pre-composited full-canvas frames + total duration. */
+/**
+ * Resolve the bKGD chunk to a CSS colour, or null when there isn't one we can
+ * render. Channel values are depth-scaled, so shift them down to 8-bit.
+ */
+function backgroundCss(
+  bkgd: Uint8Array | null,
+  ihdrData: Uint8Array,
+  plte: Uint8Array | null,
+): string | null {
+  if (!bkgd) return null;
+  const colorType = ihdrData[9]!;
+  const bitDepth = ihdrData[8]!;
+  const shift = bitDepth > 8 ? bitDepth - 8 : 0;
+  const dv = new DataView(bkgd.buffer, bkgd.byteOffset);
+  if (colorType === 0 || colorType === 4) {
+    // Greyscale (± alpha): single 16-bit sample.
+    const v = dv.getUint16(0, false) >> shift;
+    return `rgb(${v},${v},${v})`;
+  }
+  if (colorType === 2 || colorType === 6) {
+    // Truecolor (± alpha): three 16-bit samples.
+    const r = dv.getUint16(0, false) >> shift;
+    const g = dv.getUint16(2, false) >> shift;
+    const b = dv.getUint16(4, false) >> shift;
+    return `rgb(${r},${g},${b})`;
+  }
+  if (colorType === 3 && plte) {
+    // Indexed: single byte palette index.
+    const i = bkgd[0]! * 3;
+    return `rgb(${plte[i]},${plte[i + 1]},${plte[i + 2]})`;
+  }
+  return null;
+}
+
+const toDispose = (disposeOp: number): Dispose =>
+  disposeOp === DISPOSE_OP_BACKGROUND
+    ? DISPOSE_BACKGROUND
+    : disposeOp === DISPOSE_OP_PREVIOUS
+      ? DISPOSE_PREVIOUS
+      : DISPOSE_NONE;
+
+/** Decode an animated PNG into a frame timeline + a frame source. */
 export async function decodeApng(bytes: ArrayBuffer, signal?: AbortSignal): Promise<DecodeResult> {
   const {
     canvasWidth,
@@ -266,86 +319,44 @@ export async function decodeApng(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     frames: rawFrames,
   } = parseApng(bytes);
 
-  assertDecodeBudget(canvasWidth, canvasHeight, rawFrames.length);
-
-  const canvas = new OffscreenCanvas(canvasWidth, canvasHeight);
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("decodeApng: failed to acquire 2D context");
-
-  // Seed the canvas with the declared background colour (bKGD chunk) so that
-  // transparent frame areas match what the browser shows for the native <img>.
-  // bKGD channel values are depth-scaled; shift down to 8-bit.
-  if (bkgd) {
-    const colorType = ihdrData[9]!;
-    const bitDepth = ihdrData[8]!;
-    const shift = bitDepth > 8 ? bitDepth - 8 : 0;
-    const dv = new DataView(bkgd.buffer, bkgd.byteOffset);
-    let bgCss: string | null = null;
-    if (colorType === 0 || colorType === 4) {
-      // Greyscale (± alpha): single 16-bit sample.
-      const v = dv.getUint16(0, false) >> shift;
-      bgCss = `rgb(${v},${v},${v})`;
-    } else if (colorType === 2 || colorType === 6) {
-      // Truecolor (± alpha): three 16-bit samples.
-      const r = dv.getUint16(0, false) >> shift;
-      const g = dv.getUint16(2, false) >> shift;
-      const b = dv.getUint16(4, false) >> shift;
-      bgCss = `rgb(${r},${g},${b})`;
-    } else if (colorType === 3 && plte) {
-      // Indexed: single byte palette index.
-      const i = bkgd[0]! * 3;
-      bgCss = `rgb(${plte[i]},${plte[i + 1]},${plte[i + 2]})`;
-    }
-    if (bgCss) {
-      ctx.fillStyle = bgCss;
-      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-    }
-  }
-
+  const steps: FrameStep[] = [];
   const frames: Frame[] = [];
   let elapsed = 0;
-  let prev: FcTLInfo | null = null;
-  // Canvas snapshot saved before a DISPOSE_OP_PREVIOUS frame, restored after.
-  let restoreSnapshot: ImageData | null = null;
-
   for (const rf of rawFrames) {
-    throwIfAborted(signal, frames);
-
-    // 1. Apply the previous frame's disposal before drawing this one.
-    if (prev) {
-      if (prev.disposeOp === DISPOSE_OP_BACKGROUND) {
-        ctx.clearRect(prev.x, prev.y, prev.width, prev.height);
-      } else if (prev.disposeOp === DISPOSE_OP_PREVIOUS && restoreSnapshot) {
-        ctx.putImageData(restoreSnapshot, 0, 0);
-      }
-      // dispose_op 0 (NONE): leave canvas as-is.
-    }
-
-    // 2. If THIS frame uses DISPOSE_OP_PREVIOUS, snapshot the canvas now
-    //    (post-prev-disposal, pre-this-frame) so the next iteration can revert.
-    if (rf.disposeOp === DISPOSE_OP_PREVIOUS) {
-      restoreSnapshot = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
-    }
-
-    // 3. Decode frame sub-image via browser-native PNG.
-    const frameBmp = await createImageBitmap(makeFrameBlob(rf, ihdrData, plte, trns));
-
-    // 4. Composite at frame position.
-    //    BLEND_OP_SOURCE: clear first so transparent pixels copy (not blend).
-    //    BLEND_OP_OVER:   drawImage alone is source-over / alpha-blend.
-    if (rf.blendOp === BLEND_OP_SOURCE) ctx.clearRect(rf.x, rf.y, rf.width, rf.height);
-    ctx.drawImage(frameBmp, rf.x, rf.y);
-    frameBmp.close();
-
-    // 5. Snapshot full composited canvas → ready-to-blit bitmap.
-    const bitmap = await createImageBitmap(canvas);
+    steps.push({
+      patch: { kind: "blob", blob: makeFrameBlob(rf, ihdrData, plte, trns) },
+      x: rf.x,
+      y: rf.y,
+      width: rf.width,
+      height: rf.height,
+      // BLEND_OP_SOURCE: clear first so transparent pixels copy, not blend.
+      clear: rf.blendOp === BLEND_OP_SOURCE,
+      dispose: toDispose(rf.disposeOp),
+    });
+    // The reconstructed blob holds everything we need; drop the raw payloads so
+    // the uncompressed-in-JS copies aren't pinned for the player's lifetime.
+    rf.payloads.length = 0;
     const delay = Math.max(rf.delayMs, MIN_DELAY_MS);
     elapsed += delay;
-    frames.push({ bitmap, time: elapsed, delay });
-
-    prev = rf;
+    frames.push({ time: elapsed, delay });
   }
 
+  // Retained cost: the keyframe bitmaps plus every frame's reconstructed PNG.
+  let retained = bitmapBytes(canvasWidth, canvasHeight) * keyframeCount(steps.length);
+  for (const step of steps) retained += patchBytes(step);
+  assertDecodeBudget(retained);
+
+  const source = await createFrameSource({
+    width: canvasWidth,
+    height: canvasHeight,
+    steps,
+    // bKGD seeds the canvas so transparent areas match the native <img>, but
+    // APNG's BACKGROUND disposal is defined as "clear to transparent black" —
+    // it does NOT repaint bKGD — so there is no dispose fill.
+    seedFill: backgroundCss(bkgd, ihdrData, plte),
+    signal,
+  });
+
   // num_plays 1 = play exactly once; 0 (infinite) or ≥2 means it repeats.
-  return { frames, duration: elapsed, loops: numPlays !== 1 };
+  return { frames, source, duration: elapsed, loops: numPlays !== 1 };
 }
