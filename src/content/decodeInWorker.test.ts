@@ -6,6 +6,11 @@
 // whenever the worker can't or won't. All of that is testable without ever
 // running the worker itself, which is just `decode()` (covered by decode.test).
 //
+// The blocks run in order and share one module: the way a worker is spawned only
+// ever demotes (extension URL → blob URL → not at all), so the direct-path cases
+// come first, then the construction failure that moves to blob URLs, and the
+// give-up case last.
+//
 // Run: `npm test`.
 
 import assert from "node:assert/strict";
@@ -23,13 +28,19 @@ interface Posted {
 
 class FakeWorker {
   static spawned: FakeWorker[] = [];
+  /** URL prefix the "browser" refuses to build a worker from, as Chrome does. */
+  static refuse: string | null = null;
 
   onmessage: ((event: { data: unknown }) => void) | null = null;
+  onmessageerror: (() => void) | null = null;
   onerror: ((event: { message: string }) => void) | null = null;
   posted: Posted[] = [];
   terminated = false;
 
   constructor(readonly url: string) {
+    if (FakeWorker.refuse && url.startsWith(FakeWorker.refuse)) {
+      throw new Error(`SecurityError: refused to construct a worker from ${url}`);
+    }
     FakeWorker.spawned.push(this);
   }
 
@@ -55,11 +66,25 @@ class FakeWorker {
   fail(message: string): void {
     this.onerror?.({ message });
   }
+
+  /** Answer with something structured clone refuses to carry across. */
+  unclonable(): void {
+    this.onmessageerror?.();
+  }
 }
+
+/** Fetches of the worker bundle, so the blob path can be seen to happen once. */
+const fetched: string[] = [];
 
 const globals = globalThis as Record<string, unknown>;
 globals.Worker = FakeWorker;
 globals.browser = { runtime: { getURL: (name: string) => `test-extension://${name}` } };
+globals.fetch = (url: string) => {
+  fetched.push(url);
+  return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("/* bundle */") });
+};
+let blobUrls = 0;
+URL.createObjectURL = (() => `blob:test-page/${++blobUrls}`) as typeof URL.createObjectURL;
 
 const { buildFrameSource } = await import("../engine/frameSource.ts");
 const { NotAnimatedError } = await import("../engine/decode.ts");
@@ -68,6 +93,16 @@ const { decodeInWorker } = await import("./decodeInWorker.ts");
 
 /** The last worker the client spawned. */
 const latest = (): FakeWorker => FakeWorker.spawned[FakeWorker.spawned.length - 1]!;
+
+/**
+ * Let the client get as far as posting to the worker it just spawned. Spawning
+ * awaits (the blob path fetches the bundle), so the handlers this drives aren't
+ * attached in the same turn as the call. Microtasks only — one block replaces
+ * `setTimeout` to fire the startup deadline on demand.
+ */
+const settled = async (): Promise<void> => {
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+};
 
 // A 2×1 animation the "worker" claims to have decoded: frame 0 black/white,
 // frame 1 the same rect repainted white/black — the shape the real GIF fixture
@@ -110,6 +145,7 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
 
 {
   const promise = decodeInWorker(gifBytes());
+  await settled();
   const worker = latest();
   assert.equal(worker.url, "test-extension://decode-worker.js", "spawned from the extension URL");
   assert.equal(worker.posted.length, 1, "the bytes were posted once");
@@ -140,6 +176,7 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
 
 {
   const promise = decodeInWorker(gifBytes());
+  await settled();
   latest().reply({ ok: false, failure: { kind: "not-animated", message: "not animated" } });
   await assert.rejects(
     () => promise,
@@ -150,6 +187,7 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
 
 {
   const promise = decodeInWorker(gifBytes());
+  await settled();
   latest().reply({
     ok: false,
     failure: { kind: "too-large", message: "too large", bytes: 1_800_000_000 },
@@ -165,6 +203,7 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
 
 {
   const promise = decodeInWorker(gifBytes());
+  await settled();
   const worker = latest();
   worker.reply({ ok: false, failure: { kind: "unsupported" } });
   const result = await promise;
@@ -178,6 +217,7 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
 {
   const ac = new AbortController();
   const promise = decodeInWorker(gifBytes(), ac.signal);
+  await settled();
   const worker = latest();
   ac.abort();
   await assert.rejects(
@@ -188,10 +228,25 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
   assert.equal(worker.terminated, true, "aborting terminates the worker mid-decode");
 }
 
+// ---- a reply that can't be cloned across settles, rather than hanging -----
+
+{
+  const promise = decodeInWorker(gifBytes());
+  await settled();
+  const worker = latest();
+  worker.ready();
+  worker.unclonable();
+  const result = await promise;
+  assert.equal(result.frames.length, 2, "an untransferable reply falls back to decoding here");
+  assert.equal(worker.terminated, true, "the worker is terminated rather than left waiting");
+  result.source.close();
+}
+
 // ---- a worker that dies mid-decode falls back, and is still trusted --------
 
 {
   const promise = decodeInWorker(gifBytes());
+  await settled();
   const worker = latest();
   worker.ready();
   worker.fail("uncaught error in decode-worker.js");
@@ -206,8 +261,44 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
   // next decode gets one again.
   const before = FakeWorker.spawned.length;
   const promise = decodeInWorker(gifBytes());
+  await settled();
   assert.equal(FakeWorker.spawned.length, before + 1, "a worker is still spawned after a crash");
   latest().ready();
+  latest().reply({ ok: false, failure: { kind: "not-animated", message: "not animated" } });
+  await assert.rejects(() => promise);
+}
+
+// ---- an extension URL the browser refuses falls through to a blob URL -----
+// Chrome's case: `new Worker("chrome-extension://…")` throws because a content
+// script counts as the page for same-origin. The bundle is web-accessible, so
+// it can still be fetched and run from a `blob:` URL of the page's own origin —
+// in the same decode, since the refusal costs nothing to discover.
+
+{
+  FakeWorker.refuse = "test-extension://";
+  const before = FakeWorker.spawned.length;
+  const promise = decodeInWorker(gifBytes());
+  await settled();
+  assert.equal(FakeWorker.spawned.length, before + 1, "exactly one worker got built");
+  const worker = latest();
+  assert.equal(worker.url, "blob:test-page/1", "spawned from a blob URL of the bundle");
+  assert.deepEqual(fetched, ["test-extension://decode-worker.js"], "the bundle was fetched once");
+  assert.equal(worker.posted.length, 1, "and the bytes went to it");
+
+  worker.ready();
+  worker.reply(decodedReply);
+  const result = await promise;
+  assert.equal(result.frames.length, 2, "the decode came back over the blob worker");
+  result.source.close();
+}
+
+{
+  // The blob URL outlives the worker built from it, so the next decode reuses
+  // it rather than fetching and wrapping the bundle all over again.
+  const promise = decodeInWorker(gifBytes());
+  await settled();
+  assert.equal(latest().url, "blob:test-page/1", "the same blob URL is reused");
+  assert.equal(fetched.length, 1, "the bundle is not fetched again");
   latest().reply({ ok: false, failure: { kind: "not-animated", message: "not animated" } });
   await assert.rejects(() => promise);
 }
@@ -216,7 +307,8 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
 // The startup deadline is the only guard against a context where a worker is
 // constructed but silently never runs, so it's driven here rather than waited
 // out: `setTimeout` is stubbed so the deadline can be fired on demand.
-// This is the sticky failure, so it goes last (see decodeInWorker).
+// With the blob URL already the last resort, this is the sticky failure that
+// ends worker use altogether, so it goes last (see decodeInWorker).
 
 {
   const realSetTimeout = globalThis.setTimeout;
@@ -229,6 +321,7 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
   let result;
   try {
     const promise = decodeInWorker(gifBytes());
+    await settled();
     const worker = latest();
     assert.ok(expire, "a startup deadline was armed");
     expire(); // never said `ready`
@@ -244,6 +337,7 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
 {
   const before = FakeWorker.spawned.length;
   const result = await decodeInWorker(gifBytes());
+  await settled();
   assert.equal(FakeWorker.spawned.length, before, "no further workers are spawned");
   assert.equal(result.frames.length, 2, "and the decode still happens");
   result.source.close();

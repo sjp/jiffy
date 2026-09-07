@@ -46,6 +46,13 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   going while the frames are built. Cancelling with the toast's ✕ terminates the
   worker, stopping the work rather than discarding its result. Where a worker
   can't be spawned the decode falls back to the page's thread as before.
+- The decode worker now actually starts on Chrome. A worker script has to be
+  same-origin with the document that asks for one, and a content script counts
+  as the page there — so `chrome-extension://…` was refused every time and every
+  decode quietly ran on the page's thread. The bundle is fetched and run from a
+  `blob:` URL when the extension URL is refused, which is same-origin with the
+  page. A page whose CSP excludes `blob:` workers still falls back to the page's
+  thread, and says so once in the console.
 - Bounded decode memory: only every 16th frame is held as a full-canvas bitmap.
   The frames in between are recomposited on demand from their (much smaller)
   source patches, and animated AVIF is re-decoded by index from a live decoder,
