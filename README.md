@@ -131,7 +131,8 @@ accept that key.
 
 ### Prerequisites
 
-- **Node.js** 18+ (the devcontainer uses Node 24)
+- **Node.js** 26 — what CI, the devcontainer and `.nvmrc` all use, and the
+  floor `package.json`'s `engines` declares
 - **npm** (included with Node)
 
 ### Setup
@@ -191,10 +192,11 @@ current build produced.
 
 ### Devcontainer
 
-The repo includes a VS Code devcontainer (`.devcontainer/`) based on the official
-`typescript-node:24-trixie` image with dependencies pre-installed. Open the repo
-in VS Code and choose **Reopen in Container**. Note: `web-ext run` launches a
-browser and must run on your host machine, not inside the container.
+The repo includes a VS Code devcontainer (`.devcontainer/`) — the official
+`devcontainers/base:trixie` image plus the Node 26 feature, with dependencies
+installed on create. Open the repo in VS Code and choose **Reopen in Container**.
+Note: `web-ext run` launches a browser and must run on your host machine, not
+inside the container.
 
 </details>
 

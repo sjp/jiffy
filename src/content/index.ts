@@ -2,11 +2,12 @@
 // the user has asked for it.
 //
 // This script is deliberately tiny: a runtime message listener, the pick-mode
-// state machine (with its hover highlight), and the status toast. Everything with real weight (Preact,
-// gifuct-js, the decoders, the engine, the overlay, the controls UI) lives in
-// ./player, an ESM bundle listed in `web_accessible_resources` that this module
-// `import()`s the first time the user actually picks an image. The overwhelming
-// majority of tabs never activate Jiffy, and those pay for this file alone.
+// state machine (with its hover highlight), and the status toast. Everything with
+// real weight (Preact, gifuct-js, the decoders, the engine, the overlay, the
+// controls UI) lives in ./player, an ESM bundle listed in
+// `web_accessible_resources` that this module `import()`s the first time the user
+// actually picks an image. The overwhelming majority of tabs never activate
+// Jiffy, and those pay for this file alone.
 //
 // Discovery scope: ON-DEMAND via the toolbar popup. Nothing is declared in the
 // manifest's content_scripts; the popup injects this file into the active tab

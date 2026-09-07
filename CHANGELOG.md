@@ -5,9 +5,12 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project aims to follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases are cut by pushing a `release/<version>` tag (e.g. `release/1.0.0`),
-which stamps `<version>` into the built manifests and publishes a GitHub Release
-with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
+Releases are cut with `scripts/release.sh <version>`, which rolls the
+`[Unreleased]` section below into a dated one, bumps `package.json` and pushes a
+`release/<version>` tag. The tag stamps `<version>` into the built manifests and
+publishes a GitHub Release carrying that section as its notes, with the packaged
+Firefox and Chrome `.zip`s attached — so what is written here is what people
+read on the release.
 
 ## [Unreleased]
 

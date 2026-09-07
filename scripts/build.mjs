@@ -144,7 +144,7 @@ const common = {
   outdir,
   bundle: true,
   platform: "browser",
-  target: ["firefox115", "chrome148"],
+  target: ["firefox142", "chrome148"],
   sourcemap,
   logLevel: "info",
   // Preact JSX — keep in sync with tsconfig (jsx/jsxImportSource).

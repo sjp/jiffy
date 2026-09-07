@@ -24,6 +24,26 @@ if git rev-parse "$TAG" >/dev/null 2>&1; then
   exit 1
 fi
 
+# The changelog section for this version has to exist before the tag is pushed:
+# the release workflow hands it to `gh release create --notes-file`, so what is
+# written under [Unreleased] is what people read on the GitHub Release.
+if ! grep -q '^## \[Unreleased\]' CHANGELOG.md; then
+  echo "CHANGELOG.md has no '## [Unreleased]' heading to roll."
+  exit 1
+fi
+
+# Refuse an empty section — a release whose notes are a blank heading is worse
+# than one that falls back to the generated commit list.
+if [[ -z "$(awk '/^## \[Unreleased\]/{f=1;next} f&&/^## /{exit} f' CHANGELOG.md | tr -d '[:space:]')" ]]; then
+  echo "Nothing under '## [Unreleased]' in CHANGELOG.md. Write the notes first."
+  exit 1
+fi
+
+# Roll [Unreleased] into a dated section for this version and leave a fresh,
+# empty [Unreleased] above it for the next cycle.
+TODAY="$(date +%F)"
+perl -i -pe "s/^## \\[Unreleased\\]\$/## [Unreleased]\\n\\n## [$CLEAN_VERSION] \\xe2\\x80\\x94 $TODAY/" CHANGELOG.md
+
 # Bump package.json only. The committed manifests deliberately keep a static
 # placeholder version: scripts/build.mjs stamps the real one in as it writes
 # dist-*/manifest.json, taking it from the release tag (JIFFY_VERSION in CI) and
@@ -31,7 +51,7 @@ fi
 # would give the version two homes and let them drift.
 perl -i -pe "s/\"version\": \"[^\"]*\"/\"version\": \"$CLEAN_VERSION\"/" package.json
 
-git add package.json
+git add package.json CHANGELOG.md
 git commit -m "Release $CLEAN_VERSION"
 
 echo "Creating and pushing tag: $TAG"

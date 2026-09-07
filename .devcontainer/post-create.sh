@@ -1,13 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Mozilla's extension CLI — used in-container for `web-ext lint` and
-# `web-ext build`. `web-ext run` (which launches Firefox) is intended to be
-# run on the host, against the bind-mounted workspace.
-if ! command -v web-ext >/dev/null 2>&1; then
-  npm install -g web-ext
-fi
-
+# Mozilla's extension CLI is a devDependency, so `npm install` below is all it
+# takes: `npm run lint` reaches it through node_modules/.bin. `web-ext run`
+# (which launches Firefox) is intended to be run on the host, against the
+# bind-mounted workspace.
 if [ -f package.json ]; then
   npm install
 fi
@@ -46,15 +43,18 @@ cat <<'EOF'
   Jiffy devcontainer ready.
 
   In-container (build / lint / package):
-    npm run build              # once a build script exists
-    web-ext lint -s dist/
-    web-ext build -s dist/ -a web-ext-artifacts/
+    npm run build              # → dist-firefox/ and dist-chrome/
+    npm test
+    npm run lint               # web-ext lint -s dist-firefox/
+    npm run pack               # → jiffy-firefox.zip and jiffy-chrome.zip
 
-  On the macOS host (run / debug):
-    web-ext run -s dist/       # launches Firefox with the extension
+  On the host (run / debug):
+    web-ext run -s dist-firefox/   # launches Firefox with the extension
     -- or --
     Firefox → about:debugging#/runtime/this-firefox
-           → Load Temporary Add-on → pick dist/manifest.json
+           → Load Temporary Add-on → pick dist-firefox/manifest.json
+    Chrome  → chrome://extensions → Developer mode → Load unpacked
+           → select dist-chrome/
 ──────────────────────────────────────────────────────────────────────
 
 EOF

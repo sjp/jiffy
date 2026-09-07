@@ -44,8 +44,8 @@ export const normalizeDelay = (ms: number | undefined): number =>
 
 /**
  * Share of the machine's RAM a single decode may hold. The page has its own
- * memory to spend and the other tabs are competing for the rest, so a seventh
- * is about as far as one image can reasonably reach.
+ * memory to spend and the other tabs are competing for the rest, so a sixth or
+ * so is about as far as one image can reasonably reach.
  */
 const DEVICE_MEMORY_SHARE = 0.15;
 
