@@ -67,6 +67,16 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
 
 ### Fixed
 
+- The control bar and the playback overlay are no longer offset from the image
+  on sites whose CSS positions `<body>` — very common, and enough to drop both
+  down and to the right of the picture by the body's own margin and offset.
+  Jiffy's chrome now hangs off `<html>` and corrects for whatever containing
+  block it lands in.
+- The page can no longer read the frames Jiffy draws. The overlay canvas sat in
+  the page's own DOM, where any script could find it and read the pixels back —
+  including for images fetched with the extension's host permissions, which the
+  page itself would never have been allowed to read (something on an intranet
+  host, or behind another site's cookies). It now lives in a closed shadow root.
 - Transparent animated WebP and APNG images no longer gain a solid box behind
   them while controlled. Both formats carry a suggested background colour that
   browsers are told to ignore — and do — but which the encoders most people use

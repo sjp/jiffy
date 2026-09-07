@@ -7,11 +7,11 @@
 // point: "Loading…" while the pipeline runs (cleared when the overlay mounts) and
 // a short auto-dismissing message for the not-animated / error outcomes.
 //
-// Built like the controls (mount.tsx): a host element positioned in the page, a
-// shadow root for a clean style/event boundary, and a <style> node (a
-// constructable stylesheet would be a sandbox-realm object the page-realm Xray
-// shadow can't adopt). Position is `fixed` to the viewport (click coords are
-// viewport-relative) and pointer-events are off so the toast never eats clicks.
+// Built like the rest of Jiffy's chrome (see ./host): a host element positioned
+// in the page and a shadow root for a clean style/event boundary. Position is
+// `fixed` to the viewport (click coords are viewport-relative) and pointer-events
+// are off so the toast never eats clicks.
+import { createHost } from "./host";
 
 const HOST_Z_INDEX = "2147483647";
 
@@ -68,18 +68,14 @@ export interface Toast {
  * state); clicking it dismisses the toast and invokes the callback.
  */
 export function showToast(clientX: number, clientY: number, onCancel?: () => void): Toast {
-  const host = document.createElement("div");
-  host.style.position = "fixed";
-  host.style.left = `${clientX}px`;
-  host.style.top = `${clientY}px`;
-  host.style.zIndex = HOST_Z_INDEX;
-  host.style.pointerEvents = "none";
-  document.body.appendChild(host);
-
-  const shadow = host.attachShadow({ mode: "open" });
-  const style = document.createElement("style");
-  style.textContent = TOAST_CSS;
-  shadow.appendChild(style);
+  const { shadow, place, remove } = createHost({
+    position: "fixed",
+    zIndex: HOST_Z_INDEX,
+    mode: "open",
+    css: TOAST_CSS,
+    pointerEvents: "none",
+  });
+  place(clientX, clientY);
 
   const box = document.createElement("div");
   box.className = "toast";
@@ -97,7 +93,7 @@ export function showToast(clientX: number, clientY: number, onCancel?: () => voi
     if (removed) return;
     removed = true;
     if (timer != null) clearTimeout(timer);
-    host.remove();
+    remove();
   };
 
   const set = (text: string, autoDismissMs?: number): void => {

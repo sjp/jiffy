@@ -5,8 +5,15 @@
 // in place (preserving layout + styling) and an absolutely-positioned canvas is
 // laid exactly over its box, covering it, and we drive that canvas from the
 // engine's current frame.
+//
+// That canvas lives in a *closed* shadow root (see ./host). Left in the page's
+// own DOM it would be a `document.querySelector("canvas")` away from any script
+// on the page, and `getImageData()` on it reads back every frame Jiffy draws —
+// including images fetched through the extension's host permissions, which the
+// same-origin policy would never have let the page read for itself.
 import type { FrameSource } from "../engine/frameSource";
 import type { Engine } from "../engine/types";
+import { createHost } from "./host";
 import { trackImageBox } from "./trackBox";
 import { overlayBox } from "./transformBox";
 
@@ -29,9 +36,10 @@ const IMAGEDOC_BACKDROP = "rgb(230, 230, 230)";
 
 /**
  * Walk up the DOM from `el` and return the first non-transparent background
- * colour found. The canvas is inserted into document.body, so its transparent
- * pixels reveal the body background rather than the img's container background;
- * applying the effective colour as the canvas's CSS background-color corrects this.
+ * colour found. The canvas is mounted at the top of the document, so its
+ * transparent pixels reveal the page background rather than the img's container
+ * background; applying the effective colour as the canvas's CSS
+ * background-color corrects this.
  */
 function getEffectiveBgColor(el: Element): string {
   let node: Element | null = el;
@@ -72,6 +80,17 @@ function getEffectiveBgColor(el: Element): string {
  * aren't resident, so asking for one can be asynchronous (see engine/frameSource).
  */
 export function createOverlay(img: HTMLImageElement, engine: Engine, source: FrameSource): Overlay {
+  const mounted = createHost({
+    position: "absolute",
+    zIndex: OVERLAY_Z_INDEX,
+    mode: "closed", // decoded pixels stay out of the page's reach
+    pointerEvents: "none", // don't intercept page interaction
+  });
+  // Any transform we mirror onto the host is measured from the untransformed
+  // box's top-left corner (see ./transformBox), so that is the origin it has to
+  // turn about — not the centre the CSS default would use.
+  mounted.host.style.transformOrigin = "0 0";
+
   const canvas = document.createElement("canvas");
 
   // Drawing buffer = GIF native pixel size (device pixels). The source composites
@@ -79,19 +98,19 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
   canvas.width = source.width || img.naturalWidth;
   canvas.height = source.height || img.naturalHeight;
 
-  // Base styling. The display box (CSS width/height) is set per-reposition.
-  // Copying the img's object-fit/position lets the canvas — a replaced element
-  // whose intrinsic size is its buffer — reproduce the page's fit/crop intent
-  // natively.
+  // Base styling. The display box is the host's, set per-reposition, and the
+  // canvas fills it. Copying the img's object-fit/position lets the canvas — a
+  // replaced element whose intrinsic size is its buffer — reproduce the page's
+  // fit/crop intent natively.
   const computed = getComputedStyle(img);
   Object.assign(canvas.style, {
-    position: "absolute",
+    display: "block",
+    width: "100%",
+    height: "100%",
     margin: "0",
     padding: "0",
     border: "0",
     boxSizing: "border-box",
-    pointerEvents: "none", // don't intercept page interaction
-    zIndex: OVERLAY_Z_INDEX,
     objectFit: computed.objectFit,
     objectPosition: computed.objectPosition,
     opacity: computed.opacity,
@@ -102,10 +121,6 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
     // resolve percentages against the element's own box, which is the img's.
     borderRadius: computed.borderRadius,
     clipPath: computed.clipPath,
-    // Any transform we mirror onto the canvas is measured from the untransformed
-    // box's top-left corner (see ./transformBox), so that is the origin it has
-    // to turn about — not the centre the CSS default would use.
-    transformOrigin: "0 0",
   });
 
   // The canvas covers the img entirely; hide the original so transparent canvas
@@ -117,12 +132,12 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
   const savedOpacityPriority = img.style.getPropertyPriority("opacity");
   img.style.setProperty("opacity", "0", "important");
 
-  document.body.appendChild(canvas);
+  mounted.shadow.appendChild(canvas);
 
   const ctx = canvas.getContext("2d");
 
   /**
-   * Lay the canvas over the img's current border-box, in page coordinates, and
+   * Lay the host over the img's current border-box, in page coordinates, and
    * mirror whatever CSS transform the page has on it (see ./transformBox).
    *
    * The transform chain is re-read every time rather than cached at mount: a
@@ -130,11 +145,10 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
    */
   const reposition = (): void => {
     const box = overlayBox(img);
-    canvas.style.left = `${box.left}px`;
-    canvas.style.top = `${box.top}px`;
-    canvas.style.width = `${box.width}px`;
-    canvas.style.height = `${box.height}px`;
-    canvas.style.transform = box.transform;
+    mounted.host.style.width = `${box.width}px`;
+    mounted.host.style.height = `${box.height}px`;
+    mounted.host.style.transform = box.transform;
+    mounted.place(box.left, box.top);
   };
 
   // Bumped on every draw request, so a bitmap that arrives after a newer frame
@@ -191,7 +205,7 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
       else img.style.removeProperty("opacity");
       unsubscribe();
       untrack();
-      canvas.remove();
+      mounted.remove();
     },
   };
 }

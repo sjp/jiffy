@@ -7,13 +7,13 @@
 // would have given the click. Outlining the candidate makes that resolution
 // visible before the user commits to it.
 //
-// Built like the toast: a host element positioned in the page, a shadow root for
-// a clean style/event boundary, and a <style> node (a constructable stylesheet
-// would be a sandbox-realm object the page-realm Xray shadow can't adopt). The
-// host is `fixed` because getBoundingClientRect gives viewport coordinates, and
-// pointer-events are off throughout — otherwise the box would sit between the
-// cursor and the very image it is advertising, and elementsFromPoint would
-// return it instead of that image on the next move.
+// Built like the toast (see ./host): a host element positioned in the page and a
+// shadow root for a clean style/event boundary. The host is `fixed` because
+// getBoundingClientRect gives viewport coordinates, and pointer-events are off
+// throughout — otherwise the box would sit between the cursor and the very image
+// it is advertising, and elementsFromPoint would return it instead of that image
+// on the next move.
+import { createHost } from "./host";
 
 // Alongside the toast at the top of the stack: the two never coexist (a pick
 // resolves before any status is reported), and the box has to be visible over
@@ -87,17 +87,14 @@ export interface Highlight {
  * the duration of a pick; `destroy()` leaves nothing behind.
  */
 export function createHighlight(): Highlight {
-  const host = document.createElement("div");
-  host.style.position = "fixed";
-  host.style.zIndex = HOST_Z_INDEX;
-  host.style.pointerEvents = "none";
+  const { host, shadow, place, remove } = createHost({
+    position: "fixed",
+    zIndex: HOST_Z_INDEX,
+    mode: "open",
+    css: HIGHLIGHT_CSS,
+    pointerEvents: "none",
+  });
   host.style.display = "none";
-  document.body.appendChild(host);
-
-  const shadow = host.attachShadow({ mode: "open" });
-  const style = document.createElement("style");
-  style.textContent = HIGHLIGHT_CSS;
-  shadow.appendChild(style);
 
   const box = document.createElement("div");
   box.className = "box";
@@ -113,8 +110,7 @@ export function createHighlight(): Highlight {
   return {
     show(rect) {
       if (removed) return;
-      host.style.left = `${rect.left}px`;
-      host.style.top = `${rect.top}px`;
+      place(rect.left, rect.top);
       host.style.width = `${rect.width}px`;
       host.style.height = `${rect.height}px`;
       label.classList.toggle("inside", rect.top < LABEL_INSET_THRESHOLD_PX);
@@ -127,7 +123,7 @@ export function createHighlight(): Highlight {
     destroy() {
       if (removed) return;
       removed = true;
-      host.remove();
+      remove();
     },
   };
 }

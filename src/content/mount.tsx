@@ -1,15 +1,16 @@
 // Shadow root + Preact render of the controls UI.
 //
-// Creates a host element near the <img>, attaches a shadow root (clean two-way
-// CSS + event boundary), installs the adopted stylesheet, and renders <Controls>
-// bound to the engine. Preact attaches real DOM listeners inside the shadow tree
-// (no synthetic event system), so events work across the boundary.
+// Mounts a host near the <img> with a shadow root (clean two-way CSS + event
+// boundary; see ./host), installs the stylesheet, and renders <Controls> bound
+// to the engine. Preact attaches real DOM listeners inside the shadow tree (no
+// synthetic event system), so events work across the boundary.
 import { render } from "preact";
 
 import type { Engine } from "../engine/types";
 import { Controls } from "../ui/Controls";
 import type { FrameActions } from "../ui/Controls";
 import type { FrameExport } from "./exportFrame";
+import { createHost } from "./host";
 import { showToast } from "./toast";
 import { trackImageBox } from "./trackBox";
 
@@ -37,26 +38,27 @@ export function mountControls(
   onClose: () => void,
   frameExport?: FrameExport,
 ): () => void {
-  const host = document.createElement("div");
-  host.style.position = "absolute";
-  host.style.zIndex = HOST_Z_INDEX;
-  document.body.appendChild(host);
-
-  const shadow = host.attachShadow({ mode: "open" });
-  // Inject CSS via a <style> element rather than a constructable stylesheet:
-  // in a Firefox content script `new CSSStyleSheet()` is a sandbox-realm object
-  // and `shadow` is a page-realm Xray node, so `adoptedStyleSheets = [sheet]`
-  // throws "Accessing from Xray wrapper is not supported". A <style> node is a
-  // plain page-realm element with string content, so it crosses no boundary.
-  const style = document.createElement("style");
-  style.textContent = controlsCss;
-  shadow.appendChild(style);
+  // Open, unlike the overlay's: the bar holds no data the page can't already
+  // read off the screen, and Preact wants ordinary DOM access to it.
+  const { host, shadow, place, remove } = createHost({
+    position: "absolute",
+    zIndex: HOST_Z_INDEX,
+    mode: "open",
+    css: controlsCss,
+  });
 
   // User drag offset, in page pixels, relative to the default anchored spot.
   // Lives for the lifetime of this mount so the bar stays
   // where the user dropped it across scroll/resize re-anchoring (per-session).
   let userDx = 0;
   let userDy = 0;
+
+  // Where reposition() last put the bar, in viewport coordinates. A drag reads
+  // these back to undo its own over-drag (see beginDrag); the host's own
+  // `style.left` can't stand in, because that is relative to whatever
+  // containing block the host landed in, not to the viewport.
+  let placedLeft = 0;
+  let placedTop = 0;
 
   // Pin the bar to the bottom-left of the img box, in page coordinates, plus any
   // user drag offset so a moved bar tracks the image as the page scrolls. The
@@ -84,8 +86,9 @@ export function mountControls(
     // marginX visible.
     const clampedLeft = Math.min(Math.max(vpLeft, 0), window.innerWidth - marginX);
     const clampedTop = Math.min(Math.max(vpTop, marginY - h), window.innerHeight - marginY);
-    host.style.left = `${clampedLeft + window.scrollX}px`;
-    host.style.top = `${clampedTop + window.scrollY}px`;
+    placedLeft = clampedLeft;
+    placedTop = clampedTop;
+    place(clampedLeft + window.scrollX, clampedTop + window.scrollY);
   };
 
   // Snap back to the default anchored position (double-click the grip).
@@ -111,14 +114,14 @@ export function mountControls(
       userDx = baseDx + (e.clientX - startX);
       userDy = baseDy + (e.clientY - startY);
       reposition();
-      // Back-calculate from the clamped CSS position so userDx/userDy never
+      // Back-calculate from the clamped position so userDx/userDy never
       // accumulate past the clamp boundary. Without this, dragging into an edge
       // and then back requires travelling the full over-drag distance before the
       // bar visually responds, making it appear stuck.
       const r = img.getBoundingClientRect();
       const bh = host.offsetHeight;
-      userDx = parseFloat(host.style.left) - window.scrollX - r.left - 8;
-      userDy = parseFloat(host.style.top) - window.scrollY - (r.top + r.height - 8 - bh);
+      userDx = placedLeft - r.left - 8;
+      userDy = placedTop - (r.top + r.height - 8 - bh);
     };
     const onUp = (): void => {
       // The capture is auto-released on pointerup, but release explicitly to
@@ -183,6 +186,6 @@ export function mountControls(
   return () => {
     render(null, mountPoint);
     untrack();
-    host.remove();
+    remove();
   };
 }
