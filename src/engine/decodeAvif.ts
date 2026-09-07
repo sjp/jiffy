@@ -14,9 +14,12 @@
 // bounded by the cache rather than by the frame count, at the cost of one decode
 // per displayed frame — which is what the browser does for the native <img>.
 //
-// The frame durations still need one pass over the whole sequence up front (the
-// engine needs the full timeline before playback), but that pass closes every
-// VideoFrame it decodes instead of retaining a bitmap for it.
+// The engine needs the whole timeline before playback starts, and a duration is
+// something ImageDecoder only reports on a decoded frame. Rather than decode the
+// sequence twice over, the delays are read from the container's own sample table
+// (see "container timing" below); only a file that won't give them up pays for a
+// pass over every frame, and that pass closes each VideoFrame instead of
+// retaining a bitmap for it.
 //
 // This is why we don't hand-roll an ISOBMFF demux + per-frame re-wrap like
 // decodeWebP/decodeApng do: that approach only works for all-intra AVIF (rare in
@@ -29,6 +32,7 @@ import {
   bitmapBytes,
   normalizeDelay,
   throwIfAborted,
+  UnsupportedFormatError,
   type DecodeResult,
   type Frame,
 } from "./types";
@@ -40,8 +44,14 @@ import {
  */
 const CACHE_SIZE = 8;
 
-function readCC(v: Uint8Array, offset: number): string {
-  return String.fromCharCode(v[offset]!, v[offset + 1]!, v[offset + 2]!, v[offset + 3]!);
+/** The four-character box type at `offset`. Callers bounds-check first. */
+function readCC(v: DataView, offset: number): string {
+  return String.fromCharCode(
+    v.getUint8(offset),
+    v.getUint8(offset + 1),
+    v.getUint8(offset + 2),
+    v.getUint8(offset + 3),
+  );
 }
 
 /**
@@ -52,15 +62,151 @@ function readCC(v: Uint8Array, offset: number): string {
  */
 export function isAnimatedAvif(bytes: ArrayBuffer): boolean {
   if (bytes.byteLength < 16) return false;
-  const v = new Uint8Array(bytes);
+  const v = new DataView(bytes);
   if (readCC(v, 4) !== "ftyp") return false;
-  const ftypSize = Math.min(new DataView(bytes, 0, 4).getUint32(0, false), bytes.byteLength);
+  const ftypSize = Math.min(v.getUint32(0, false), bytes.byteLength);
   if (readCC(v, 8) === "avis") return true; // major brand
   // Compatible brands: 4-byte tags from offset 16 to the end of the ftyp box.
   for (let o = 16; o + 4 <= ftypSize; o += 4) {
     if (readCC(v, o) === "avis") return true;
   }
   return false;
+}
+
+// ---- container timing ------------------------------------------------------
+//
+// The engine needs every frame's delay before playback can start, and
+// `ImageDecoder` only reports one on a decoded `VideoFrame` — so asking the
+// decoder means decoding the entire sequence before anything appears on screen,
+// which on a long AVIF is the whole animation's CPU spent behind a "Loading…"
+// toast.
+//
+// The container already knows. An AVIF sequence is an ISOBMFF movie: its track's
+// `stts` box is a run-length table of sample durations, counted in the timescale
+// its `mdhd` declares. Both are a few dozen bytes of a file that is already in
+// memory, so the timeline costs a walk of the box tree instead of a decode pass.
+//
+// Strictly best-effort: anything unexpected — a shape we don't parse, a sample
+// count that disagrees with the decoder — returns null and the decode pass takes
+// over. Nothing here is trusted enough to be worth being wrong about.
+
+/** A box's payload bounds within the file, `[start, end)`. */
+interface Box {
+  type: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * Walk the boxes directly inside `[start, end)`. Stops at the first header that
+ * doesn't add up rather than guessing its way past it — a malformed tree just
+ * means fewer boxes found, and the caller falls back.
+ */
+function* boxes(v: DataView, start: number, end: number): Generator<Box> {
+  let offset = start;
+  while (offset + 8 <= end) {
+    const declared = v.getUint32(offset, false);
+    const type = readCC(v, offset + 4);
+    let payload = offset + 8;
+    let size = declared;
+    if (declared === 1) {
+      // size 1 → the real size is the 64-bit `largesize` after the type.
+      if (payload + 8 > end) return;
+      size = Number(v.getBigUint64(payload, false));
+      payload += 8;
+    } else if (declared === 0) {
+      size = end - offset; // size 0 → runs to the end of the enclosing box
+    }
+    const boxEnd = offset + size;
+    if (boxEnd > end || payload > boxEnd) return;
+    yield { type, start: payload, end: boxEnd };
+    offset = boxEnd;
+  }
+}
+
+/** The first child box of `parent` with this type, or null. */
+function findBox(v: DataView, parent: Box, type: string): Box | null {
+  for (const box of boxes(v, parent.start, parent.end)) {
+    if (box.type === type) return box;
+  }
+  return null;
+}
+
+/** Follow a chain of nested box types down from `parent`. */
+function descend(v: DataView, parent: Box, path: readonly string[]): Box | null {
+  let box: Box | null = parent;
+  for (const type of path) {
+    box = findBox(v, box, type);
+    if (!box) return null;
+  }
+  return box;
+}
+
+/** The media timescale (units per second) from an `mdhd`, or null. */
+function readTimescale(v: DataView, mdhd: Box): number | null {
+  if (mdhd.start + 4 > mdhd.end) return null;
+  const version = v.getUint8(mdhd.start);
+  // version + flags (4), then creation and modification times: 4 bytes each in
+  // version 0, 8 each in version 1. The timescale follows them.
+  const offset = mdhd.start + 4 + (version === 1 ? 16 : 8);
+  if (offset + 4 > mdhd.end) return null;
+  return v.getUint32(offset, false) || null;
+}
+
+/**
+ * Expand an `stts` run-length table into one delay per sample, in ms. Returns
+ * null unless it describes exactly `frameCount` samples — the cross-check that
+ * says this is the track `ImageDecoder` selected, and the bound that keeps a
+ * bogus run length from expanding into a huge array.
+ */
+function readSampleDelays(
+  v: DataView,
+  stts: Box,
+  timescale: number,
+  frameCount: number,
+): number[] | null {
+  if (stts.start + 8 > stts.end) return null;
+  const entries = v.getUint32(stts.start + 4, false); // after version + flags
+  let offset = stts.start + 8;
+  if (offset + entries * 8 > stts.end) return null;
+  const delays: number[] = [];
+  for (let i = 0; i < entries; i++) {
+    const samples = v.getUint32(offset, false);
+    const delta = v.getUint32(offset + 4, false);
+    offset += 8;
+    if (delays.length + samples > frameCount) return null;
+    const ms = (delta / timescale) * 1000;
+    for (let s = 0; s < samples; s++) delays.push(ms);
+  }
+  return delays.length === frameCount ? delays : null;
+}
+
+/**
+ * Per-frame delays in ms straight from the container, or null when the file
+ * doesn't give them up in a shape we're sure of.
+ *
+ * An AVIF sequence can carry more than one track — an alpha auxiliary track
+ * alongside the colour one — so every track is tried and the sample count is
+ * what identifies the one being played.
+ */
+function containerDelays(bytes: ArrayBuffer, frameCount: number): number[] | null {
+  const v = new DataView(bytes);
+  const file: Box = { type: "", start: 0, end: bytes.byteLength };
+  const moov = findBox(v, file, "moov");
+  if (!moov) return null;
+  for (const trak of boxes(v, moov.start, moov.end)) {
+    if (trak.type !== "trak") continue;
+    const mdia = findBox(v, trak, "mdia");
+    if (!mdia) continue;
+    const mdhd = findBox(v, mdia, "mdhd");
+    const stts = descend(v, mdia, ["minf", "stbl", "stts"]);
+    if (!mdhd || !stts) continue;
+    const timescale = readTimescale(v, mdhd);
+    if (!timescale) continue;
+    const delays = readSampleDelays(v, stts, timescale, frameCount);
+    if (delays) return delays;
+  }
+  return null;
 }
 
 /** True if the runtime can decode AVIF frames via WebCodecs ImageDecoder. */
@@ -140,10 +286,51 @@ function createDecoderSource(
   };
 }
 
+/** A VideoFrame duration (microseconds, or absent) as a playable delay in ms. */
+const durationToDelay = (durationUs: number | null): number =>
+  normalizeDelay(durationUs == null ? undefined : durationUs / 1000);
+
+/**
+ * Every frame's delay in ms, in order: from the container where the sample table
+ * can be read, and otherwise by decoding the sequence for the durations
+ * `ImageDecoder` reports. Frame 0's duration is passed in because it has already
+ * been decoded for the dimensions.
+ *
+ * The decode pass retains nothing — each VideoFrame is closed as soon as its
+ * duration has been read.
+ */
+async function readDelays(
+  decoder: ImageDecoder,
+  bytes: ArrayBuffer,
+  frameCount: number,
+  firstDurationUs: number | null,
+  signal?: AbortSignal,
+): Promise<number[]> {
+  const declared = containerDelays(bytes, frameCount);
+  if (declared) return declared.map((ms) => normalizeDelay(ms));
+
+  const delays = [durationToDelay(firstDurationUs)];
+  for (let i = 1; i < frameCount; i++) {
+    throwIfAborted(signal);
+    const { image } = await decoder.decode({ frameIndex: i, completeFramesOnly: true });
+    // VideoFrame.duration is microseconds; read it before closing the frame.
+    const durationUs = image.duration;
+    image.close();
+    delays.push(durationToDelay(durationUs));
+  }
+  return delays;
+}
+
 /** Decode an animated AVIF into a frame timeline + a decoder-backed frame source. */
 export async function decodeAvif(bytes: ArrayBuffer, signal?: AbortSignal): Promise<DecodeResult> {
   if (!canDecodeAvif()) {
-    throw new Error("decodeAvif: WebCodecs ImageDecoder is unavailable in this browser");
+    // Recognised, decodable nowhere here: reported as its own kind of failure so
+    // the user is told the browser can't play this format rather than being left
+    // with a generic error over an image that animates fine in the page.
+    throw new UnsupportedFormatError(
+      "Animated AVIF",
+      "decodeAvif: WebCodecs ImageDecoder is unavailable in this browser",
+    );
   }
 
   const decoder = new ImageDecoder({ data: bytes, type: "image/avif" });
@@ -155,45 +342,35 @@ export async function decodeAvif(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     const frameCount = track.frameCount;
     if (!frameCount) throw new Error("decodeAvif: zero frames");
 
-    // Timeline pass: the engine needs every frame's duration before playback can
-    // start, and ImageDecoder only reports it on a decoded VideoFrame. Each frame
-    // is closed straight away — nothing is retained here.
+    throwIfAborted(signal);
+    // Frame 0 is decoded whichever way the timeline is read: the canvas needs
+    // the sequence's dimensions and nothing on the track reports them.
+    const { image } = await decoder.decode({ frameIndex: 0, completeFramesOnly: true });
+    const width = image.displayWidth;
+    const height = image.displayHeight;
+    const firstDurationUs = image.duration;
+    image.close();
+
+    // Retained memory is the LRU, not the frame count, so the budget scales with
+    // the canvas alone — and it is checked before the timeline, which is the
+    // part that can take a while.
+    assertDecodeBudget(bitmapBytes(width, height) * CACHE_SIZE);
+
+    const delays = await readDelays(decoder, bytes, frameCount, firstDurationUs, signal);
     const frames: Frame[] = [];
     let elapsed = 0;
-    let width = 0;
-    let height = 0;
-
-    for (let i = 0; i < frameCount; i++) {
-      throwIfAborted(signal);
-
-      const { image } = await decoder.decode({
-        frameIndex: i,
-        completeFramesOnly: true,
-      });
-      // VideoFrame.duration is microseconds; read it before closing the frame.
-      const durationUs = image.duration;
-      if (!width) {
-        width = image.displayWidth;
-        height = image.displayHeight;
-      }
-      image.close();
-
-      // A null duration (the decoder knows of no per-frame timing) normalises
-      // to the same 100 ms the browser gives a frame declaring none.
-      const delay = normalizeDelay(durationUs == null ? undefined : Math.round(durationUs / 1000));
+    for (const delay of delays) {
       elapsed += delay;
       frames.push({ time: elapsed, delay });
     }
 
-    // Dimensions are only known once a frame has decoded. Retained memory is the
-    // LRU, not the frame count, so the budget scales with the canvas alone.
-    assertDecodeBudget(bitmapBytes(width, height) * CACHE_SIZE);
-
     source = createDecoderSource(decoder, width, height, frameCount);
-    // WebCodecs ImageDecoder doesn't expose the container's loop count, so we
-    // can't tell whether this AVIF is meant to repeat. Default to looping (the
-    // common case, and matches the historical always-loop behaviour).
-    return { frames, source, duration: elapsed, loops: true };
+    // The track's loop count, the same figure GIF/WebP/APNG take from their own
+    // containers: 0 plays once, Infinity loops forever, N repeats N times. A
+    // runtime that doesn't report one leaves it undefined, which lands on the
+    // looping default — the common case for an animated AVIF.
+    const loops = track.repetitionCount !== 0;
+    return { frames, source, duration: elapsed, loops };
   } finally {
     // The source takes ownership of the decoder; close it here only when we
     // never got that far (an error, or a cancelled decode).

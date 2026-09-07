@@ -164,6 +164,15 @@ assert.equal(picked, staticImg, "the static image was still processed");
 assert.ok(lastStatus, "a status reporter is handed to processImage");
 lastStatus!("not-animated");
 assert.match(toastText(), /Not an animated image/, "not-animated surfaces a toast");
+
+// A format this browser has no decoder for names itself, so the message reads
+// as a limit of the browser rather than as Jiffy failing on a good image.
+lastStatus!("unsupported", "Animated AVIF");
+assert.match(
+  toastText(),
+  /Animated AVIF isn't supported in this browser/,
+  "unsupported surfaces a toast naming the format",
+);
 reset();
 
 // ---- an image under an overlay is still picked ------------------------------

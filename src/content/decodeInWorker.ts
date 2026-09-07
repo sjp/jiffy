@@ -41,7 +41,7 @@ import type {
   DecodeWorkerMessage,
 } from "../engine/decodeMessages";
 import { closeFrameSourceData, hydrateFrameSource } from "../engine/frameSource";
-import { DecodeBudgetError, type DecodeResult } from "../engine/types";
+import { DecodeBudgetError, UnsupportedFormatError, type DecodeResult } from "../engine/types";
 
 /** Built output name of the worker bundle (see scripts/build.mjs + the manifests). */
 const WORKER_BUNDLE = "decode-worker.js";
@@ -95,15 +95,17 @@ const abortError = (): DOMException => new DOMException("decode aborted", "Abort
 
 /**
  * Rebuild the real error from a failure the worker flattened for the wire.
- * `unsupported` isn't one: it's a "decode this yourself" instruction, handled
- * before anything gets here.
+ * `not-transferable` isn't one: it's a "decode this yourself" instruction,
+ * handled before anything gets here.
  */
-function fromFailure(failure: Exclude<DecodeFailure, { kind: "unsupported" }>): Error {
+function fromFailure(failure: Exclude<DecodeFailure, { kind: "not-transferable" }>): Error {
   switch (failure.kind) {
     case "not-animated":
       return new NotAnimatedError(failure.message);
     case "too-large":
       return new DecodeBudgetError(failure.bytes);
+    case "unsupported-format":
+      return new UnsupportedFormatError(failure.format, failure.message);
     case "error":
       return new Error(failure.message);
   }
@@ -261,7 +263,7 @@ export async function decodeInWorker(
   worker.terminate();
 
   if (!response.ok) {
-    if (response.failure.kind === "unsupported") return decode(bytes, signal);
+    if (response.failure.kind === "not-transferable") return decode(bytes, signal);
     throw fromFailure(response.failure);
   }
   // Cancelled while the reply was in flight: the frames arrived to no owner.

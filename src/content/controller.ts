@@ -20,7 +20,7 @@
 // where the user picked and then closed everything carries zero observers.
 import { NotAnimatedError } from "../engine/decode";
 import type { FrameSource } from "../engine/frameSource";
-import { DecodeBudgetError, formatBytes } from "../engine/types";
+import { DecodeBudgetError, formatBytes, UnsupportedFormatError } from "../engine/types";
 import type { DecodeResult, Engine, Frame } from "../engine/types";
 import { createFrameExport } from "./exportFrame";
 import type { FrameExport } from "./exportFrame";
@@ -33,14 +33,21 @@ import type { Overlay } from "./overlay";
  *   ready         — overlay mounted, controls live (clear the loading message)
  *   not-animated  — single-frame or no animated sniffer matched
  *   too-large     — decode would exceed the memory budget
+ *   unsupported   — an animated format this browser has no decoder for
  *   error         — genuine fetch/decode failure
  */
-export type ProcessStatus = "loading" | "ready" | "not-animated" | "too-large" | "error";
+export type ProcessStatus =
+  | "loading"
+  | "ready"
+  | "not-animated"
+  | "too-large"
+  | "unsupported"
+  | "error";
 /**
- * `detail` is a short human phrase the message may fold in — set only for
- * `too-large`, where it is the decode's estimated size ("~1.8 GB"). Formatted
- * here rather than in the content script so the always-loaded script keeps no
- * dependency on the engine bundle.
+ * `detail` is a short human phrase the message may fold in: the decode's
+ * estimated size for `too-large` ("~1.8 GB"), the format's name for
+ * `unsupported` ("Animated AVIF"). Resolved here rather than in the content
+ * script so the always-loaded script keeps no dependency on the engine bundle.
  */
 export type StatusFn = (status: ProcessStatus, detail?: string) => void;
 
@@ -160,12 +167,16 @@ export function createController(deps: PipelineDeps): Controller {
             ? "not-animated"
             : err instanceof DecodeBudgetError
               ? "too-large"
-              : "error";
+              : err instanceof UnsupportedFormatError
+                ? "unsupported"
+                : "error";
         // Size is only known when the decoder measured it before bailing.
         const detail =
           err instanceof DecodeBudgetError && err.bytes !== undefined
             ? `~${formatBytes(err.bytes)}`
-            : undefined;
+            : err instanceof UnsupportedFormatError
+              ? err.format
+              : undefined;
         onStatus?.(status, detail);
       }
     } finally {

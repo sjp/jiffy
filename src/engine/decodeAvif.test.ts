@@ -2,9 +2,10 @@
 //
 // Covers isAnimatedAvif (pure ftyp byte scanning), the "ImageDecoder
 // unavailable" guard, the decodeAvif bookkeeping — frame count, monotonic
-// cumulative-time array, duration, delay normalisation — and the decoder-backed
-// frame source, against a mock ImageDecoder / VideoFrame. Real pixel decode
-// needs a browser with WebCodecs (verified manually).
+// cumulative-time array, duration, delay normalisation, the track's loop count —
+// the ISOBMFF sample-table read that keeps the timeline off the decoder, and the
+// decoder-backed frame source, against a mock ImageDecoder / VideoFrame. Real
+// pixel decode needs a browser with WebCodecs (verified manually).
 
 import assert from "node:assert/strict";
 
@@ -14,6 +15,7 @@ installFakeCanvas();
 const g = globalThis as Record<string, unknown>;
 
 const { isAnimatedAvif, decodeAvif, canDecodeAvif } = await import("./decodeAvif.ts");
+const { UnsupportedFormatError } = await import("./types.ts");
 
 // ---- ftyp byte-builder ----------------------------------------------------
 
@@ -65,12 +67,18 @@ assert.equal(isAnimatedAvif(ab(avisCompat)), true, "avis compatible brand");
 
 // ---- ImageDecoder unavailable → throws ------------------------------------
 
+// A browser with no ImageDecoder (Firefox for Android, desktop Firefox before
+// 133) can't play this file at all — a distinct outcome from a decode that
+// failed, so the toast can name the format instead of blaming the image.
 delete g.ImageDecoder;
 assert.equal(canDecodeAvif(), false, "no ImageDecoder → cannot decode");
 await assert.rejects(
   () => decodeAvif(ab(avisMajor)),
-  /ImageDecoder/,
-  "throws when ImageDecoder unavailable",
+  (err: unknown) =>
+    err instanceof UnsupportedFormatError &&
+    err.format === "Animated AVIF" &&
+    /ImageDecoder/.test(err.message),
+  "an unsupported browser throws UnsupportedFormatError naming the format",
 );
 
 // ---- decodeAvif bookkeeping (mock ImageDecoder) ---------------------------
@@ -115,9 +123,9 @@ assert.equal(canDecodeAvif(), true, "ImageDecoder present → can decode");
 const { frames, source, duration, loops } = await decodeAvif(ab(avisMajor));
 
 assert.equal(frames.length, 3, "frame count");
-// ImageDecoder doesn't expose loop count, so AVIF defaults to looping.
-assert.equal(loops, true, "AVIF defaults to looping (loop count unavailable)");
-// The timeline pass has to visit every frame to read its duration...
+// A track reporting no repetitionCount at all lands on the looping default.
+assert.equal(loops, true, "no declared loop count → looping");
+// With no container timing to read, the timeline pass visits every frame...
 assert.deepEqual(decodedIndexes, [0, 1, 2], "decoded every frame index in order");
 // ...but it retains none of them: each VideoFrame is closed as soon as its
 // duration has been read, which is the whole point of the lazy source.
@@ -179,5 +187,123 @@ g.ImageDecoder = NoTrackDecoder;
 await assert.rejects(() => decodeAvif(ab(avisMajor)), /no image track/, "no track rejects");
 assert.ok(closed, "a failed decode closes the decoder");
 g.ImageDecoder = FakeImageDecoder;
+
+// ---- the loop count comes from the track ----------------------------------
+// `ImageTrack.repetitionCount` is the container's loop count — 0 plays once,
+// Infinity loops forever — the same thing GIF/WebP/APNG take from their own
+// containers, so a one-shot AVIF starts with looping off like a one-shot GIF.
+
+{
+  class OnceDecoder extends FakeImageDecoder {
+    override tracks = {
+      ready: Promise.resolve(),
+      selectedTrack: { frameCount: 3, animated: true, repetitionCount: 0 },
+    };
+  }
+  g.ImageDecoder = OnceDecoder;
+  const once = await decodeAvif(ab(avisMajor));
+  assert.equal(once.loops, false, "repetitionCount 0 → plays once");
+  once.source.close();
+
+  class ForeverDecoder extends FakeImageDecoder {
+    override tracks = {
+      ready: Promise.resolve(),
+      selectedTrack: { frameCount: 3, animated: true, repetitionCount: Infinity },
+    };
+  }
+  g.ImageDecoder = ForeverDecoder;
+  const forever = await decodeAvif(ab(avisMajor));
+  assert.equal(forever.loops, true, "repetitionCount Infinity → loops");
+  forever.source.close();
+
+  g.ImageDecoder = FakeImageDecoder;
+}
+
+// ---- the timeline is read from the container's sample table ---------------
+// ImageDecoder only reports a duration on a DECODED frame, so asking it for the
+// timeline means decoding the whole sequence before anything is on screen. The
+// ISOBMFF sample table already holds it: `stts` is a run-length list of sample
+// durations in the timescale `mdhd` declares.
+
+/** An `mdhd` box (version 0) declaring the media timescale. */
+const mdhd = (timescale: number): Uint8Array =>
+  box(
+    "mdhd",
+    u32(0), // version + flags
+    u32(0), // creation time
+    u32(0), // modification time
+    u32(timescale),
+    u32(0), // duration
+    u32(0), // language + pre_defined
+  );
+
+/** An `stts` box from `[sample count, sample delta]` runs. */
+const stts = (runs: Array<[number, number]>): Uint8Array =>
+  box(
+    "stts",
+    u32(0), // version + flags
+    u32(runs.length),
+    ...runs.flatMap(([samples, delta]) => [u32(samples), u32(delta)]),
+  );
+
+/** An animated AVIF whose movie box carries nothing but that timing. */
+const timedAvif = (timescale: number, runs: Array<[number, number]>): ArrayBuffer =>
+  ab(
+    cat([
+      avisMajor,
+      box("moov", box("trak", box("mdia", mdhd(timescale), box("minf", box("stbl", stts(runs)))))),
+    ]),
+  );
+
+decodedIndexes.length = 0;
+{
+  const timed = await decodeAvif(
+    timedAvif(1000, [
+      [1, 1000],
+      [2, 500],
+    ]),
+  );
+  // Frame 0 is still decoded — nothing else reports the sequence's dimensions.
+  assert.deepEqual(decodedIndexes, [0], "declared timing costs one decode, not the sequence");
+  assert.deepEqual(
+    timed.frames.map((f) => f.delay),
+    [1000, 500, 500],
+    "the run-length table expands to one delay per frame",
+  );
+  assert.deepEqual(
+    timed.frames.map((f) => f.time),
+    [1000, 1500, 2000],
+    "cumulative times follow",
+  );
+  assert.equal(timed.duration, 2000, "duration from the container");
+  assert.equal(liveFrames, 0, "the dimension probe retains no frame");
+  timed.source.close();
+}
+
+// A timescale that doesn't divide into whole milliseconds (30000/1001 — NTSC
+// rates are common in AVIF sequences) keeps its fraction rather than drifting.
+decodedIndexes.length = 0;
+{
+  const ntsc = await decodeAvif(timedAvif(30000, [[3, 1001]]));
+  assert.ok(
+    Math.abs(ntsc.frames[0]!.delay - 33.3667) < 0.001,
+    "a fractional frame delay is kept as it is",
+  );
+  ntsc.source.close();
+}
+
+// A sample count that disagrees with the decoder means we read the wrong track,
+// or misread it — fall back to the decode pass rather than trust it.
+decodedIndexes.length = 0;
+{
+  const mismatched = await decodeAvif(timedAvif(1000, [[5, 40]]));
+  assert.deepEqual(decodedIndexes, [0, 1, 2], "a sample-count mismatch falls back to decoding");
+  assert.deepEqual(
+    mismatched.frames.map((f) => f.delay),
+    [100, 100, 100],
+    "the fallback times the frames by their decoded durations",
+  );
+  mismatched.source.close();
+}
 
 console.log("decodeAvif.test: OK — %d frames, duration %dms", frames.length, duration);

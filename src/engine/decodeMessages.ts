@@ -28,13 +28,19 @@ export type DecodeFailure =
   | { kind: "not-animated"; message: string }
   /** Over the decode memory budget; `bytes` is what the decoder measured. */
   | { kind: "too-large"; message: string; bytes?: number }
+  /**
+   * An animated format this browser has no decoder for; `format` names it for
+   * the user. Not a failure to be retried — the client rethrows it so the toast
+   * can say which format rather than "Couldn't load this image".
+   */
+  | { kind: "unsupported-format"; message: string; format: string }
   /** Anything else that went wrong inside the decode. */
   | { kind: "error"; message: string }
   /**
    * The format's frame source can't leave the worker — AVIF's live WebCodecs
    * `ImageDecoder`. The client decodes this one on its own thread instead.
    */
-  | { kind: "unsupported" };
+  | { kind: "not-transferable" };
 
 /** Posted back by the worker: a finished decode, or why there isn't one. */
 export type DecodeResponse =

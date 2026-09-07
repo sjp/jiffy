@@ -114,6 +114,28 @@ export class DecodeBudgetError extends Error {
   }
 }
 
+/**
+ * Thrown when the bytes are an animated image Jiffy recognises but this browser
+ * has no way to decode: animated AVIF where WebCodecs `ImageDecoder` is absent
+ * (Firefox for Android, which the Gecko manifest targets, and desktop Firefox
+ * before 133).
+ *
+ * Distinct from a decode that failed. Nothing is wrong with the image and
+ * retrying won't help, so the user is told which format it is rather than being
+ * shown the generic "Couldn't load this image" — which reads as a bug in Jiffy
+ * for a file the browser itself is happy to animate in the page.
+ */
+export class UnsupportedFormatError extends Error {
+  /** The format, named the way the user should see it ("Animated AVIF"). */
+  readonly format: string;
+
+  constructor(format: string, message = `${format} isn't supported in this browser`) {
+    super(message);
+    this.name = "UnsupportedFormatError";
+    this.format = format;
+  }
+}
+
 /** Bytes one full-canvas RGBA bitmap costs. */
 export const bitmapBytes = (width: number, height: number): number => width * height * 4;
 

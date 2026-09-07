@@ -24,7 +24,7 @@
 //
 // AVIF is the one format that stays on the main thread: its frame source IS a
 // live WebCodecs `ImageDecoder`, which can't be moved across a thread boundary.
-// The client sniffs for it and never sends it here; the `unsupported` reply
+// The client sniffs for it and never sends it here; the `not-transferable` reply
 // below is the backstop if that ever drifts.
 
 import { NotAnimatedError, decode } from "./decode";
@@ -35,7 +35,7 @@ import type {
   DecodeWorkerReady,
 } from "./decodeMessages";
 import { closeFrameSourceData, frameSourceTransferables } from "./frameSource";
-import { DecodeBudgetError } from "./types";
+import { DecodeBudgetError, UnsupportedFormatError } from "./types";
 
 /** The dedicated-worker global, typed (see types/worker.d.ts for the cast). */
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
@@ -45,6 +45,9 @@ function toFailure(err: unknown): DecodeFailure {
   if (err instanceof NotAnimatedError) return { kind: "not-animated", message: err.message };
   if (err instanceof DecodeBudgetError) {
     return { kind: "too-large", message: err.message, bytes: err.bytes };
+  }
+  if (err instanceof UnsupportedFormatError) {
+    return { kind: "unsupported-format", message: err.message, format: err.format };
   }
   return { kind: "error", message: err instanceof Error ? err.message : String(err) };
 }
@@ -57,7 +60,10 @@ async function run(request: DecodeRequest): Promise<void> {
     if (!data) {
       // A source whose pixels can't be moved. Nothing to hand over, so free it.
       source.close();
-      ctx.postMessage({ ok: false, failure: { kind: "unsupported" } } satisfies DecodeResponse);
+      ctx.postMessage({
+        ok: false,
+        failure: { kind: "not-transferable" },
+      } satisfies DecodeResponse);
       return;
     }
     try {

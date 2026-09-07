@@ -88,7 +88,7 @@ URL.createObjectURL = (() => `blob:test-page/${++blobUrls}`) as typeof URL.creat
 
 const { buildFrameSource } = await import("../engine/frameSource.ts");
 const { NotAnimatedError } = await import("../engine/decode.ts");
-const { DecodeBudgetError } = await import("../engine/types.ts");
+const { DecodeBudgetError, UnsupportedFormatError } = await import("../engine/types.ts");
 const { decodeInWorker } = await import("./decodeInWorker.ts");
 
 /** The last worker the client spawned. */
@@ -205,11 +205,34 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
   const promise = decodeInWorker(gifBytes());
   await settled();
   const worker = latest();
-  worker.reply({ ok: false, failure: { kind: "unsupported" } });
+  worker.reply({ ok: false, failure: { kind: "not-transferable" } });
   const result = await promise;
   assert.equal(result.frames.length, 2, "the client decoded the GIF itself");
   assert.equal(worker.terminated, true, "the worker is still torn down");
   result.source.close();
+}
+
+// ---- a format the browser can't decode is rethrown, not retried -----------
+// Nothing on this thread would do any better, so the client rebuilds the typed
+// error (structured clone dropped the subclass) and lets the toast name the
+// format instead of quietly falling back and failing again.
+
+{
+  const promise = decodeInWorker(gifBytes());
+  await settled();
+  latest().reply({
+    ok: false,
+    failure: {
+      kind: "unsupported-format",
+      message: "no decoder here",
+      format: "Animated AVIF",
+    },
+  });
+  await assert.rejects(
+    () => promise,
+    (err: unknown) => err instanceof UnsupportedFormatError && err.format === "Animated AVIF",
+    "an unsupported-format reply rethrows as UnsupportedFormatError, format intact",
+  );
 }
 
 // ---- cancelling terminates the worker -------------------------------------

@@ -9,7 +9,9 @@
 Jiffy adds a little video
 player to any animated **GIF, WebP, APNG, or AVIF** on the web.
 
-Works in **Firefox** (142+) and **Chrome** (148+).
+Works in **Firefox** (142+) and **Chrome** (148+). Animated AVIF needs the
+browser's WebCodecs image decoder, which desktop Firefox has from 133 but
+Firefox for Android does not — Jiffy says so rather than failing quietly there.
 
 </div>
 

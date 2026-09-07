@@ -197,6 +197,17 @@ function toastReporter(clientX: number, clientY: number, onCancel?: () => void):
           2500,
         );
         break;
+      case "unsupported":
+        // The image is fine and the browser is happy to animate it in the page —
+        // it just gives us no way to decode it. Naming the format is what stops
+        // that reading as Jiffy being broken.
+        ensure().set(
+          detail
+            ? `${detail} isn't supported in this browser`
+            : "This format isn't supported in this browser",
+          3000,
+        );
+        break;
       case "error":
         ensure().set("Couldn't load this image", 2500);
         break;

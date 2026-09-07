@@ -6,7 +6,7 @@
 import "../test/setup-dom.ts";
 import assert from "node:assert/strict";
 
-import { DecodeBudgetError } from "../engine/types.ts";
+import { DecodeBudgetError, UnsupportedFormatError } from "../engine/types.ts";
 import { createController } from "./controller.ts";
 
 const imgWith = (src: string) => {
@@ -264,6 +264,45 @@ ctrl.teardownAll();
   );
   assert.equal(reported, "~1.8 GB", "the estimated size travels with the status");
   assert.equal(budgetCtrl.instances.size, 0, "no instance created for an over-budget image");
+}
+
+// ---- a format this browser can't decode reports "unsupported" -------------
+// Animated AVIF where WebCodecs ImageDecoder is missing. The image is fine and
+// the browser animates it in the page — only Jiffy can't drive it — so this
+// reports as its own outcome, carrying the format name for the toast, rather
+// than as the generic error.
+{
+  const statuses: string[] = [];
+  let reported: string | undefined;
+  const unsupportedDeps = {
+    fetchBytes: async () => new ArrayBuffer(8),
+    decode: async () => {
+      throw new UnsupportedFormatError("Animated AVIF");
+    },
+    createEngine: () => ({
+      setLoop: () => {},
+      setSpeed: () => {},
+      setReverse: () => {},
+      setPingPong: () => {},
+    }),
+    createOverlay: () => ({
+      canvas: document.createElement("canvas"),
+      destroy: () => {},
+    }),
+    mountControls: () => () => {},
+  } as never;
+  const unsupportedCtrl = createController(unsupportedDeps);
+  await unsupportedCtrl.processImage(imgWith("http://x/clip.avif"), (s, detail) => {
+    statuses.push(s);
+    if (detail) reported = detail;
+  });
+  assert.deepEqual(
+    statuses,
+    ["loading", "unsupported"],
+    "a format with no decoder here reports loading then unsupported",
+  );
+  assert.equal(reported, "Animated AVIF", "the format name travels with the status");
+  assert.equal(unsupportedCtrl.instances.size, 0, "no instance created for an undecodable image");
 }
 
 console.log("content-controller.test: OK");

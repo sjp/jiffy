@@ -71,6 +71,17 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
 - Minimum browser versions raised to Firefox 142 and Chrome 148. Chrome only
   exposes the `browser.*` namespace — and promise-returning `runtime.onMessage`
   listeners — from 148, both of which every entry point here relies on.
+- Animated AVIF starts playing without decoding first. Its frame timings used to
+  come from decoding the entire sequence up front — the only way `ImageDecoder`
+  reports a duration — so a long clip spent its whole decode behind the
+  "Loading…" toast before showing anything. They are now read straight from the
+  container's sample table, which the file already carries, and only a file that
+  won't give them up falls back to the old pass.
+- A browser that can't decode animated AVIF at all — Firefox for Android, and
+  desktop Firefox before 133, neither of which has the WebCodecs image decoder —
+  now says "Animated AVIF isn't supported in this browser" instead of showing
+  the generic "Couldn't load this image" over a file the browser is happily
+  animating in the page.
 
 ### Fixed
 
@@ -113,6 +124,9 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   animation of 300 patches was costed at 2.2 GB against an actual 48 MB and
   refused outright. Each frame's declared size is now used, which the parser
   already knows before anything is decompressed.
+- An animated AVIF that says it plays once now stops on its last frame instead
+  of looping forever. The loop count is on the track all along — the same figure
+  GIF, WebP and APNG take from their own containers — and was simply never read.
 
 ## [0.3.0] — 2026-06-18
 
