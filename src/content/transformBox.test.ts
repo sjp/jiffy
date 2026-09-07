@@ -37,6 +37,7 @@ const DEFAULT_STYLE: FakeStyle = {
   perspective: "none",
   width: "auto",
   height: "auto",
+  boxSizing: "content-box",
   paddingLeft: "0px",
   paddingRight: "0px",
   paddingTop: "0px",
@@ -177,6 +178,24 @@ assert.deepEqual(
   untransformedSize(img),
   { width: 99.5, height: 42 },
   "border box = resolved content box + padding + borders, sub-pixel intact",
+);
+
+// Under `box-sizing: border-box` the same resolved value already *is* the
+// border box, so putting the padding and borders back on would double-count it.
+setStyle(img, {
+  boxSizing: "border-box",
+  width: "96.5px",
+  height: "40px",
+  paddingLeft: "1px",
+  paddingRight: "1px",
+  borderLeftWidth: "0.5px",
+  borderRightWidth: "0.5px",
+  borderTopWidth: "2px",
+});
+assert.deepEqual(
+  untransformedSize(img),
+  { width: 96.5, height: 40 },
+  "border-box: the resolved size is the border box already",
 );
 
 setStyle(img, { width: "auto", height: "auto" });

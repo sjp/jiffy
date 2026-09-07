@@ -158,27 +158,33 @@ function px(value: string): number {
 /**
  * The element's border-box size *before* any transform, at sub-pixel precision.
  *
- * The resolved `width`/`height` are used values of the content box, so the
- * padding and borders go back on. `offsetWidth`/`offsetHeight` are the same
- * measurement rounded to whole pixels — good enough as a fallback for an element
- * whose computed size doesn't resolve to a length.
+ * The resolved `width`/`height` are used values, and both Gecko and Blink report
+ * them in the element's own `box-sizing` terms: the content box by default, the
+ * border box under `box-sizing: border-box`. So the padding and borders only go
+ * back on in the first case — adding them to a border-box value would oversize
+ * the canvas and, through `originUnderTransform`, offset it too.
+ *
+ * `offsetWidth`/`offsetHeight` are the same border-box measurement rounded to
+ * whole pixels — good enough as a fallback for an element whose computed size
+ * doesn't resolve to a length.
  */
 export function untransformedSize(el: HTMLElement): { width: number; height: number } {
   const style = getComputedStyle(el);
-  const contentWidth = Number.parseFloat(style.width);
-  const contentHeight = Number.parseFloat(style.height);
-  if (!Number.isFinite(contentWidth) || !Number.isFinite(contentHeight)) {
+  const width = Number.parseFloat(style.width);
+  const height = Number.parseFloat(style.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) {
     return { width: el.offsetWidth, height: el.offsetHeight };
   }
+  if (style.boxSizing === "border-box") return { width, height };
   return {
     width:
-      contentWidth +
+      width +
       px(style.paddingLeft) +
       px(style.paddingRight) +
       px(style.borderLeftWidth) +
       px(style.borderRightWidth),
     height:
-      contentHeight +
+      height +
       px(style.paddingTop) +
       px(style.paddingBottom) +
       px(style.borderTopWidth) +
