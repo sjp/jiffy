@@ -127,6 +127,19 @@ read on the release.
   down and to the right of the picture by the body's own margin and offset.
   Jiffy's chrome now hangs off `<html>` and corrects for whatever containing
   block it lands in.
+- The overlay and the control bar now follow the image through the page's own
+  reflows. They were re-measured on scroll, on a viewport resize and when the
+  image itself changed size, so anything else that moved the picture — a cookie
+  banner collapsing, an accordion opening, a web font landing, an ad slot
+  filling in — left playback sitting where the image used to be until the next
+  scroll. Every element the image is laid out inside is now watched, so the
+  reflow is caught wherever it happens.
+- Playback matches the image's opacity as the page changes it, rather than the
+  value it happened to have at the moment of the pick: an image caught mid
+  fade-in played back invisible, and one the page dims on hover played back at
+  full strength. Jiffy also stopped writing to the image's own `opacity` to hide
+  it under the canvas — it uses `visibility` now, which pages script far less —
+  so its hiding and the page's fade can no longer overwrite each other.
 - Large images fetched with all-sites access no longer fail late with
   "Couldn't load this image". The background handed the whole image back in one
   extension message, which browsers cap at tens of megabytes — so anything above

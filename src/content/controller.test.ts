@@ -375,7 +375,7 @@ ctrl.teardownAll();
 // The element outlives the picture on carousels, lazy-loaders and SPAs. The
 // overlay is tied to the bytes we decoded, so once the <img> has loaded a
 // different URL the instance must go rather than paint the old animation over
-// the new image (which `opacity: 0` would keep hidden).
+// the new image (which the overlay's `visibility: hidden` would keep hidden).
 {
   const swapCtrl = createController(deps);
   const swap = imgWith("http://x/first.gif");

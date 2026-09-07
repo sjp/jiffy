@@ -21,15 +21,19 @@ function flushFrame(): void {
 }
 
 // ---- ResizeObserver stub, recording what was observed ----------------------
-const observers: Array<{ target: unknown; fire: () => void; disconnected: boolean }> = [];
+const observers: Array<{
+  targets: unknown[];
+  fire: () => void;
+  disconnected: boolean;
+}> = [];
 (globalThis as Record<string, unknown>).ResizeObserver = class {
   #entry: (typeof observers)[number];
   constructor(callback: () => void) {
-    this.#entry = { target: undefined, fire: callback, disconnected: false };
+    this.#entry = { targets: [], fire: callback, disconnected: false };
     observers.push(this.#entry);
   }
   observe(target: unknown): void {
-    this.#entry.target = target;
+    this.#entry.targets.push(target);
   }
   disconnect(): void {
     this.#entry.disconnected = true;
@@ -38,14 +42,19 @@ const observers: Array<{ target: unknown; fire: () => void; disconnected: boolea
 
 const { trackImageBox } = await import("./trackBox.ts");
 
-function setup() {
+function setup(parent: HTMLElement = document.body) {
   const img = document.createElement("img");
-  document.body.appendChild(img);
+  parent.appendChild(img);
   let calls = 0;
   const stop = trackImageBox(img, () => {
     calls++;
   });
-  return { img, stop, observer: observers[observers.length - 1]!, calls: () => calls };
+  return {
+    img,
+    stop,
+    observer: observers[observers.length - 1]!,
+    calls: () => calls,
+  };
 }
 
 // ---- places the caller once, synchronously --------------------------------
@@ -85,11 +94,51 @@ function setup() {
 // ---- the image resizing in place repositions too ---------------------------
 {
   const { img, calls, observer, stop } = setup();
-  assert.equal(observer.target, img, "the img itself is observed for resize");
+  assert.equal(observer.targets[0], img, "the img itself is observed for resize");
   observer.fire();
   flushFrame();
   assert.equal(calls(), 2, "a ResizeObserver notification repositions");
   stop();
+}
+
+// ---- everything the image is laid out inside is observed too ---------------
+// A banner collapsing or an accordion opening beside the image reflows it
+// without touching its own box and without a scroll, so the ancestor that
+// absorbed the change is what has to be watched — up to <html>, whose box
+// tracks the document's own height.
+{
+  const card = document.createElement("div");
+  document.body.appendChild(card);
+  const { img, observer, calls, stop } = setup(card);
+  assert.deepEqual(
+    observer.targets,
+    [img, card, document.body, document.documentElement],
+    "the img and every element it is laid out inside are observed",
+  );
+  observer.fire();
+  flushFrame();
+  assert.equal(calls(), 2, "an ancestor resizing repositions the caller");
+  stop();
+  card.remove();
+}
+
+// ---- the chain is walked out of a shadow tree ------------------------------
+// An image inside a web component has no parentElement at the tree boundary;
+// the elements around the host are still what reflow it.
+{
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const shadow = host.attachShadow({ mode: "open" });
+  const inner = document.createElement("span");
+  shadow.appendChild(inner);
+  const { img, observer, stop } = setup(inner);
+  assert.deepEqual(
+    observer.targets,
+    [img, inner, host, document.body, document.documentElement],
+    "the walk steps out of the shadow tree to its host",
+  );
+  stop();
+  host.remove();
 }
 
 // ---- teardown detaches everything ------------------------------------------

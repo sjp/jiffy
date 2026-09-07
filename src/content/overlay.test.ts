@@ -27,6 +27,17 @@ const ctx = {
   disconnect() {}
 };
 
+// Animation frames under our control, so the tracker's coalesced reposition can
+// be pumped by hand (the overlay re-reads the img's opacity in there).
+const frameQueue: Array<() => void> = [];
+(globalThis as Record<string, unknown>).requestAnimationFrame = (cb: () => void): number => {
+  frameQueue.push(cb);
+  return frameQueue.length;
+};
+function flushFrame(): void {
+  for (const cb of frameQueue.splice(0, frameQueue.length)) cb();
+}
+
 const { createOverlay } = await import("./overlay.ts");
 
 /** An engine that only does what the overlay uses: report an index and notify. */
@@ -137,5 +148,56 @@ const engine2 = fakeEngine();
 const overlay2 = createOverlay(img, engine2, rejecting);
 await flush();
 overlay2.destroy();
+
+// ---- the img is hidden with visibility, not opacity -----------------------
+// The canvas covers the img, so the original has to go; doing it with `opacity`
+// meant writing to the property lazy-loaders and hover rules animate, and then
+// putting a stale value back at teardown.
+{
+  const styled = document.createElement("img");
+  styled.style.setProperty("opacity", "0.25");
+  document.body.appendChild(styled);
+  const overlay3 = createOverlay(styled, fakeEngine(), deferredSource([0]));
+
+  assert.equal(styled.style.getPropertyValue("visibility"), "hidden", "the img is hidden");
+  assert.equal(
+    styled.style.getPropertyPriority("visibility"),
+    "important",
+    "and hidden with !important, so a page rule can't uncover it",
+  );
+  assert.equal(
+    styled.style.getPropertyValue("opacity"),
+    "0.25",
+    "the page's opacity is left alone",
+  );
+
+  // ---- the canvas mirrors the img's opacity, live -------------------------
+  assert.equal(overlay3.canvas.style.opacity, "0.25", "the canvas takes the img's opacity");
+  styled.style.setProperty("opacity", "1"); // a lazy-loader finishing its fade
+  window.dispatchEvent(new window.Event("scroll"));
+  flushFrame();
+  assert.equal(overlay3.canvas.style.opacity, "1", "and follows it when the page changes it");
+
+  // ---- teardown puts the page's own visibility back -----------------------
+  overlay3.destroy();
+  assert.equal(styled.style.getPropertyValue("visibility"), "", "the hide is removed on destroy");
+  assert.equal(styled.style.getPropertyValue("opacity"), "1", "the page's own opacity survives");
+}
+
+// An inline visibility the page set itself is restored, priority included.
+{
+  const hidden = document.createElement("img");
+  hidden.style.setProperty("visibility", "collapse", "important");
+  document.body.appendChild(hidden);
+  const overlay4 = createOverlay(hidden, fakeEngine(), deferredSource([0]));
+  assert.equal(hidden.style.getPropertyValue("visibility"), "hidden", "ours applies while up");
+  overlay4.destroy();
+  assert.equal(hidden.style.getPropertyValue("visibility"), "collapse", "the page's value returns");
+  assert.equal(
+    hidden.style.getPropertyPriority("visibility"),
+    "important",
+    "with the priority it had",
+  );
+}
 
 console.log("overlay.test: OK");

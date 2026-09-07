@@ -113,7 +113,6 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
     boxSizing: "border-box",
     objectFit: computed.objectFit,
     objectPosition: computed.objectPosition,
-    opacity: computed.opacity,
     backgroundColor: getEffectiveBgColor(img),
     // The page's own rounding and clipping — a circular avatar, an image cut to
     // a shape — apply to the img, not to a canvas sitting on top of it. Copying
@@ -124,17 +123,43 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
   });
 
   // The canvas covers the img entirely; hide the original so transparent canvas
-  // regions show the page background rather than the underlying image. Set
-  // !important: a page rule carrying its own `opacity … !important` outranks a
-  // plain inline value, and the original animation would then show through the
-  // canvas's transparent regions.
-  const savedOpacity = img.style.getPropertyValue("opacity");
-  const savedOpacityPriority = img.style.getPropertyPriority("opacity");
-  img.style.setProperty("opacity", "0", "important");
+  // regions show the page background rather than the underlying image.
+  //
+  // `visibility`, not `opacity`. Both hide without disturbing layout, but pages
+  // animate an image's opacity constantly — lazy-loaders fade one in from 0 on
+  // `load`, hover rules dim one — and whichever of us wrote last would win:
+  // overwriting the page's value here, or having ours overwritten there and the
+  // original animation showing through the canvas. Leaving `opacity` alone means
+  // the page keeps it, and `reposition` can mirror whatever it currently is onto
+  // the canvas (see `syncOpacity`). An <img> whose inline `visibility` a page
+  // rewrites mid-playback is the same class of edge case, on a property almost
+  // nothing scripts.
+  //
+  // !important: a page rule carrying its own `visibility … !important` would
+  // outrank a plain inline value, and an inline declaration is the strongest an
+  // author-origin sheet can be answered with.
+  const savedVisibility = img.style.getPropertyValue("visibility");
+  const savedVisibilityPriority = img.style.getPropertyPriority("visibility");
+  img.style.setProperty("visibility", "hidden", "important");
 
   mounted.shadow.appendChild(canvas);
 
   const ctx = canvas.getContext("2d");
+
+  /**
+   * Take the img's current opacity onto the canvas.
+   *
+   * Read live rather than snapshotted at mount, because it is the one thing
+   * about the image that routinely changes underneath a player: a lazy-loader
+   * that fades its image in after `load` would otherwise leave the canvas stuck
+   * at the `opacity: 0` the pick caught it at, and a hover rule that dims the
+   * image would leave the canvas at full strength. The img's own opacity is
+   * untouched by us (see the visibility hide above), so this is the page's own
+   * current value.
+   */
+  const syncOpacity = (): void => {
+    canvas.style.opacity = getComputedStyle(img).opacity;
+  };
 
   /**
    * Lay the host over the img's current border-box, in page coordinates, and
@@ -149,6 +174,7 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
     mounted.host.style.height = `${box.height}px`;
     mounted.host.style.transform = box.transform;
     mounted.place(box.left, box.top);
+    syncOpacity();
   };
 
   // Bumped on every draw request, so a bitmap that arrives after a newer frame
@@ -197,12 +223,14 @@ export function createOverlay(img: HTMLImageElement, engine: Engine, source: Fra
     canvas,
     destroy() {
       destroyed = true; // an in-flight frame must not paint onto a dead canvas
-      // Restore the inline opacity we hid the img with on mount — value and
+      // Restore the inline visibility we hid the img with on mount — value and
       // priority both, since we may have introduced the !important. Accepted
-      // edge case: if the page mutated the img's inline opacity while the player
-      // was active, this clobbers that newer value with the one from mount.
-      if (savedOpacity) img.style.setProperty("opacity", savedOpacity, savedOpacityPriority);
-      else img.style.removeProperty("opacity");
+      // edge case: if the page mutated the img's inline visibility while the
+      // player was active, this clobbers that newer value with the one from
+      // mount.
+      if (savedVisibility)
+        img.style.setProperty("visibility", savedVisibility, savedVisibilityPriority);
+      else img.style.removeProperty("visibility");
       unsubscribe();
       untrack();
       mounted.remove();

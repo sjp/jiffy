@@ -121,8 +121,11 @@ export function originUnderTransform(
 /**
  * Next element up, stepping out of a shadow tree to its host: an image inside a
  * web component still inherits transforms from the elements around the host.
+ *
+ * Exported because ./trackBox walks the same chain for the same reason — what
+ * the image is laid out inside, wherever the page put it.
  */
-function parentElementOrHost(node: Element): Element | null {
+export function parentElementOrHost(node: Element): Element | null {
   if (node.parentElement) return node.parentElement;
   const parent = node.parentNode as (ShadowRoot & { host?: Element }) | null;
   return parent?.host ?? null;

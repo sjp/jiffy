@@ -6,6 +6,7 @@
 // or the image itself changes size. That is one listener set with one teardown,
 // wanted identically in two places — hence this helper rather than a copy in
 // each.
+import { parentElementOrHost } from "./transformBox";
 
 // Capture phase so scrolling in a nested container — a lightbox, a feed pane —
 // reaches us too: those events don't bubble to window. The same object is handed
@@ -39,8 +40,22 @@ export function trackImageBox(img: Element, onChange: () => void): () => void {
 
   window.addEventListener("scroll", schedule, SCROLL_OPTS);
   window.addEventListener("resize", schedule, { passive: true });
+
+  // The image also moves when something *around* it resizes and reflows the
+  // content it sits in: a cookie banner collapsing, an accordion opening, a web
+  // font landing, an ad slot filling in. None of that touches the img's own box
+  // or fires scroll/resize, so observing the img alone leaves the canvas behind
+  // until the next scroll. Observing every element the img is laid out inside —
+  // up through shadow hosts to <html>, whose box grows and shrinks with the
+  // document — catches the reflow at whichever ancestor absorbed it.
+  //
+  // The chain is walked once: an element being re-parented while a player is up
+  // is rare, and re-observing per callback risks ResizeObserver's
+  // fire-on-observe re-arming us in a loop.
   const resizeObserver = new ResizeObserver(schedule);
-  resizeObserver.observe(img);
+  for (let node: Element | null = img; node; node = parentElementOrHost(node)) {
+    resizeObserver.observe(node);
+  }
 
   return () => {
     stopped = true;
