@@ -72,6 +72,20 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   down and to the right of the picture by the body's own margin and offset.
   Jiffy's chrome now hangs off `<html>` and corrects for whatever containing
   block it lands in.
+- Large images fetched with all-sites access no longer fail late with
+  "Couldn't load this image". The background handed the whole image back in one
+  extension message, which browsers cap at tens of megabytes — so anything above
+  that downloaded in full and then died on the way back, while the same image
+  loaded fine when the page allowed a direct fetch. The bytes now stream back in
+  chunks, so both paths share the same 256 MB ceiling, the background never
+  holds a whole image in memory, and cancelling a load stops the download
+  instead of leaving it running with nobody listening.
+- Jiffy's privileged fetch no longer reaches somewhere the page itself couldn't.
+  With all-sites access it would fetch an image on `localhost`, a private
+  address (`10.x`, `192.168.x`, …) or an intranet name for any page that asked;
+  it now does that only when the page asking is on such a host too. It also
+  stops on a `Content-Type` the server says isn't an image, rather than
+  downloading an error page or a mislabelled video in full first.
 - The page can no longer read the frames Jiffy draws. The overlay canvas sat in
   the page's own DOM, where any script could find it and read the pixels back —
   including for images fetched with the extension's host permissions, which the

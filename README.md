@@ -109,6 +109,11 @@ off there or in your browser's extension settings at any time:
   read their images. Jiffy then can't get the bytes to decode and says
   "Couldn't load this image"; with all-sites access it fetches them itself.
 
+Even with that access, Jiffy won't use it to reach somewhere the page itself
+couldn't: an image on `localhost`, a private address (`10.x`, `192.168.x`, …) or
+an intranet name is fetched on a page's behalf only when that page is on such a
+host too.
+
 ## Privacy
 
 Jiffy does its work entirely on your own device. It doesn't collect data, send

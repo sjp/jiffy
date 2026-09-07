@@ -3,49 +3,80 @@
 // A content script has an <img>, not raw bytes, and same-origin `fetch` is
 // blocked by CORS for cross-origin images. The background script — running on
 // whatever host access the extension holds — can fetch those bytes and hand them
-// back over `runtime.sendMessage`. Host access beyond the active tab is the
-// user's call (see src/popup/popup.ts), so a cross-origin fetch here may itself
-// be refused; that comes back as an ordinary error response.
+// back. Host access beyond the active tab is the user's call (see
+// src/popup/popup.ts), so a cross-origin fetch here may itself be refused; that
+// comes back as an ordinary error message.
 //
-// Wire format is base64, NOT a raw `ArrayBuffer`. Firefox structured-clones
-// message payloads so an `ArrayBuffer` would round-trip intact there, but Chrome
-// serialises messages as JSON — an `ArrayBuffer` collapses to `{}`, the content
-// script then sniffs empty bytes and reports "Not an animated image". A base64
-// string survives JSON on both browsers; the content client decodes it back to an
-// `ArrayBuffer`. (Trade-off: ~33% transfer overhead vs. Firefox's zero-copy clone,
-// negligible for typical GIFs and the price of one code path that works in both.)
+// The bytes travel over a `runtime.connect` PORT, in base64 chunks, NOT as one
+// `sendMessage` reply. Two reasons:
+//
+//   * Size. Chromium caps a single message (tens of MB, version-dependent) and
+//     rejects anything over it with "Message length exceeded maximum allowed
+//     length" — which a large image hit only *after* the background had
+//     downloaded the whole thing. Chunks of `CHUNK_BYTES` always fit, so the
+//     background tier has the same 256 MB ceiling as the direct one.
+//   * Memory. The background streams each chunk out as it arrives and never
+//     holds the whole image, which matters most in the least memory-tolerant
+//     context there is — an MV3 service worker.
+//
+// Base64, and not a raw `ArrayBuffer`, because Chrome serialises extension
+// messages as JSON: an `ArrayBuffer` collapses to `{}`, the content script then
+// sniffs empty bytes and reports "Not an animated image". (Firefox
+// structured-clones and would round-trip it, but one code path beats two.)
 //
 // This module is environment-agnostic (no `browser.*`): both the background
 // entry and the content client import from it, and it's unit-testable headless.
 
 import {
   assertDeclaredSize,
+  assertImageContentType,
+  assertReachableFromPage,
   BACKGROUND_SCHEMES,
+  concatBytes,
   isAllowedUrl,
   MAX_BYTES,
-  readCapped,
+  readCappedChunks,
 } from "./fetchLimits";
 
-/** Content → background: please fetch this GIF's bytes. */
+/** Name of the port the content script opens for one image fetch. */
+export const FETCH_PORT = "jiffy-fetch";
+
+/** Content → background: please fetch this GIF's bytes. First message on the port. */
 export interface FetchGifRequest {
   readonly type: "FETCH_GIF";
   readonly url: string;
 }
 
-/** Background → content: the bytes as base64 (see wire-format note above), or a typed error. */
-export type FetchGifResponse =
-  | { readonly ok: true; readonly data: string }
-  | { readonly ok: false; readonly error: string };
+/**
+ * Background → content, over the port: a slice of the body as base64, then
+ * exactly one terminal message. The port stays open after the terminal message;
+ * the content side closes it (see `content/fetchGif`).
+ */
+export type FetchGifEvent =
+  | { readonly type: "FETCH_CHUNK"; readonly data: string }
+  | { readonly type: "FETCH_DONE" }
+  | { readonly type: "FETCH_ERROR"; readonly error: string };
 
 /**
- * Base64 codec for the message wire format. `btoa`/`atob` operate on binary
- * strings, so we bridge through one char per byte. The encode side chunks the
- * `String.fromCharCode(...)` spread (a single spread of a multi-MB array would
- * overflow the call-stack argument limit); decode is a plain per-char loop.
+ * Base64 codec for the wire format. Both supported browsers ship the native
+ * `Uint8Array` base64 methods, which skip the intermediate binary string
+ * entirely; the hand-rolled pair below is the fallback for anything that
+ * doesn't (older Node, say, when this module is exercised headless).
+ *
+ * `btoa`/`atob` operate on binary strings, so the fallback bridges through one
+ * char per byte. Encoding chunks the `String.fromCharCode(...)` spread — a
+ * single spread of a multi-MB array would overflow the call-stack argument
+ * limit; decoding is a plain per-char loop.
  */
+const NativeBase64 = Uint8Array as unknown as {
+  fromBase64?(base64: string): Uint8Array;
+};
+
 const B64_CHUNK = 0x8000;
 
 export function bytesToBase64(bytes: Uint8Array): string {
+  const native = (bytes as unknown as { toBase64?(): string }).toBase64?.();
+  if (native != null) return native;
   let binary = "";
   for (let i = 0; i < bytes.length; i += B64_CHUNK) {
     binary += String.fromCharCode(...bytes.subarray(i, i + B64_CHUNK));
@@ -54,6 +85,8 @@ export function bytesToBase64(bytes: Uint8Array): string {
 }
 
 export function base64ToBytes(base64: string): Uint8Array {
+  const native = NativeBase64.fromBase64?.(base64);
+  if (native != null) return native;
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -70,6 +103,17 @@ function hasType(message: unknown, type: string): boolean {
 /** Narrow an untyped incoming message to a `FetchGifRequest`. */
 export function isFetchGifRequest(message: unknown): message is FetchGifRequest {
   return hasType(message, "FETCH_GIF") && typeof (message as { url?: unknown }).url === "string";
+}
+
+/** Narrow an untyped port message to one of the background's three replies. */
+export function isFetchGifEvent(message: unknown): message is FetchGifEvent {
+  if (hasType(message, "FETCH_CHUNK")) {
+    return typeof (message as { data?: unknown }).data === "string";
+  }
+  if (hasType(message, "FETCH_ERROR")) {
+    return typeof (message as { error?: unknown }).error === "string";
+  }
+  return hasType(message, "FETCH_DONE");
 }
 
 /**
@@ -118,52 +162,95 @@ export function isExitPickRequest(message: unknown): message is ExitPickRequest 
 }
 
 // Fetch hardening. The URL is attacker-influenced (the page supplies the <img>
-// src the user clicks), so bound the request: restrict the scheme and cap the
-// size (both shared with the content-script tier in ./fetchLimits), and time it
-// out so a hung request can't hold the message channel open forever.
+// src the user clicks), so bound the request: restrict the scheme, refuse a
+// reach into the user's private network, refuse a body the server itself says
+// isn't an image, cap the size (all four shared with the content-script tier in
+// ./fetchLimits), and time it out so a hung request can't hold the port open
+// forever.
 const FETCH_TIMEOUT_MS = 120_000; // 2 min — large images on slow links; the
 // loading banner's cancel button covers impatience.
 
 /**
- * Perform the actual cross-origin fetch (runs in the background context). Never
- * throws — disallowed schemes, oversized bodies, timeouts, network failures and
- * non-OK statuses all become a typed error response. `maxBytes`/`timeoutMs` are
- * injectable for tests.
+ * Raw bytes per `FETCH_CHUNK`, comfortably inside every reported per-message
+ * limit once base64 has grown it by a third (4 MB → ~5.3 MB on the wire).
  */
-export async function handleFetchGif(
+const CHUNK_BYTES = 4 * 1024 * 1024;
+
+export interface StreamFetchGifOptions {
+  /** URL of the page that asked, for the private-network guard (`port.sender.url`). */
+  pageUrl?: string;
+  /** Aborts the transfer — wired to the port disconnecting. */
+  signal?: AbortSignal;
+  maxBytes?: number;
+  timeoutMs?: number;
+  chunkBytes?: number;
+}
+
+/**
+ * Perform the actual cross-origin fetch (runs in the background context) and
+ * push it to `post` as base64 chunks followed by one terminal message. Never
+ * throws and never rejects — disallowed schemes, private hosts, non-image
+ * Content-Types, oversized bodies, timeouts, network failures and non-OK
+ * statuses all become a `FETCH_ERROR`. The options are injectable for tests.
+ */
+export async function streamFetchGif(
   url: string,
+  post: (event: FetchGifEvent) => void,
   {
+    pageUrl,
+    signal,
     maxBytes = MAX_BYTES,
     timeoutMs = FETCH_TIMEOUT_MS,
-  }: { maxBytes?: number; timeoutMs?: number } = {},
-): Promise<FetchGifResponse> {
-  if (!isAllowedUrl(url, BACKGROUND_SCHEMES)) {
-    return { ok: false, error: "Refusing to fetch a non-http(s)/data URL" };
-  }
+    chunkBytes = CHUNK_BYTES,
+  }: StreamFetchGifOptions = {},
+): Promise<void> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const onAbort = () => controller.abort();
+  signal?.addEventListener("abort", onAbort, { once: true });
   try {
+    if (!isAllowedUrl(url, BACKGROUND_SCHEMES)) {
+      throw new Error("Refusing to fetch a non-http(s)/data URL");
+    }
+    assertReachableFromPage(new URL(url), pageUrl);
     // `force-cache` reuses whatever the browser already downloaded for the page
     // instead of paying for the bytes a second time.
     const response = await fetch(url, { cache: "force-cache", signal: controller.signal });
-    if (!response.ok) {
-      return {
-        ok: false,
-        error: `HTTP ${response.status} ${response.statusText}`,
-      };
-    }
+    if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+    assertImageContentType(response);
     assertDeclaredSize(response, maxBytes);
-    const buf = await readCapped(response, maxBytes);
-    return { ok: true, data: bytesToBase64(new Uint8Array(buf)) };
+
+    // Coalesce the reader's chunks (typically tens of KB) up to `chunkBytes`, so
+    // a few-MB image is a handful of messages rather than hundreds.
+    let pending: Uint8Array[] = [];
+    let pendingBytes = 0;
+    const flush = () => {
+      if (pendingBytes === 0) return;
+      post({ type: "FETCH_CHUNK", data: bytesToBase64(concatBytes(pending, pendingBytes)) });
+      pending = [];
+      pendingBytes = 0;
+    };
+    for await (const chunk of readCappedChunks(response, maxBytes)) {
+      pending.push(chunk);
+      pendingBytes += chunk.byteLength;
+      if (pendingBytes >= chunkBytes) flush();
+    }
+    flush();
+    post({ type: "FETCH_DONE" });
   } catch (err) {
     if (err instanceof DOMException && err.name === "AbortError") {
-      return { ok: false, error: `Fetch timed out after ${timeoutMs}ms` };
+      // The content side hanging up is the common case: it has stopped
+      // listening, so there is nobody to tell.
+      if (timedOut) post({ type: "FETCH_ERROR", error: `Fetch timed out after ${timeoutMs}ms` });
+      return;
     }
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+    post({ type: "FETCH_ERROR", error: err instanceof Error ? err.message : String(err) });
   } finally {
     clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
   }
 }

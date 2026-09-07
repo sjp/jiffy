@@ -8,56 +8,52 @@
 // downloaded for the <img>, it can resolve `blob:` URLs (which exist only in that
 // origin), and it yields an ArrayBuffer with no base64 round-trip.
 //
-// Tier 2 — ask the background script (see ../messages). Its fetch runs on the
-// extension's own host access, so it's the only one that can reach a cross-origin
-// server sending no CORS headers at all — but it re-downloads the bytes and pays
-// a ~33% base64 transfer overhead, so it's the fallback, not the default. That
-// access is optional and off by default (the popup's "all sites" checkbox), so
-// this tier can also come back empty-handed; the caller reports that like any
-// other failure.
+// Tier 2 — ask the background script over a port (see ../messages). Its fetch
+// runs on the extension's own host access, so it's the only one that can reach a
+// cross-origin server sending no CORS headers at all — but it re-downloads the
+// bytes and pays a ~33% base64 transfer overhead, so it's the fallback, not the
+// default. That access is optional and off by default (the popup's "all sites"
+// checkbox), so this tier can also come back empty-handed; the caller reports
+// that like any other failure.
 import {
   assertDeclaredSize,
+  concatBytes,
   DIRECT_SCHEMES,
   ImageTooLargeError,
   isAllowedUrl,
   MAX_BYTES,
   readCapped,
 } from "../fetchLimits";
-import { base64ToBytes } from "../messages";
-import type { FetchGifRequest, FetchGifResponse } from "../messages";
+import { base64ToBytes, FETCH_PORT, isFetchGifEvent } from "../messages";
+import type { FetchGifRequest } from "../messages";
+
+/**
+ * The slice of `browser.runtime.Port` tier 2 uses. Narrowed to what's needed so
+ * tests can hand in a plain object instead of faking the runtime.
+ */
+export interface FetchPort {
+  postMessage(message: FetchGifRequest): void;
+  disconnect(): void;
+  readonly onMessage: { addListener(listener: (message: unknown) => void): void };
+  readonly onDisconnect: { addListener(listener: () => void): void };
+}
 
 /** Collaborators, injected so the tier selection is testable headless. */
 export interface FetchGifDeps {
   /** Tier 1: the page-context fetch. */
   fetch: typeof globalThis.fetch;
-  /** Tier 2: the background round-trip. */
-  sendMessage: (request: FetchGifRequest) => Promise<FetchGifResponse | undefined>;
+  /** Tier 2: opens a fetch port to the background. */
+  connect: () => FetchPort;
   maxBytes?: number;
 }
 
 /**
- * Resolve `promise`, but reject with an `AbortError` the moment `signal` aborts.
- * The underlying work (here, the background fetch) isn't cancelled — we just stop
- * awaiting it. The `abort` listener is removed once the promise settles so a
- * completed fetch leaves nothing attached to the signal.
- */
-function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(new DOMException("Aborted", "AbortError"));
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(resolve, reject).finally(() => {
-      signal.removeEventListener("abort", onAbort);
-    });
-  });
-}
-
-/**
  * Tier 1. Throws on any failure; the caller decides whether that's worth a
- * fallback. `signal` cancels the transfer for real here (unlike tier 2).
+ * fallback. `signal` cancels the transfer for real here.
  *
  * There's no timeout: a stalled transfer keeps showing the loading banner, whose
  * cancel button aborts `signal` — the background tier's timeout exists only
- * because a hung fetch there would pin the message channel open.
+ * because a hung fetch there would pin the port open.
  */
 async function fetchDirect(
   url: string,
@@ -80,20 +76,55 @@ async function fetchDirect(
   return readCapped(response, maxBytes);
 }
 
-/** Tier 2: the background fetch, decoded from the base64 wire format. */
-async function fetchViaBackground(
+/**
+ * Tier 2: the background fetch, reassembled from the port's base64 chunks.
+ *
+ * The port is ours to close, and closing it is how the background learns to stop
+ * — so every exit here disconnects, including an abort mid-transfer. A
+ * disconnect we didn't ask for (the background context went away, or the fetch
+ * port was refused) settles the promise rather than hanging forever.
+ */
+function fetchViaBackground(
   url: string,
   signal: AbortSignal | undefined,
   deps: FetchGifDeps,
 ): Promise<ArrayBuffer> {
-  const message = deps.sendMessage({ type: "FETCH_GIF", url });
-  const response = signal ? await raceAbort(message, signal) : await message;
-  if (!response) {
-    throw new Error("fetchGifBytes: no response from background script");
-  }
-  if (!response.ok) throw new Error(response.error);
-  // `base64ToBytes` allocates a fresh array, so `.buffer` is a plain ArrayBuffer.
-  return base64ToBytes(response.data).buffer as ArrayBuffer;
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const port = deps.connect();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    let settled = false;
+    const settle = (finish: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", onAbort);
+      port.disconnect();
+      finish();
+    };
+    function onAbort() {
+      settle(() => reject(new DOMException("Aborted", "AbortError")));
+    }
+
+    port.onMessage.addListener((message) => {
+      if (settled || !isFetchGifEvent(message)) return;
+      if (message.type === "FETCH_CHUNK") {
+        const bytes = base64ToBytes(message.data);
+        chunks.push(bytes);
+        total += bytes.byteLength;
+      } else if (message.type === "FETCH_DONE") {
+        settle(() => resolve(concatBytes(chunks, total).buffer));
+      } else {
+        settle(() => reject(new Error(message.error)));
+      }
+    });
+    port.onDisconnect.addListener(() => {
+      settle(() => reject(new Error("fetchGifBytes: no response from background script")));
+    });
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) return onAbort();
+    port.postMessage({ type: "FETCH_GIF", url });
+  });
 }
 
 /**
@@ -123,9 +154,8 @@ export function createFetchGifBytes(
   };
 }
 
-/** Default wiring: the page's `fetch`, the extension's message channel. */
+/** Default wiring: the page's `fetch`, a fetch port to the background. */
 export const fetchGifBytes = createFetchGifBytes({
   fetch: (...args) => fetch(...args),
-  sendMessage: (request) =>
-    browser.runtime.sendMessage(request) as Promise<FetchGifResponse | undefined>,
+  connect: () => browser.runtime.connect({ name: FETCH_PORT }),
 });
