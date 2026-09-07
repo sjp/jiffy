@@ -1,5 +1,12 @@
-// Minimal type declaration for gifuct-js, which ships without its own types.
-// Covers the surface consumed by the decode module. Expand as needed.
+// Module declaration for gifuct-js.
+//
+// The package does ship an `index.d.ts`, but it declares the per-frame Graphic
+// Control Extension fields (`delay`, `disposalType`, `transparentIndex`) as
+// always present. They are not: a frame with no GCE — every GIF87a frame, and
+// any GIF89a frame needing neither transparency nor a delay — leaves all three
+// `undefined`, which is what put `NaN` on the timeline (issue 02). This
+// declaration shadows the shipped one so the optionality is visible to the
+// compiler; the block shapes below otherwise mirror it.
 declare module "gifuct-js" {
   export interface FrameDims {
     top: number;
@@ -31,9 +38,32 @@ declare module "gifuct-js" {
     transparentIndex?: number | null;
   }
 
+  /**
+   * An image block — one frame, still LZW-compressed. Only the descriptor is
+   * declared here: `width`/`height` is the patch's real size, known from
+   * `parseGIF` alone before anything is decompressed, which is what lets the
+   * decode budget cost a GIF exactly.
+   */
+  export interface GifImageBlock {
+    image: {
+      descriptor: FrameDims & { lct: { exists: boolean } };
+    };
+  }
+
+  /** An application extension block — NETSCAPE2.0 (looping) and friends. */
+  export interface GifApplicationBlock {
+    application: { id: string; blocks: number[] };
+  }
+
+  /**
+   * `parseGIF` keeps every block it walked, images and extensions alike, in one
+   * array — so `frames.length` is not the frame count.
+   */
+  export type GifBlock = GifImageBlock | GifApplicationBlock;
+
   export interface ParsedGif {
     lsd: { width: number; height: number };
-    frames: unknown[];
+    frames: GifBlock[];
     [key: string]: unknown;
   }
 

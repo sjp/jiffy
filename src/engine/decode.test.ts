@@ -260,26 +260,45 @@ const budgetErr = (() => {
 assert.equal(budgetErr?.bytes, 1_800_000_000, "the error carries the estimated size");
 assert.match(budgetErr!.message, /1\.8 GB/, "the message reports the size in human units");
 
-// A GIF over the ceiling is rejected before a single pixel is decompressed: the
-// check runs on `gif.lsd` and the raw frame count, ahead of decompressFrames.
-// 4000×4000 × 100 frames would need 12.8 GB just to hold gifuct's LZW output.
-const huge = new Uint8Array(GIF);
-huge.set([0xa0, 0x0f, 0xa0, 0x0f], 6); // logical screen size → 4000×4000
-// prettier-ignore
-const frameBlock = [
-  0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00,
-  0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00,
-  0x02, 0x02, 0x44, 0x0a, 0x00,
-];
-const manyFrames = Uint8Array.from([
-  ...huge.slice(0, 19), // header + LSD + global colour table
-  ...Array.from({ length: 100 }, () => frameBlock).flat(),
-  0x3b,
-]);
+// The estimate is built from the frames' own image descriptors, which parseGIF
+// hands over without decompressing anything, so an over-budget GIF is refused
+// before a single pixel is expanded.
+const u16 = (n: number) => [n & 0xff, (n >> 8) & 0xff];
+/**
+ * A GIF declaring `count` image blocks of `w`×`h` on a `screen`×`screen` logical
+ * screen. The LZW payload is the fixture's, which decodes to two pixels, so only
+ * a case that is meant to decode needs a descriptor that agrees with it — one
+ * that is refused never gets that far.
+ */
+const gifOf = (screen: number, count: number, w: number, h: number) => {
+  const head = new Uint8Array(GIF.slice(0, 19)); // header + LSD + global colour table
+  head.set([...u16(screen), ...u16(screen)], 6);
+  // prettier-ignore
+  const frameBlock = [
+    0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE: delay=10cs
+    0x2c, 0x00, 0x00, 0x00, 0x00,                   // image descriptor, at 0,0…
+    ...u16(w), ...u16(h), 0x00,                     // …sized w×h
+    0x02, 0x02, 0x44, 0x0a, 0x00,                   // LZW: pixels [0,1]
+  ];
+  const bytes = Uint8Array.from([
+    ...head,
+    ...Array.from({ length: count }, () => frameBlock).flat(),
+    0x3b,
+  ]);
+  return bytes.buffer.slice(0) as ArrayBuffer;
+};
+
+// 100 full-canvas 4000×4000 patches: 1.6 Gpx, ~12.8 GB of gifuct's LZW output.
 await assert.rejects(
-  () => decode(manyFrames.buffer.slice(0) as ArrayBuffer),
+  () => decode(gifOf(4000, 100, 4000, 4000)),
   (err: unknown) => err instanceof DecodeBudgetError,
   "an over-budget GIF is rejected before decompression",
 );
+
+// Twice the block count over a large canvas, but as the small patches real GIFs
+// are made of. Costing each block at the logical screen instead put this at
+// 1.6 GB and refused it; the patches actually decompress to 400 bytes.
+const patched = await decode(gifOf(1000, 200, 2, 1));
+assert.equal(patched.frames.length, 200, "small patches on a large canvas are not refused");
 
 console.log("decode.test: OK — %d frames, duration %dms", frames.length, duration);

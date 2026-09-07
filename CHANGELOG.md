@@ -106,6 +106,13 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   frames were carrying it too.
 - An animated image served from a URL with no recognisable file extension is no
   longer skipped before it is looked at.
+- Long GIFs no longer hit "Image too large to play" when they would have played
+  perfectly well. The memory estimate charged every block the parser saw — the
+  loop extension and comments included — at the size of the whole canvas, but a
+  real GIF is mostly small patches over a static background, so a 1280×720
+  animation of 300 patches was costed at 2.2 GB against an actual 48 MB and
+  refused outright. Each frame's declared size is now used, which the parser
+  already knows before anything is decompressed.
 
 ## [0.3.0] — 2026-06-18
 

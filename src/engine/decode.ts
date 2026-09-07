@@ -66,6 +66,12 @@ function isGif(bytes: ArrayBuffer): boolean {
  * decompresses into `new Array(pixelCount)` — a plain JS array of small
  * integers, ~8 bytes an element in V8 — which we convert to a Uint8Array per
  * frame, but only after the whole GIF has been decompressed.
+ *
+ * 8 is the pessimistic reading: V8 with pointer compression (every 64-bit
+ * Chrome build under ~4 GB of heap) stores a SMI-only array at 4 bytes an
+ * element, so the estimate is up to 2× the real transient there. Erring high on
+ * a guard that only ever refuses is deliberate; a per-engine constant would buy
+ * nothing but a second thing to keep true.
  */
 const DECOMPRESS_BYTES_PER_PIXEL = 8;
 
@@ -150,17 +156,27 @@ export async function decode(bytes: ArrayBuffer, signal?: AbortSignal): Promise<
 
   const { width, height } = gif.lsd;
   // Budget check BEFORE decompressing, because decompression is the peak. What
-  // we end up holding is small — one indexed byte per pixel per frame (worst
-  // case: a full-canvas patch every frame) plus a keyframe bitmap every
-  // KEYFRAME_INTERVAL — but gifuct expands the whole GIF's pixels in one go into
-  // plain JS arrays first, and that transient dwarfs it, so the peak is what the
-  // budget has to guard. `gif.frames` also holds non-image blocks (the loop
-  // extension, comments), so its length is an upper bound on the frame count —
-  // the safe direction for a guard.
-  const rawCount = gif.frames.length;
-  const pixels = width * height * rawCount;
-  const retained = pixels + bitmapBytes(width, height) * keyframeCount(rawCount);
-  assertDecodeBudget(Math.max(pixels * DECOMPRESS_BYTES_PER_PIXEL, retained));
+  // we end up holding is small — one indexed byte per patch pixel plus a
+  // keyframe bitmap every KEYFRAME_INTERVAL — but gifuct expands every frame's
+  // pixels in one go into plain JS arrays first, and that transient dwarfs it,
+  // so the peak is what the budget has to guard.
+  //
+  // Both figures are the sum of the frames' *patch* areas, which `parseGIF`
+  // already knows: each image block carries its descriptor, so the exact area is
+  // free. Costing every block at the full logical screen instead (`gif.frames`
+  // holds the loop extension and comments too, so its length isn't even the
+  // frame count) over-estimates by orders of magnitude for the common GIF, which
+  // is small patches over a static background, and refused images that fit.
+  let patchPixels = 0;
+  let imageCount = 0;
+  for (const block of gif.frames) {
+    if (!("image" in block)) continue;
+    const { width: w, height: h } = block.image.descriptor;
+    patchPixels += w * h;
+    imageCount++;
+  }
+  const retained = patchPixels + bitmapBytes(width, height) * keyframeCount(imageCount);
+  assertDecodeBudget(Math.max(patchPixels * DECOMPRESS_BYTES_PER_PIXEL, retained));
 
   // `false` → skip gifuct's RGBA patch expansion; we keep the indexed pixels.
   const rawFrames = decompressFrames(gif, false);
@@ -169,8 +185,8 @@ export async function decode(bytes: ArrayBuffer, signal?: AbortSignal): Promise<
   // the GIF repeats (count 0 = infinite, count N = N repeats); a GIF without it
   // plays through once. gifuct keeps the extension as an `application` entry in
   // the raw `gif.frames` (the decompressed `rawFrames` above hold only images).
-  const loops = (gif.frames as ReadonlyArray<{ application?: { id?: string } }>).some(
-    (f) => f.application?.id === "NETSCAPE2.0",
+  const loops = gif.frames.some(
+    (block) => "application" in block && block.application.id === "NETSCAPE2.0",
   );
 
   const palettes = new Map<unknown, Uint8Array>();
