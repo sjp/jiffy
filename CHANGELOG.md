@@ -61,7 +61,9 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   a cookie-less background fetch 403s), and can read `blob:` sources. The
   background's privileged fetch remains the fallback for cross-origin images that
   send no CORS headers.
-- Minimum browser versions raised to Firefox 142 and Chrome 137.
+- Minimum browser versions raised to Firefox 142 and Chrome 148. Chrome only
+  exposes the `browser.*` namespace — and promise-returning `runtime.onMessage`
+  listeners — from 148, both of which every entry point here relies on.
 
 ### Fixed
 

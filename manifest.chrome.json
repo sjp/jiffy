@@ -26,5 +26,5 @@
     }
   ],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
-  "minimum_chrome_version": "137"
+  "minimum_chrome_version": "148"
 }
