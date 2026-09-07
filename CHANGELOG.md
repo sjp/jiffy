@@ -85,6 +85,11 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
 
 ### Fixed
 
+- A controlled image that swaps to a different picture — a carousel advancing, a
+  lazy-loader replacing its placeholder, a responsive image re-picking a
+  candidate, an app changing the picture on a route change — now closes its
+  controls instead of leaving Jiffy playing the old animation on top of the new
+  image, which the page could not show while the overlay was up.
 - The control bar and the playback overlay are no longer offset from the image
   on sites whose CSS positions `<body>` — very common, and enough to drop both
   down and to the right of the picture by the body's own margin and offset.

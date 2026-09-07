@@ -76,6 +76,12 @@ interface Instance {
    * deterministically rather than waiting for GC.
    */
   source: FrameSource;
+  /**
+   * Detaches the source-change listeners. An instance is tied to the bytes we
+   * decoded, not to the element it hangs off, so it must go when the <img>
+   * loads something else.
+   */
+  stopSourceWatch: () => void;
 }
 
 export interface Controller {
@@ -168,7 +174,13 @@ export function createController(deps: PipelineDeps): Controller {
         () => teardown(img),
         createFrameExport(source, url),
       );
-      instances.set(img, { engine, overlay, teardownControls, source });
+      instances.set(img, {
+        engine,
+        overlay,
+        teardownControls,
+        source,
+        stopSourceWatch: watchSource(img, url),
+      });
       ensureWatching(); // first live player → start watching for DOM removals
       onStatus?.("ready");
     } catch (err) {
@@ -211,6 +223,7 @@ export function createController(deps: PipelineDeps): Controller {
     pending.delete(img);
     const instance = instances.get(img);
     if (!instance) return;
+    instance.stopSourceWatch();
     instance.overlay.destroy();
     instance.teardownControls();
     // Overlay has stopped drawing, so freeing the frame pixels is now safe.
@@ -223,6 +236,7 @@ export function createController(deps: PipelineDeps): Controller {
     for (const ac of pending.values()) ac.abort();
     pending.clear();
     for (const instance of instances.values()) {
+      instance.stopSourceWatch();
       instance.overlay.destroy();
       instance.teardownControls();
       instance.source.close();
@@ -237,6 +251,32 @@ export function createController(deps: PipelineDeps): Controller {
     for (const img of instances.keys()) {
       if (!img.isConnected) teardown(img);
     }
+  }
+
+  // Watch one live player's <img> for a change of source, and return a stop fn.
+  // reconcile() only catches an element leaving the document, but the element
+  // commonly outlives the picture: carousels reuse one <img> and swap `src`,
+  // lazy-loaders replace a placeholder with the real URL, `srcset` re-selects a
+  // different candidate on resize, and SPAs rewrite `src` on a route change. The
+  // overlay would go on painting the animation we decoded over a different image
+  // while the page's own <img> stays hidden, so the instance is torn down and the
+  // page gets its picture back.
+  //
+  // `load`/`error` is the signal rather than a MutationObserver on `src`/`srcset`:
+  // an attribute change fires before the browser has chosen a candidate, and
+  // `currentSrc` — which is what a `<picture>` re-selection moves — is only
+  // settled once the load has resolved. `error` counts too: a new source that
+  // fails to load still means the old frames are the wrong picture.
+  function watchSource(img: HTMLImageElement, url: string): () => void {
+    const onLoadEnd = (): void => {
+      if ((img.currentSrc || img.src) !== url) teardown(img);
+    };
+    img.addEventListener("load", onLoadEnd);
+    img.addEventListener("error", onLoadEnd);
+    return () => {
+      img.removeEventListener("load", onLoadEnd);
+      img.removeEventListener("error", onLoadEnd);
+    };
   }
 
   // Attach the DOM-removal watcher and return a stop fn. Called lazily by

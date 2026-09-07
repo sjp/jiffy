@@ -365,4 +365,47 @@ ctrl.teardownAll();
   assert.equal(raceCtrl.instances.size, 1, "the re-pick's instance survives the stale rejection");
 }
 
+// ---- a change of source tears the overlay down ----------------------------
+// The element outlives the picture on carousels, lazy-loaders and SPAs. The
+// overlay is tied to the bytes we decoded, so once the <img> has loaded a
+// different URL the instance must go rather than paint the old animation over
+// the new image (which `opacity: 0` would keep hidden).
+{
+  const swapCtrl = createController(deps);
+  const swap = imgWith("http://x/first.gif");
+  document.body.appendChild(swap);
+  await swapCtrl.processImage(swap);
+  assert.equal(swapCtrl.instances.size, 1, "carousel image enhanced");
+
+  // A load that resolves to the same URL (a re-decode, a cache revalidation)
+  // leaves the player alone.
+  swap.dispatchEvent(new window.Event("load"));
+  assert.equal(swapCtrl.instances.size, 1, "a load of the same source keeps the player");
+
+  swap.src = "http://x/second.gif";
+  swap.dispatchEvent(new window.Event("load"));
+  assert.equal(swapCtrl.instances.size, 0, "the player is torn down when the source changes");
+
+  // A new source that fails to load is still a different picture.
+  const failing = imgWith("http://x/third.gif");
+  document.body.appendChild(failing);
+  await swapCtrl.processImage(failing);
+  failing.src = "http://x/gone.gif";
+  failing.dispatchEvent(new window.Event("error"));
+  assert.equal(swapCtrl.instances.size, 0, "a failed new source also tears the player down");
+
+  // Teardown detaches the listeners, so a later load on a torn-down element
+  // reaches no stale handler.
+  const detached = imgWith("http://x/detached.gif");
+  document.body.appendChild(detached);
+  await swapCtrl.processImage(detached);
+  const beforeDetach = destroyed;
+  swapCtrl.teardown(detached);
+  detached.src = "http://x/other.gif";
+  detached.dispatchEvent(new window.Event("load"));
+  assert.equal(destroyed, beforeDetach + 1, "the source listener is removed on teardown");
+  swapCtrl.teardownAll();
+  document.body.replaceChildren();
+}
+
 console.log("content-controller.test: OK");
