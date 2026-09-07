@@ -25,15 +25,30 @@ for (const [browser, entry] of Object.entries(war)) {
 }
 
 // ---- only the schemes the extension can be injected into ------------------
-// `<all_urls>` would additionally expose the bundles to `file:` and `ftp:` pages,
-// which Jiffy neither runs on nor fetches from (see src/fetchLimits.ts). These
-// stay identical to `optional_host_permissions`, which is what popup.ts requests.
-const SCHEMES = ["http://*/*", "https://*/*"];
+// `<all_urls>` would additionally expose the bundles to `ftp:` pages, which Jiffy
+// neither runs on nor fetches from (see src/fetchLimits.ts). `file:///*` is here
+// because a local page can hold a remote image and `activeTab` reaches it once
+// the user allows file access — without it the bundles won't load and a pick
+// there is a silent no-op.
+const WAR_SCHEMES = ["http://*/*", "https://*/*", "file:///*"];
 for (const [browser, entry] of Object.entries(war)) {
-  assert.deepEqual(entry?.matches, SCHEMES, `${browser} matches`);
+  assert.deepEqual(entry?.matches, WAR_SCHEMES, `${browser} matches`);
 }
-assert.deepEqual(chrome.optional_host_permissions, SCHEMES, "chrome optional_host_permissions");
-assert.deepEqual(firefox.optional_host_permissions, SCHEMES, "firefox optional_host_permissions");
+
+// The optional host access is the http(s) pair on its own: it is what popup.ts
+// requests, and `file:` access is a browser-level toggle rather than something
+// `permissions.request` can grant.
+const HOST_SCHEMES = ["http://*/*", "https://*/*"];
+assert.deepEqual(
+  chrome.optional_host_permissions,
+  HOST_SCHEMES,
+  "chrome optional_host_permissions",
+);
+assert.deepEqual(
+  firefox.optional_host_permissions,
+  HOST_SCHEMES,
+  "firefox optional_host_permissions",
+);
 
 // ---- Chrome serves them from a per-session origin -------------------------
 // Chrome's extension ID is stable, so without this any page could probe

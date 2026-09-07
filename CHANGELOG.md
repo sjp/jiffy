@@ -211,7 +211,8 @@ read on the release.
   extension's fixed address — so any site could ask for one and learn from the
   answer who has Jiffy, without the extension ever being used there. Chrome now
   hands them out from a random per-session address instead, and both browsers
-  offer them only to `http` and `https` pages.
+  offer them only to the pages Jiffy can be used on — `http`, `https` and local
+  `file:` pages — rather than to every scheme there is.
 
 ## [0.3.0] — 2026-06-18
 
