@@ -58,6 +58,12 @@ const TOAST_CSS = `
 export interface Toast {
   /** Replace the message. With `autoDismissMs`, removes itself after that delay. */
   set(text: string, autoDismissMs?: number): void;
+  /**
+   * Take the ✕ away, for a toast that has reached an outcome: there is no
+   * longer a pick to cancel, and a live-looking button that does nothing is
+   * worse than no button. Idempotent, and a no-op on a toast that never had one.
+   */
+  hideCancel(): void;
   /** Remove the toast immediately (idempotent). */
   dismiss(): void;
 }
@@ -103,19 +109,25 @@ export function showToast(clientX: number, clientY: number, onCancel?: () => voi
     timer = autoDismissMs != null ? setTimeout(dismiss, autoDismissMs) : undefined;
   };
 
+  let cancel: HTMLButtonElement | null = null;
   if (onCancel) {
-    const button = document.createElement("button");
-    button.className = "cancel";
-    button.type = "button";
-    button.textContent = "✕";
-    button.setAttribute("aria-label", "Cancel");
-    button.addEventListener("click", (event) => {
+    cancel = document.createElement("button");
+    cancel.className = "cancel";
+    cancel.type = "button";
+    cancel.textContent = "✕";
+    cancel.setAttribute("aria-label", "Cancel");
+    cancel.addEventListener("click", (event) => {
       event.stopPropagation();
       dismiss();
       onCancel();
     });
-    box.appendChild(button);
+    box.appendChild(cancel);
   }
 
-  return { set, dismiss };
+  const hideCancel = (): void => {
+    cancel?.remove();
+    cancel = null;
+  };
+
+  return { set, hideCancel, dismiss };
 }

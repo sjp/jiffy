@@ -139,6 +139,22 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
 - An animated AVIF that says it plays once now stops on its last frame instead
   of looping forever. The loop count is on the track all along — the same figure
   GIF, WebP and APNG take from their own containers — and was simply never read.
+- The crosshair is now shown over every part of the page while picking. It was
+  set as an inherited cursor, so anything with a cursor of its own kept it — a
+  link-wrapped GIF stayed a hand, a lightbox thumbnail stayed a magnifier — and
+  those are exactly the images people pick, leaving no sign that Jiffy was armed.
+- Picking an image no longer lets the page act on the same press first. Only the
+  click was taken, so a gallery that opens a lightbox, starts a drag or moves
+  focus on mouse-down had already done so by the time the pick resolved, and the
+  controls landed on a page that had rearranged itself. The press is now taken
+  along with the click, but only over an image — everywhere else it still
+  belongs to the page. Tapping works the same way.
+- The ✕ on the status toast disappears once the load has an outcome, instead of
+  sitting next to "Couldn't load this image" with nothing left to cancel.
+- A page with a frame Jiffy can't reach — an ad iframe on a site without
+  all-sites access — no longer risks reporting "Jiffy can't run on this page".
+  Firefox can refuse to inject into any frame when one of them is off limits, so
+  the top frame is now armed on its own if that happens.
 
 ## [0.3.0] — 2026-06-18
 

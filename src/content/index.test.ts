@@ -23,13 +23,27 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 /** Let a rAF-throttled update (the hover highlight) run, then settle its microtasks. */
 const nextFrame = () =>
   new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
-const docEl = document.documentElement;
+/**
+ * Is pick mode armed here? The crosshair is one blanket `!important` rule
+ * injected into <head> for the duration (a `cursor` on <html> would lose to
+ * every link and lightbox thumbnail on the page).
+ */
+const isPicking = () =>
+  [...document.head.querySelectorAll("style")].some((el) =>
+    (el.textContent ?? "").includes("crosshair"),
+  );
 
 /** Text of every toast currently on the page (each lives in its own shadow root). */
 const toastText = () =>
   [...document.body.querySelectorAll("div")]
     .map((el) => el.shadowRoot?.textContent ?? "")
     .join(" ");
+
+/** The ✕ of whatever toast is on screen, if it still carries one. */
+const toastCancel = () =>
+  [...document.body.querySelectorAll("div")]
+    .map((el) => el.shadowRoot?.querySelector(".cancel") ?? null)
+    .find(Boolean) ?? null;
 
 /** The hover highlight's host, if one is mounted (it's the shadow root with a .box). */
 const highlightHost = () =>
@@ -97,21 +111,21 @@ exitPickMode();
 
 // ---- pick-mode state machine -----------------------------------------------
 enterPickMode();
-assert.equal(docEl.style.cursor, "crosshair", "pick mode sets crosshair cursor");
+assert.equal(isPicking(), true, "pick mode sets crosshair cursor");
 
 // Escape cancels.
 document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-assert.notEqual(docEl.style.cursor, "crosshair", "Escape exits pick mode");
+assert.equal(isPicking(), false, "Escape exits pick mode");
 
 // Clicking something that isn't an image cancels too — and the click is left
 // alone (not swallowed) so a link still navigates.
 enterPickMode();
-assert.equal(docEl.style.cursor, "crosshair");
+assert.equal(isPicking(), true);
 const notAnImage = document.createElement("div");
 document.body.appendChild(notAnImage);
 const plainClick = new window.MouseEvent("click", { bubbles: true, cancelable: true });
 notAnImage.dispatchEvent(plainClick);
-assert.notEqual(docEl.style.cursor, "crosshair", "clicking a non-image exits pick mode");
+assert.equal(isPicking(), false, "clicking a non-image exits pick mode");
 assert.equal(plainClick.defaultPrevented, false, "a cancelling click isn't swallowed");
 
 exitPickMode(); // no-op if already exited
@@ -144,7 +158,7 @@ for (const url of [
   await flush();
   assert.equal(picked, img, `picked image with opaque URL: ${url}`);
   assert.equal(event.defaultPrevented, true, "the picking click is swallowed");
-  assert.notEqual(docEl.style.cursor, "crosshair", "a pick exits pick mode");
+  assert.equal(isPicking(), false, "a pick exits pick mode");
 }
 
 // Clicking an already-enhanced image toggles it back off.
@@ -211,7 +225,7 @@ reset();
   // The overlay's own click must not also fire, or the page navigates away the
   // moment the pick lands.
   assert.equal(overlayClick.defaultPrevented, true, "the overlay's click is swallowed");
-  assert.notEqual(docEl.style.cursor, "crosshair", "the pick exits pick mode");
+  assert.equal(isPicking(), false, "the pick exits pick mode");
 
   // Nothing under the point: the click cancels as before and is left alone.
   reset();
@@ -322,6 +336,79 @@ reset();
   reset();
 }
 
+// ---- the press is taken too, not just the click ----------------------------
+// Pages open lightboxes, start drags and move focus on pointerdown/mousedown, so
+// intercepting `click` alone let the page act first and the pick land on a page
+// that had already changed under it. Over an image the press is swallowed;
+// anywhere else it stays the page's, since the click is about to cancel anyway.
+{
+  const stackAt = new Map<string, Element[]>();
+  const doc = document as Document & { elementsFromPoint?: (x: number, y: number) => Element[] };
+  doc.elementsFromPoint = (x, y) => stackAt.get(`${x},${y}`) ?? [];
+  const withBox = <T extends Element>(el: T): T => {
+    el.getBoundingClientRect = () => ({ width: 200, height: 100, top: 0, left: 0 }) as DOMRect;
+    return el;
+  };
+
+  reset();
+  usePlayer();
+  const target = withBox(imgWith("http://x/press.gif"));
+  const elsewhere = document.createElement("div");
+  document.body.append(target, elsewhere);
+  stackAt.set("40,60", [target, document.body]);
+
+  /**
+   * Dispatch a press on `el` and report whether a page listener ON THE TARGET
+   * ever saw it — the capture listener sits on `document`, so stopping there is
+   * exactly what keeps the page's own handlers out.
+   */
+  const press = (type: string, el: Element, x: number, y: number) => {
+    let reached = false;
+    const spy = () => (reached = true);
+    el.addEventListener(type, spy);
+    const event: Event =
+      type === "touchstart"
+        ? Object.assign(new window.Event(type, { bubbles: true, cancelable: true }), {
+            touches: [{ clientX: x, clientY: y }],
+          })
+        : new window.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y });
+    el.dispatchEvent(event);
+    el.removeEventListener(type, spy);
+    return { reached, prevented: event.defaultPrevented };
+  };
+
+  enterPickMode();
+  for (const type of ["pointerdown", "mousedown"]) {
+    const onImage = press(type, target, 40, 60);
+    assert.equal(onImage.reached, false, `a ${type} over an image never reaches the page`);
+    assert.equal(onImage.prevented, true, `a ${type} over an image is prevented`);
+
+    const onNothing = press(type, elsewhere, 5, 5);
+    assert.equal(onNothing.reached, true, `a ${type} elsewhere is left to the page`);
+    assert.equal(onNothing.prevented, false, `a ${type} elsewhere keeps its default`);
+  }
+
+  // Touch: propagation only. Preventing a touchstart's default is what cancels
+  // the compatibility click, and that click is what resolves the pick.
+  const touch = press("touchstart", target, 40, 60);
+  assert.equal(touch.reached, false, "a touch on an image never reaches the page");
+  assert.equal(touch.prevented, false, "the touch keeps its default, so the click still comes");
+  assert.equal(press("touchstart", elsewhere, 5, 5).reached, true, "a touch elsewhere passes");
+
+  // The click that follows still resolves the pick.
+  target.dispatchEvent(
+    new window.MouseEvent("click", { bubbles: true, cancelable: true, clientX: 40, clientY: 60 }),
+  );
+  await flush();
+  assert.equal(picked, target, "the press is swallowed but the click still picks");
+
+  // And once the pick is over the page gets its presses back.
+  assert.equal(press("pointerdown", target, 40, 60).reached, true, "presses resume after the pick");
+
+  delete doc.elementsFromPoint;
+  reset();
+}
+
 // ---- a first pick before the bundle arrives shows "Loading…" ---------------
 // The warm-up in enterPickMode usually wins the race, but on a cold, slow load
 // the click must not look like it did nothing.
@@ -365,6 +452,31 @@ reset();
   assert.ok(imports > before, "a later pick retries the import");
   assert.equal(picked, retry, "the retry succeeds");
   reset();
+}
+
+// ---- an outcome takes the toast's ✕ away -----------------------------------
+// The "Loading…" toast is cancellable and the same toast is then reused for the
+// outcome, so without this the ✕ would sit beside "Couldn't load this image" for
+// the whole auto-dismiss with nothing left to cancel.
+{
+  let release: (module: { controller: never }) => void = () => {};
+  usePlayer(() => new Promise((resolve) => (release = resolve)));
+  reset();
+  const slow = imgWith("http://x/outcome.gif");
+  document.body.appendChild(slow);
+  enterPickMode();
+  slow.dispatchEvent(new window.MouseEvent("click", { bubbles: true, cancelable: true }));
+  await flush();
+  assert.ok(toastCancel(), "the loading toast can be cancelled");
+
+  release({ controller: stubPlayer });
+  await flush();
+  assert.ok(lastStatus, "the pick resumed and reports status");
+  lastStatus!("error");
+  assert.match(toastText(), /Couldn't load this image/, "the same toast carries the outcome");
+  assert.equal(toastCancel(), null, "the outcome drops the ✕");
+  reset();
+  usePlayer();
 }
 
 // ---- standalone image: toolbar toggles directly (ImageDocument) ------------
@@ -459,9 +571,9 @@ reset();
 
   // Escape resolves the pick: local exit + an announcement for the other frames.
   deliver({ type: "PICK_GIF" });
-  assert.equal(docEl.style.cursor, "crosshair", "PICK_GIF arms this frame");
+  assert.equal(isPicking(), true, "PICK_GIF arms this frame");
   document.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-  assert.notEqual(docEl.style.cursor, "crosshair", "Escape leaves pick mode");
+  assert.equal(isPicking(), false, "Escape leaves pick mode");
   assert.deepEqual(sent, [{ type: "PICK_ENDED" }], "Escape announces the end of the pick");
 
   // So does a click that cancels (and so does one that picks — same code path).
@@ -477,16 +589,16 @@ reset();
   // otherwise the frames would bounce the message around the tab forever.
   sent.length = 0;
   deliver({ type: "PICK_GIF" });
-  assert.equal(docEl.style.cursor, "crosshair");
+  assert.equal(isPicking(), true);
   deliver({ type: "EXIT_PICK" });
-  assert.notEqual(docEl.style.cursor, "crosshair", "EXIT_PICK disarms this frame");
+  assert.equal(isPicking(), false, "EXIT_PICK disarms this frame");
   assert.deepEqual(sent, [], "disarming for another frame doesn't re-broadcast");
 
   // Losing focus abandons the pick here only — this is what a click into a
   // sibling frame looks like, so it must not cancel that sibling.
   deliver({ type: "PICK_GIF" });
   window.dispatchEvent(new window.Event("blur"));
-  assert.notEqual(docEl.style.cursor, "crosshair", "losing focus abandons the pick");
+  assert.equal(isPicking(), false, "losing focus abandons the pick");
   assert.deepEqual(sent, [], "an abandoned pick is not announced");
 
   // Hiding the tab likewise — every frame shares the document's visibility, so
@@ -496,14 +608,14 @@ reset();
   deliver({ type: "PICK_GIF" });
   setHidden(true);
   document.dispatchEvent(new window.Event("visibilitychange"));
-  assert.notEqual(docEl.style.cursor, "crosshair", "hiding the tab abandons the pick");
+  assert.equal(isPicking(), false, "hiding the tab abandons the pick");
   assert.deepEqual(sent, [], "a hidden tab's abandoned pick is not announced");
   setHidden(false);
 
   // A still-visible tab firing visibilitychange keeps the pick armed.
   deliver({ type: "PICK_GIF" });
   document.dispatchEvent(new window.Event("visibilitychange"));
-  assert.equal(docEl.style.cursor, "crosshair", "a visible tab stays armed");
+  assert.equal(isPicking(), true, "a visible tab stays armed");
   exitPickMode();
 
   // Unloading tears down whatever the loaded player is still holding.

@@ -14,6 +14,8 @@ const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 /** Everything the popup asked the browser to do, in order. */
 let calls: string[] = [];
 let injectFails = false;
+/** Reject only the allFrames pass — what Firefox can do when one frame is closed to us. */
+let allFramesFails = false;
 let granted = false;
 /** What the browser's permission prompt answers. */
 let grantRequest = true;
@@ -35,6 +37,10 @@ let closed = 0;
       // What a privileged page (about:, chrome:, the add-ons gallery) throws.
       if (injectFails) throw new Error("Cannot access contents of the page");
       const { tabId, allFrames } = injection.target;
+      if (allFrames && allFramesFails) {
+        calls.push(`inject:${tabId}:true:rejected`);
+        throw new Error("Missing host permission for the tab");
+      }
       calls.push(`inject:${tabId}:${allFrames}:${injection.files.join(",")}`);
       return [];
     },
@@ -89,6 +95,26 @@ const el = <T extends HTMLElement>(doc: Document, id: string) => doc.getElementB
   assert.equal(el(doc, "status").hidden, false);
   assert.match(el(doc, "status").textContent ?? "", /can't run on this page/);
   injectFails = false;
+}
+
+// An ordinary page with one frame Jiffy can't reach must still arm the top
+// frame: Firefox can reject the whole allFrames call there, and reporting "can't
+// run on this page" for a page carrying an ad iframe would be plainly wrong.
+{
+  calls = [];
+  closed = 0;
+  allFramesFails = true;
+  const doc = popup();
+  el(doc, "pick").click();
+  await flush();
+  assert.deepEqual(
+    calls,
+    ["inject:7:true:rejected", "inject:7:undefined:content.js", "send:7:PICK_GIF"],
+    "a rejected allFrames pass falls back to the top frame, then arms it",
+  );
+  assert.equal(closed, 1, "the fallback pick closes the popup like any other");
+  assert.equal(el(doc, "status").hidden, true, "and says nothing about the lost frames");
+  allFramesFails = false;
 }
 
 // ---- the optional all-sites permission -------------------------------------

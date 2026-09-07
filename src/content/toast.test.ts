@@ -113,6 +113,29 @@ button!.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 assert.equal(cancelled, 1, "clicking ✕ invokes onCancel exactly once");
 assert.equal(hosts().length, 0, "clicking ✕ dismisses the toast");
 
+// ---- hideCancel: an outcome leaves nothing to cancel -----------------------
+// The loading toast is reused for the not-animated/too-large/error messages, so
+// the ✕ has to come off with the pick it would have cancelled.
+const settled = showToast(0, 0, () => cancelled++);
+const settledHost = hosts().at(-1)!;
+settled.set("Loading…");
+assert.ok(settledHost.shadowRoot!.querySelector(".cancel"), "the loading toast has a ✕");
+settled.hideCancel();
+assert.equal(settledHost.shadowRoot!.querySelector(".cancel"), null, "hideCancel removes the ✕");
+settled.set("Couldn't load this image", 2500);
+assert.equal(boxText(settledHost), "Couldn't load this image", "the message still updates");
+assert.equal(settledHost.shadowRoot!.querySelector(".cancel"), null, "and the ✕ stays gone");
+settled.hideCancel(); // idempotent
+settled.dismiss();
+assert.equal(cancelled, 1, "hiding the ✕ never fires onCancel");
+
+// A toast that never had one is unbothered by the same call.
+const noCancel = showToast(0, 0);
+noCancel.hideCancel();
+noCancel.set("Not an animated image");
+assert.equal(boxText(hosts().at(-1)!), "Not an animated image", "hideCancel is a no-op without ✕");
+noCancel.dismiss();
+
 globalThis.setTimeout = realSetTimeout;
 globalThis.clearTimeout = realClearTimeout;
 console.log("toast.test: OK");

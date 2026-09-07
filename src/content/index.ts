@@ -107,11 +107,46 @@ function ensurePlayer(): Promise<Player | null> {
 const PICK_TIMEOUT_MS = 60_000;
 
 let picking = false;
-let previousCursor = "";
 let pickTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Pointer/scroll tracking never blocks the page, and beats a page that stops propagation. */
 const TRACK_OPTS: AddEventListenerOptions = { passive: true, capture: true };
+/** Presses are intercepted, so they can't be passive; the touch one only stops propagation. */
+const PRESS_OPTS: AddEventListenerOptions = { capture: true };
+const TOUCH_OPTS: AddEventListenerOptions = { capture: true, passive: true };
+
+/**
+ * The crosshair that says "Jiffy is armed". A `cursor` on <html> would be
+ * inherited, so it only shows where nothing else sets one — and the images
+ * people pick are exactly the ones that do: a link-wrapped GIF takes `pointer`
+ * from the UA sheet, a lightbox thumbnail takes `zoom-in` from the site's. Over
+ * those the user would see the page's own cursor and have no signal at all until
+ * the highlight box appears. One blanket rule covers the lot.
+ *
+ * `:root` is in the selectors purely for weight: at 0-1-0 this ties with a
+ * page's `.thumb { cursor: zoom-in !important }` and wins on order, because the
+ * <style> is appended after the page's own. A page rule carrying an id still
+ * beats it — that is as far as an author-origin sheet can reach.
+ */
+const PICK_CURSOR_CSS =
+  ":root, :root *, :root *::before, :root *::after { cursor: crosshair !important; }";
+
+/** The injected rule while picking, or null. Also the "is the cursor up?" flag. */
+let cursorStyle: HTMLStyleElement | null = null;
+
+function showPickCursor(): void {
+  if (cursorStyle) return;
+  const style = document.createElement("style");
+  style.textContent = PICK_CURSOR_CSS;
+  // <head> normally, but an XML document (or a torn-down one) may not have one.
+  (document.head ?? document.documentElement).appendChild(style);
+  cursorStyle = style;
+}
+
+function hidePickCursor(): void {
+  cursorStyle?.remove();
+  cursorStyle = null;
+}
 
 /** The hover outline, created on the first candidate and destroyed on exit. */
 let highlight: Highlight | null = null;
@@ -178,6 +213,14 @@ function onPickScroll(): void {
 function toastReporter(clientX: number, clientY: number, onCancel?: () => void): StatusFn {
   let toast: ReturnType<typeof showToast> | null = null;
   const ensure = () => (toast ??= showToast(clientX, clientY, onCancel));
+  // Every outcome comes through here. The toast is reused from the "Loading…"
+  // state, so without this the ✕ would sit next to "Couldn't load this image"
+  // for the whole auto-dismiss with nothing left to cancel.
+  const finish = (text: string, autoDismissMs: number) => {
+    const shown = ensure();
+    shown.hideCancel();
+    shown.set(text, autoDismissMs);
+  };
   return (status, detail) => {
     switch (status) {
       case "loading":
@@ -187,21 +230,18 @@ function toastReporter(clientX: number, clientY: number, onCancel?: () => void):
         toast?.dismiss();
         break;
       case "not-animated":
-        ensure().set("Not an animated image", 2000);
+        finish("Not an animated image", 2000);
         break;
       case "too-large":
         // The size is what makes this actionable — otherwise "too large" reads
         // as a bug rather than a limit the image genuinely blew past.
-        ensure().set(
-          detail ? `Image too large to play (${detail})` : "Image too large to play",
-          2500,
-        );
+        finish(detail ? `Image too large to play (${detail})` : "Image too large to play", 2500);
         break;
       case "unsupported":
         // The image is fine and the browser is happy to animate it in the page —
         // it just gives us no way to decode it. Naming the format is what stops
         // that reading as Jiffy being broken.
-        ensure().set(
+        finish(
           detail
             ? `${detail} isn't supported in this browser`
             : "This format isn't supported in this browser",
@@ -209,7 +249,7 @@ function toastReporter(clientX: number, clientY: number, onCancel?: () => void):
         );
         break;
       case "error":
-        ensure().set("Couldn't load this image", 2500);
+        finish("Couldn't load this image", 2500);
         break;
     }
   };
@@ -259,10 +299,12 @@ export function enterPickMode(): void {
   // click: by the time they've aimed at an image it has usually arrived, and the
   // pick lands with no "Loading…" step at all.
   void ensurePlayer();
-  previousCursor = document.documentElement.style.cursor;
-  document.documentElement.style.cursor = "crosshair";
+  showPickCursor();
   document.addEventListener("click", onPickClick, true);
   document.addEventListener("keydown", onPickKey, true);
+  document.addEventListener("pointerdown", onPickPress, PRESS_OPTS);
+  document.addEventListener("mousedown", onPickPress, PRESS_OPTS);
+  document.addEventListener("touchstart", onPickTouchStart, TOUCH_OPTS);
   document.addEventListener("pointermove", onPickPointerMove, TRACK_OPTS);
   window.addEventListener("scroll", onPickScroll, TRACK_OPTS);
   // Self-disarming safety nets, all local to this frame (see endPick).
@@ -275,9 +317,12 @@ export function enterPickMode(): void {
 export function exitPickMode(): void {
   if (!picking) return;
   picking = false;
-  document.documentElement.style.cursor = previousCursor;
+  hidePickCursor();
   document.removeEventListener("click", onPickClick, true);
   document.removeEventListener("keydown", onPickKey, true);
+  document.removeEventListener("pointerdown", onPickPress, PRESS_OPTS);
+  document.removeEventListener("mousedown", onPickPress, PRESS_OPTS);
+  document.removeEventListener("touchstart", onPickTouchStart, TOUCH_OPTS);
   document.removeEventListener("pointermove", onPickPointerMove, TRACK_OPTS);
   window.removeEventListener("scroll", onPickScroll, TRACK_OPTS);
   document.removeEventListener("visibilitychange", onPickVisibilityChange);
@@ -336,6 +381,42 @@ function pickTarget(event: MouseEvent): HTMLImageElement | null {
     if (hit) return hit;
   }
   return (event.target as Element | null)?.closest("img") ?? null;
+}
+
+/**
+ * Take the press, not just the click, when it lands on an image.
+ *
+ * Only `click` used to be intercepted, so a page that opens a lightbox, starts a
+ * drag or focuses an input on `pointerdown`/`mousedown` had already acted by the
+ * time the pick resolved — the pick then landed on a page that had changed under
+ * it. Swallowing the press over an image makes the pick atomic; anywhere else
+ * the press is the page's, and the click that follows hands pick mode back to it
+ * anyway.
+ *
+ * `preventDefault` also stops the press's own native behaviour (dragging the
+ * image out, starting a selection). `click` still fires afterwards — it is not
+ * one of the compatibility events a prevented `pointerdown` suppresses — and
+ * that is what actually resolves the pick.
+ */
+function onPickPress(event: MouseEvent): void {
+  if (!pickTarget(event)) return;
+  event.stopPropagation();
+  // Everything except touch. A prevented touch press is the one case where the
+  // compatibility `click` is not reliably delivered, and losing it would leave a
+  // tap on an image doing nothing at all; stopping propagation already keeps the
+  // page's own handlers out.
+  if ((event as PointerEvent).pointerType !== "touch") event.preventDefault();
+}
+
+/**
+ * The touch equivalent. `touchstart` is not a compatibility event, so a
+ * prevented `pointerdown` does not suppress it and a page's `touchstart`
+ * handlers would still run first. Propagation only, for the reason above —
+ * preventing a `touchstart`'s default is what genuinely does cancel the click.
+ */
+function onPickTouchStart(event: TouchEvent): void {
+  const touch = event.touches[0];
+  if (touch && findImageAtPoint(touch.clientX, touch.clientY)) event.stopPropagation();
 }
 
 function onPickClick(event: MouseEvent): void {

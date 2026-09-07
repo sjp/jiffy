@@ -29,20 +29,32 @@ const ALL_SITES: browser.permissions.Permissions = {
 
 /**
  * Put the active tab into pick mode: inject the content script, then tell it to
- * arm. Injecting `allFrames` covers images inside embeds; frames the extension
- * has no access to are skipped rather than failing the call, and a frame that
- * already ran the script ignores the second injection (see content/index.ts).
+ * arm. Injecting `allFrames` covers images inside embeds; a frame that already
+ * ran the script ignores the second injection (see content/index.ts).
+ *
+ * An inaccessible frame is not the same thing everywhere. Chrome skips it and
+ * resolves with the frames it did reach; Firefox has been known to reject the
+ * whole call instead, which on an ordinary page carrying one cross-origin ad
+ * iframe would take the top frame down with it and tell the user Jiffy can't run
+ * here. So a rejection is retried against the top frame alone: the pick still
+ * works where the user is actually looking, and only the embeds are lost.
  *
  * Throws when the page is one no extension may touch (`about:`/`chrome:`, the
- * add-ons gallery, the built-in PDF viewer) — there is nothing to control there.
+ * add-ons gallery, the built-in PDF viewer) — both attempts fail there, and
+ * there is nothing to control anyway.
  */
 export async function pickInActiveTab(): Promise<void> {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
   if (tab?.id == null) throw new Error("no active tab");
-  await browser.scripting.executeScript({
-    target: { tabId: tab.id, allFrames: true },
-    files: [CONTENT_SCRIPT],
-  });
+  const tabId = tab.id;
+  try {
+    await browser.scripting.executeScript({
+      target: { tabId, allFrames: true },
+      files: [CONTENT_SCRIPT],
+    });
+  } catch {
+    await browser.scripting.executeScript({ target: { tabId }, files: [CONTENT_SCRIPT] });
+  }
   const message: PickGifRequest = { type: "PICK_GIF" };
   // Nothing answers PICK_GIF, and Chrome reports an unanswered message as a
   // rejection. The injection above is what proves the page is reachable, so this
