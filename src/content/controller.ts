@@ -91,6 +91,15 @@ export interface Controller {
   readonly instances: ReadonlyMap<HTMLImageElement, Instance>;
 }
 
+/**
+ * Was this rejection the user's own cancel? Matched on `name` rather than
+ * `instanceof DOMException` because the abort can be raised in the worker realm
+ * (decodeInWorker) as well as here.
+ */
+function isAbort(err: unknown): boolean {
+  return err instanceof Error && err.name === "AbortError";
+}
+
 export function createController(deps: PipelineDeps): Controller {
   const instances = new Map<HTMLImageElement, Instance>();
   // In-flight loads, each paired with the AbortController that cancels it. Aborting
@@ -119,14 +128,21 @@ export function createController(deps: PipelineDeps): Controller {
     if (instances.has(img) || pending.has(img)) return; // never double-process
     const ac = new AbortController();
     pending.set(img, ac);
+    // Identity, not presence: cancel-then-repick on the same <img> puts a second
+    // pipeline in the map before this one's abort rejection has unwound, and
+    // asking "is anything pending for this img?" would then hand the newer
+    // pipeline's entry to the older one — which would report the older one's
+    // failure and delete the newer one's registration, losing both loads.
+    const mine = (): boolean => pending.get(img) === ac;
     onStatus?.("loading");
     try {
       const url = img.currentSrc || img.src;
       const bytes = await deps.fetchBytes(url, ac.signal);
       const { frames, source, duration, loops } = await deps.decode(bytes, ac.signal);
 
-      // Torn down mid-flight (reconcile / teardownAll): drop the frames silently.
-      if (!pending.has(img)) {
+      // Torn down mid-flight (reconcile / teardownAll), or superseded by a newer
+      // pick of the same image: drop the frames silently.
+      if (!mine()) {
         source.close();
         return;
       }
@@ -161,7 +177,10 @@ export function createController(deps: PipelineDeps): Controller {
       // a genuine failure so the feedback can be specific. Stay silent if torn
       // down mid-flight.
       console.debug("[jiffy] skipping image", img.currentSrc || img.src, err);
-      if (pending.has(img)) {
+      // An abort is the user's own cancel, so it never gets a toast — checked
+      // independently of the map so a pipeline whose entry was already replaced
+      // still stays silent.
+      if (mine() && !isAbort(err)) {
         const status: ProcessStatus =
           err instanceof NotAnimatedError
             ? "not-animated"
@@ -180,7 +199,7 @@ export function createController(deps: PipelineDeps): Controller {
         onStatus?.(status, detail);
       }
     } finally {
-      pending.delete(img);
+      if (mine()) pending.delete(img);
     }
   }
 

@@ -305,4 +305,64 @@ ctrl.teardownAll();
   assert.equal(unsupportedCtrl.instances.size, 0, "no instance created for an undecodable image");
 }
 
+// ---- cancel then immediately re-pick the same image -------------------------
+// The stale pipeline's rejection lands after the new pick has registered its own
+// AbortController under the same <img>. Keyed by presence it would report the
+// stale failure and delete the new pick's entry, which then finds itself
+// "torn down" and silently drops its frames — the user picks and gets nothing.
+// Keyed by identity, the stale pipeline sees the map is no longer its own and
+// stays out of the way.
+{
+  const stale: string[] = [];
+  const fresh: string[] = [];
+  let failFirstFetch!: (err: unknown) => void;
+  let fetches = 0;
+  const raceDeps = {
+    fetchBytes: (_url: string) => {
+      fetches++;
+      // The first pick hangs until we fail it by hand; the second resolves at once.
+      return fetches === 1
+        ? new Promise<ArrayBuffer>((_resolve, reject) => {
+            failFirstFetch = reject;
+          })
+        : Promise.resolve(new ArrayBuffer(8));
+    },
+    decode: async () => ({
+      frames: [
+        { time: 100, delay: 100 },
+        { time: 200, delay: 100 },
+      ],
+      source: { width: 4, height: 4, frameCount: 2, getBitmap: () => ({}), close: () => {} },
+      duration: 200,
+      loops: true,
+    }),
+    createEngine: () => ({
+      setLoop: () => {},
+      setSpeed: () => {},
+      setReverse: () => {},
+      setPingPong: () => {},
+    }),
+    createOverlay: () => ({
+      canvas: document.createElement("canvas"),
+      destroy: () => {},
+    }),
+    mountControls: () => () => {},
+  } as never;
+
+  const raceCtrl = createController(raceDeps);
+  const raceImg = imgWith("http://x/race.gif");
+  const first = raceCtrl.processImage(raceImg, (s) => stale.push(s));
+  await flush(); // first pick is parked in its fetch
+
+  raceCtrl.teardown(raceImg); // user cancels from the toast
+  const second = raceCtrl.processImage(raceImg, (s) => fresh.push(s)); // and picks again
+  failFirstFetch(new Error("network")); // only now does the first pick unwind
+  await Promise.all([first, second]);
+
+  assert.equal(fetches, 2, "the re-pick started its own load");
+  assert.deepEqual(stale, ["loading"], "the superseded pipeline reports nothing after its cancel");
+  assert.deepEqual(fresh, ["loading", "ready"], "the re-pick runs to ready");
+  assert.equal(raceCtrl.instances.size, 1, "the re-pick's instance survives the stale rejection");
+}
+
 console.log("content-controller.test: OK");
