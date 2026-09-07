@@ -365,12 +365,12 @@ export async function decodeAvif(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     }
 
     source = createDecoderSource(decoder, width, height, frameCount);
-    // The track's loop count, the same figure GIF/WebP/APNG take from their own
-    // containers: 0 plays once, Infinity loops forever, N repeats N times. A
-    // runtime that doesn't report one leaves it undefined, which lands on the
-    // looping default — the common case for an animated AVIF.
-    const loops = track.repetitionCount !== 0;
-    return { frames, source, duration: elapsed, loops };
+    // WebCodecs counts repetitions the same way DecodeResult does — 0 plays
+    // once, N repeats N times, Infinity forever — so the track's figure passes
+    // straight through. A runtime that doesn't report one leaves it undefined,
+    // which lands on forever: the common case for an animated AVIF.
+    const repeat = typeof track.repetitionCount === "number" ? track.repetitionCount : Infinity;
+    return { frames, source, duration: elapsed, repeat };
   } finally {
     // The source takes ownership of the decoder; close it here only when we
     // never got that far (an error, or a cancelled decode).

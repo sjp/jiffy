@@ -120,11 +120,11 @@ g.ImageDecoder = FakeImageDecoder;
 
 assert.equal(canDecodeAvif(), true, "ImageDecoder present → can decode");
 
-const { frames, source, duration, loops } = await decodeAvif(ab(avisMajor));
+const { frames, source, duration, repeat } = await decodeAvif(ab(avisMajor));
 
 assert.equal(frames.length, 3, "frame count");
 // A track reporting no repetitionCount at all lands on the looping default.
-assert.equal(loops, true, "no declared loop count → looping");
+assert.equal(repeat, Infinity, "no declared loop count → repeats forever");
 // With no container timing to read, the timeline pass visits every frame...
 assert.deepEqual(decodedIndexes, [0, 1, 2], "decoded every frame index in order");
 // ...but it retains none of them: each VideoFrame is closed as soon as its
@@ -189,9 +189,9 @@ assert.ok(closed, "a failed decode closes the decoder");
 g.ImageDecoder = FakeImageDecoder;
 
 // ---- the loop count comes from the track ----------------------------------
-// `ImageTrack.repetitionCount` is the container's loop count — 0 plays once,
-// Infinity loops forever — the same thing GIF/WebP/APNG take from their own
-// containers, so a one-shot AVIF starts with looping off like a one-shot GIF.
+// `ImageTrack.repetitionCount` counts repetitions the way DecodeResult does — 0
+// plays once, N repeats N times, Infinity loops forever — so it passes straight
+// through, and a one-shot AVIF starts with looping off like a one-shot GIF.
 
 {
   class OnceDecoder extends FakeImageDecoder {
@@ -202,8 +202,19 @@ g.ImageDecoder = FakeImageDecoder;
   }
   g.ImageDecoder = OnceDecoder;
   const once = await decodeAvif(ab(avisMajor));
-  assert.equal(once.loops, false, "repetitionCount 0 → plays once");
+  assert.equal(once.repeat, 0, "repetitionCount 0 → plays once");
   once.source.close();
+
+  class TwiceDecoder extends FakeImageDecoder {
+    override tracks = {
+      ready: Promise.resolve(),
+      selectedTrack: { frameCount: 3, animated: true, repetitionCount: 2 },
+    };
+  }
+  g.ImageDecoder = TwiceDecoder;
+  const twice = await decodeAvif(ab(avisMajor));
+  assert.equal(twice.repeat, 2, "a finite repetitionCount passes through");
+  twice.source.close();
 
   class ForeverDecoder extends FakeImageDecoder {
     override tracks = {
@@ -213,7 +224,7 @@ g.ImageDecoder = FakeImageDecoder;
   }
   g.ImageDecoder = ForeverDecoder;
   const forever = await decodeAvif(ab(avisMajor));
-  assert.equal(forever.loops, true, "repetitionCount Infinity → loops");
+  assert.equal(forever.repeat, Infinity, "repetitionCount Infinity → loops forever");
   forever.source.close();
 
   g.ImageDecoder = FakeImageDecoder;

@@ -134,7 +134,7 @@ const decodedReply = {
     { time: 200, delay: 100 },
   ],
   duration: 200,
-  loops: false,
+  repeat: 0,
   source: decodedSource,
 };
 
@@ -157,7 +157,7 @@ const white: [number, number, number, number] = [255, 255, 255, 255];
 
   assert.equal(result.frames.length, 2, "frames come through");
   assert.equal(result.duration, 200, "duration comes through");
-  assert.equal(result.loops, false, "loop flag comes through");
+  assert.equal(result.repeat, 0, "the repeat count comes through");
   assert.equal(result.source.frameCount, 2, "the source is hydrated from the keyframes");
   assert.equal(worker.terminated, true, "the worker is terminated once it has answered");
 

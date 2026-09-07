@@ -183,8 +183,16 @@ export interface EngineState {
   frameCount: number;
   currentTime: number;
   duration: number;
-  /** Whether playback repeats; when false it parks on the last frame at the end. */
+  /**
+   * Whether playback repeats at all — `repeat !== 0`. When false it parks on
+   * the last frame at the end.
+   */
   loop: boolean;
+  /**
+   * Repeats left to play after the current pass, as {@link DecodeResult.repeat}
+   * counts them: 0 parks at the end, `Infinity` never stops.
+   */
+  repeat: number;
   /** Playback rate multiplier (1 = normal). Scales how fast the clock advances. */
   speed: number;
   /** Whether playback runs backwards. */
@@ -202,8 +210,18 @@ export interface Engine {
   step(delta: 1 | -1): void;
   seekToTime(t: number): void;
   seekToIndex(i: number): void;
-  /** Enable/disable looping. Off → playback stops on the last frame at the end. */
+  /**
+   * Enable/disable looping — the user's override of whatever the image
+   * declared. On means forever (`repeat = Infinity`), off means once
+   * (`repeat = 0`); see {@link Engine.setRepeat} for the declared count.
+   */
   setLoop(enabled: boolean): void;
+  /**
+   * Set the declared repeat count: 0 plays once, N repeats N times after the
+   * first play, `Infinity` loops forever. What the decoders read out of the
+   * container; the Loop toggle overrides it.
+   */
+  setRepeat(count: number): void;
   /** Set the playback rate multiplier (1 = normal). Values must be > 0. */
   setSpeed(rate: number): void;
   /** Play backwards when enabled. */
@@ -221,6 +239,17 @@ export interface DecodeResult {
   /** Pixels, addressed by frame index. Owned by the caller; `close()` it. */
   source: FrameSource;
   duration: number;
-  /** Whether the source is meant to repeat (e.g. GIF NETSCAPE loop, APNG num_plays). */
-  loops: boolean;
+  /**
+   * How many times the image declares it repeats *after* its first play: 0
+   * plays once, N repeats N times (N + 1 plays), `Infinity` loops forever.
+   *
+   * One number rather than a boolean because every container carries a count
+   * and browsers honour it — a GIF that says "play 3 times" stops after three.
+   * The containers spell it two different ways and each decoder converts:
+   * GIF's `NETSCAPE2.0` count and WebCodecs' `repetitionCount` are already
+   * repeats, while WebP's `ANIM` loop count and APNG's `num_plays` count whole
+   * plays, so those are one more than the number here (0 meaning forever in
+   * all four).
+   */
+  repeat: number;
 }

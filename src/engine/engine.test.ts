@@ -48,6 +48,7 @@ assert.deepEqual(engine.state, {
   currentTime: 0,
   duration: 200,
   loop: true,
+  repeat: Infinity,
   speed: 1,
   reverse: false,
   pingpong: false,
@@ -143,6 +144,51 @@ once.play();
 assert.equal(once.state.index, 0, "play() after end replays from frame 0");
 assert.equal(once.state.playing, true, "playing again after replay");
 once.pause();
+
+// ---- a finite repeat count: park after the last declared pass -------------
+// What the image itself declared (GIF NETSCAPE count, APNG num_plays, …): the
+// engine counts wraps and stops, instead of treating any count as "forever".
+const twice = createEngine(frames, 200, clock);
+twice.setRepeat(1); // one repeat = two plays
+assert.equal(twice.state.loop, true, "a repeating image reads as looping");
+assert.equal(twice.state.repeat, 1, "the declared count is visible in state");
+
+t = 0;
+twice.play();
+runTickAt(200); // end of the first pass → spends the one repeat and wraps
+assert.equal(twice.state.playing, true, "still playing: a repeat was left");
+assert.equal(twice.state.index, 0, "wrapped back to frame 0");
+assert.equal(twice.state.repeat, 0, "the repeat was spent");
+runTickAt(400); // end of the second pass → nothing left
+assert.equal(twice.state.playing, false, "stops after the declared repeats");
+assert.equal(twice.state.index, 1, "parks on the last frame");
+
+// The play button replays the whole thing, budget and all.
+t = 500;
+twice.play();
+assert.equal(twice.state.repeat, 1, "replaying refills the repeat budget");
+twice.pause();
+
+// The Loop toggle is an override, not a mirror of the count. Its default is
+// read back from `loop`, so applySettings re-asserting `true` on an unrelated
+// change must leave a finite count alone...
+twice.setLoop(true);
+assert.equal(twice.state.repeat, 1, "setLoop(true) on a repeating image is a no-op");
+// ...but turning it off and on again is a deliberate override: play forever.
+twice.setLoop(false);
+assert.equal(twice.state.repeat, 0, "setLoop(false) → play once");
+assert.equal(twice.state.loop, false, "…and reads back as not looping");
+twice.setLoop(true);
+assert.equal(twice.state.repeat, Infinity, "setLoop(true) overrides with forever");
+
+// A one-shot image (repeat 0) is the old "loop off": park at the end.
+const declaredOnce = createEngine(frames, 200, clock);
+declaredOnce.setRepeat(0);
+assert.equal(declaredOnce.state.loop, false, "repeat 0 reads as not looping");
+t = 0;
+declaredOnce.play();
+runTickAt(200);
+assert.equal(declaredOnce.state.playing, false, "repeat 0 stops at the end");
 
 // ---- speed scales how fast the clock advances ----------------------------
 // At 2× a 100ms wall-clock delta moves the position 200ms, so one tick jumps

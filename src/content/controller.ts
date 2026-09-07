@@ -144,7 +144,7 @@ export function createController(deps: PipelineDeps): Controller {
     try {
       const url = img.currentSrc || img.src;
       const bytes = await deps.fetchBytes(url, ac.signal);
-      const { frames, source, duration, loops } = await deps.decode(bytes, ac.signal);
+      const { frames, source, duration, repeat } = await deps.decode(bytes, ac.signal);
 
       // Torn down mid-flight (reconcile / teardownAll), or superseded by a newer
       // pick of the same image: drop the frames silently.
@@ -161,9 +161,11 @@ export function createController(deps: PipelineDeps): Controller {
       }
 
       const engine = deps.createEngine(frames, duration);
-      // Seed the loop setting from the source so the controls default matches how
-      // the image normally plays (e.g. a one-shot GIF starts with looping off).
-      engine.setLoop(loops);
+      // Seed the repeat count from the image so playback matches how it normally
+      // plays: a one-shot GIF starts with looping off, and one that says "play 3
+      // times" stops after the third. The Loop toggle, whose default reads back
+      // as "does it repeat at all", overrides it either way.
+      engine.setRepeat(repeat);
       const overlay = deps.createOverlay(img, engine, source);
       // The controls export frames straight out of the source that feeds the
       // overlay, so a saved frame is exactly the one on screen — and the image's

@@ -206,8 +206,10 @@ export async function decodeWebP(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     signal,
   });
 
-  // loopCount 1 = play exactly once; 0 (infinite) or ≥2 means it repeats.
-  return { frames, source, duration: elapsed, loops: loopCount !== 1 };
+  // The ANIM chunk's loop count is a number of *plays*, not of repeats (the GIF
+  // reading — see gif2webp's `-loop_compatibility`, which converts between the
+  // two): 1 plays exactly once, N plays N times, 0 means forever.
+  return { frames, source, duration: elapsed, repeat: loopCount === 0 ? Infinity : loopCount - 1 };
 }
 
 /**

@@ -55,7 +55,7 @@ function toFailure(err: unknown): DecodeFailure {
 async function run(request: DecodeRequest): Promise<void> {
   let response: DecodeResponse;
   try {
-    const { frames, source, duration, loops } = await decode(request.bytes);
+    const { frames, source, duration, repeat } = await decode(request.bytes);
     const data = source.detach?.();
     if (!data) {
       // A source whose pixels can't be moved. Nothing to hand over, so free it.
@@ -68,7 +68,7 @@ async function run(request: DecodeRequest): Promise<void> {
     }
     try {
       ctx.postMessage(
-        { ok: true, frames, duration, loops, source: data } satisfies DecodeResponse,
+        { ok: true, frames, duration, repeat, source: data } satisfies DecodeResponse,
         frameSourceTransferables(data),
       );
     } catch (err) {

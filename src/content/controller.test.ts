@@ -39,10 +39,11 @@ const deps = {
       close: () => closedSources++,
     },
     duration: 100 * frameCount,
-    loops: true,
+    repeat: Infinity,
   }),
   createEngine: () => ({
     setLoop: () => {},
+    setRepeat: () => {},
     setSpeed: () => {},
     setReverse: () => {},
     setPingPong: () => {},
@@ -156,6 +157,7 @@ ctrl.teardownAll();
     },
     createEngine: () => ({
       setLoop: () => {},
+      setRepeat: () => {},
       setSpeed: () => {},
       setReverse: () => {},
       setPingPong: () => {},
@@ -185,7 +187,7 @@ ctrl.teardownAll();
     frames: [{ time: 1, delay: 1 }],
     source: { width: 1, height: 1, frameCount: 1, getBitmap: () => ({}), close: () => closed++ },
     duration: 1,
-    loops: false,
+    repeat: 0,
   });
   await done;
 
@@ -209,6 +211,7 @@ ctrl.teardownAll();
     },
     createEngine: () => ({
       setLoop: () => {},
+      setRepeat: () => {},
       setSpeed: () => {},
       setReverse: () => {},
       setPingPong: () => {},
@@ -242,6 +245,7 @@ ctrl.teardownAll();
     },
     createEngine: () => ({
       setLoop: () => {},
+      setRepeat: () => {},
       setSpeed: () => {},
       setReverse: () => {},
       setPingPong: () => {},
@@ -281,6 +285,7 @@ ctrl.teardownAll();
     },
     createEngine: () => ({
       setLoop: () => {},
+      setRepeat: () => {},
       setSpeed: () => {},
       setReverse: () => {},
       setPingPong: () => {},
@@ -334,10 +339,11 @@ ctrl.teardownAll();
       ],
       source: { width: 4, height: 4, frameCount: 2, getBitmap: () => ({}), close: () => {} },
       duration: 200,
-      loops: true,
+      repeat: Infinity,
     }),
     createEngine: () => ({
       setLoop: () => {},
+      setRepeat: () => {},
       setSpeed: () => {},
       setReverse: () => {},
       setPingPong: () => {},

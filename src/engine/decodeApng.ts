@@ -25,6 +25,11 @@
 // viewers with no background of their own, and browsers have one — they let the
 // page show through transparent pixels rather than painting bKGD. So the canvas
 // starts, and disposes to, transparent black.
+//
+// The colour-management chunks are the opposite case: they change what the
+// pixels *mean*, the browser applies them when it renders the original, and a
+// frame blob without them decodes to visibly different colours. So they are
+// carried into every frame — see COLOUR_CHUNKS.
 
 import {
   createFrameSource,
@@ -45,6 +50,25 @@ import {
 } from "./types";
 
 const PNG_SIG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * Chunks that tell the PNG decoder how to interpret the pixels: gamma, the
+ * chromaticities, an embedded ICC profile, the sRGB rendering intent, the
+ * significant bits, and (PNG Third Edition) the coding-independent code points
+ * an HDR image is tagged with.
+ *
+ * Every frame blob is a PNG in its own right, so anything the parent image said
+ * about its colour has to be said again in each one, or the browser decodes the
+ * frame as untagged and renders it in slightly the wrong colours. They are
+ * copied out whole — length, type, payload and the original CRC — and
+ * re-emitted in the order they appeared, which is where the spec wants them:
+ * after IHDR, before PLTE and IDAT.
+ *
+ * bKGD, tEXt, pHYs and friends are left behind: they say nothing about how the
+ * pixels decode, and an iCCP profile is already repeated in every frame, so
+ * there is no room for the ones that don't earn it.
+ */
+const COLOUR_CHUNKS = new Set(["gAMA", "cHRM", "iCCP", "sRGB", "sBIT", "cICP"]);
 
 const DISPOSE_OP_BACKGROUND = 1;
 const DISPOSE_OP_PREVIOUS = 2;
@@ -107,6 +131,7 @@ function parseApng(buf: ArrayBuffer): {
   canvasWidth: number;
   canvasHeight: number;
   ihdrData: Uint8Array; // 13-byte IHDR payload for reuse in frame blobs
+  colourChunks: Uint8Array[]; // whole chunks, in file order (see COLOUR_CHUNKS)
   plte: Uint8Array | null;
   trns: Uint8Array | null;
   numPlays: number;
@@ -121,6 +146,7 @@ function parseApng(buf: ArrayBuffer): {
   let canvasWidth = 0;
   let canvasHeight = 0;
   let ihdrData: Uint8Array | null = null;
+  const colourChunks: Uint8Array[] = [];
   let plte: Uint8Array | null = null;
   let trns: Uint8Array | null = null;
   // acTL num_plays: 0 = infinite, N = play N times. Default to infinite.
@@ -133,6 +159,7 @@ function parseApng(buf: ArrayBuffer): {
 
   let offset = 8;
   while (offset + 12 <= buf.byteLength) {
+    const chunkStart = offset;
     const dataLen = readU32BE(buf, offset);
     const type = readChunkType(buf, offset + 4);
     const dataOff = offset + 8;
@@ -147,6 +174,13 @@ function parseApng(buf: ArrayBuffer): {
       plte = new Uint8Array(buf, dataOff, dataLen).slice();
     } else if (type === "tRNS") {
       trns = new Uint8Array(buf, dataOff, dataLen).slice();
+    } else if (COLOUR_CHUNKS.has(type)) {
+      // Kept byte for byte, CRC included, so nothing has to be rebuilt. A chunk
+      // running off the end of a truncated file is dropped rather than thrown
+      // over: the frames before it are still worth playing.
+      if (offset <= buf.byteLength) {
+        colourChunks.push(new Uint8Array(buf, chunkStart, 12 + dataLen).slice());
+      }
     } else if (type === "acTL") {
       // num_frames is informational (we rely on fcTL/fdAT structure); num_plays
       // (offset +4 in the chunk data) is the loop count, 0 = infinite.
@@ -193,6 +227,7 @@ function parseApng(buf: ArrayBuffer): {
     canvasWidth,
     canvasHeight,
     ihdrData,
+    colourChunks,
     plte,
     trns,
     numPlays,
@@ -206,6 +241,7 @@ function parseApng(buf: ArrayBuffer): {
 function makeFrameBlob(
   frame: FcTLInfo,
   ihdrData: Uint8Array, // parent image's 13-byte IHDR payload
+  colourChunks: Uint8Array[], // parent image's colour chunks, verbatim
   plte: Uint8Array | null,
   trns: Uint8Array | null,
 ): Blob {
@@ -229,6 +265,7 @@ function makeFrameBlob(
   const parts = [
     PNG_SIG,
     makeChunk("IHDR", frameIhdr),
+    ...colourChunks,
     ...(plte ? [makeChunk("PLTE", plte)] : []),
     ...(trns ? [makeChunk("tRNS", trns)] : []),
     makeChunk("IDAT", idatPayload),
@@ -278,6 +315,7 @@ export async function decodeApng(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     canvasWidth,
     canvasHeight,
     ihdrData,
+    colourChunks,
     plte,
     trns,
     numPlays,
@@ -289,7 +327,7 @@ export async function decodeApng(bytes: ArrayBuffer, signal?: AbortSignal): Prom
   let elapsed = 0;
   for (const rf of rawFrames) {
     steps.push({
-      patch: { kind: "blob", blob: makeFrameBlob(rf, ihdrData, plte, trns) },
+      patch: { kind: "blob", blob: makeFrameBlob(rf, ihdrData, colourChunks, plte, trns) },
       x: rf.x,
       y: rf.y,
       width: rf.width,
@@ -318,6 +356,7 @@ export async function decodeApng(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     signal,
   });
 
-  // num_plays 1 = play exactly once; 0 (infinite) or ≥2 means it repeats.
-  return { frames, source, duration: elapsed, loops: numPlays !== 1 };
+  // acTL's num_plays counts whole plays, not repeats: 1 plays exactly once, N
+  // plays N times, 0 means forever.
+  return { frames, source, duration: elapsed, repeat: numPlays === 0 ? Infinity : numPlays - 1 };
 }

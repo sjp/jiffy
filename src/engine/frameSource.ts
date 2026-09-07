@@ -64,7 +64,11 @@ export type FramePatch =
   | {
       kind: "indexed";
       pixels: Uint8Array;
-      /** Flattened RGB triples; `pixels[i] * 3` indexes it. */
+      /**
+       * Flattened RGB triples; `pixels[i] * 3` indexes it. Covers every index a
+       * byte can hold, so an out-of-table index reads black rather than off the
+       * end (see decode.ts's PALETTE_ENTRIES).
+       */
       palette: Uint8Array;
       /** Palette index that means "transparent", or -1 for none. */
       transparentIndex: number;

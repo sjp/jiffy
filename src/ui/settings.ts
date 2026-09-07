@@ -56,8 +56,11 @@ export const SETTINGS_CONFIG: SettingsEntry[] = [
     label: "Loop",
     kind: "toggle",
     default: true,
-    // The engine is seeded from the source's loop setting (content pipeline), so
-    // the toggle starts matching how the image normally plays.
+    // The engine is seeded with the image's own repeat count (content pipeline),
+    // so the toggle starts matching how the image normally plays: on when it
+    // repeats at all. It is an override, not a mirror — a GIF that says "play 3
+    // times" shows Loop on and stops after the third, and turning the toggle off
+    // and back on trades the declared count for forever.
     deriveDefault: (engine) => engine.state.loop,
   },
   {

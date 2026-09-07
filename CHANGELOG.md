@@ -139,9 +139,22 @@ read on the release.
   animation of 300 patches was costed at 2.2 GB against an actual 48 MB and
   refused outright. Each frame's declared size is now used, which the parser
   already knows before anything is decompressed.
-- An animated AVIF that says it plays once now stops on its last frame instead
-  of looping forever. The loop count is on the track all along — the same figure
-  GIF, WebP and APNG take from their own containers — and was simply never read.
+- An image that says how many times it plays now stops when it has. Every
+  container carries a repeat count — a GIF's `NETSCAPE2.0` count, an animated
+  WebP's loop count, an APNG's `num_plays`, an AVIF track's repetitions — and
+  all of it was being flattened to "does this loop at all", so a GIF asking for
+  three plays ran forever and an AVIF asking for one never stopped. The declared
+  count is now carried through and playback parks on the last frame once it runs
+  out, as the browser's own `<img>` does. **Loop** in the ⚙ menu still overrides
+  it — on plays forever, off plays once — and the play button replays the whole
+  thing. GIFs written with the older `ANIMEXTS1.0` spelling of the looping
+  extension are recognised as well.
+- A colour-tagged animated PNG no longer shifts colour while controlled. Each
+  frame is handed to the browser as a small PNG of its own, and the chunks that
+  say how its pixels decode — `gAMA`, `cHRM`, `iCCP`, `sRGB`, `sBIT`, `cICP` —
+  were left out of them, so a wide-gamut or gamma-tagged APNG rendered slightly
+  differently under Jiffy than as the page's own image. They are now copied into
+  every frame.
 - The crosshair is now shown over every part of the page while picking. It was
   set as an inherited cursor, so anything with a cursor of its own kept it — a
   link-wrapped GIF stayed a hand, a lightbox thumbnail stayed a magnifier — and

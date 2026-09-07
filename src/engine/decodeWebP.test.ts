@@ -115,26 +115,32 @@ const file = buildWebP([
   chunk("ANMF", anmf(100)),
 ]);
 
-const { frames, source, duration, loops } = await decodeWebP(ab(file));
+const { frames, source, duration, repeat } = await decodeWebP(ab(file));
 
 assert.equal(frames.length, 2, "frame count");
 assert.equal(source.frameCount, 2, "frame source frame count");
 assert.equal(source.width, 4, "frame source width from VP8X");
 assert.equal(source.height, 4, "frame source height from VP8X");
 
-// ANIM loop count is 0 (infinite) → loops.
-assert.equal(loops, true, "loop count 0 (infinite) → loops");
+// ANIM loop count is 0 (infinite) → repeats forever.
+assert.equal(repeat, Infinity, "loop count 0 (infinite) → repeats forever");
 
-// A loop count of exactly 1 means play once → does not loop.
-const playOnce = buildWebP([
-  chunk("VP8X", vp8x(4, 4, true)),
-  chunk("ANIM", [0xff, 0xff, 0xff, 0xff, 1, 0]), // BGRA + loop count = 1
-  chunk("ANMF", anmf(10)),
-  chunk("ANMF", anmf(100)),
-]);
-const once = await decodeWebP(ab(playOnce));
-assert.equal(once.loops, false, "loop count 1 → plays once");
+// The ANIM count is a number of plays, so it is one more than the repeat count:
+// exactly 1 means play once and never repeat.
+const withLoopCount = (count: number) =>
+  buildWebP([
+    chunk("VP8X", vp8x(4, 4, true)),
+    chunk("ANIM", [0xff, 0xff, 0xff, 0xff, count & 0xff, count >> 8]), // BGRA + loop count
+    chunk("ANMF", anmf(10)),
+    chunk("ANMF", anmf(100)),
+  ]);
+const once = await decodeWebP(ab(withLoopCount(1)));
+assert.equal(once.repeat, 0, "loop count 1 → plays once, no repeats");
 once.source.close();
+
+const thrice = await decodeWebP(ab(withLoopCount(3)));
+assert.equal(thrice.repeat, 2, "loop count 3 → three plays, two repeats");
+thrice.source.close();
 
 assert.equal(frames[0]!.delay, 100, "frame 0 delay (10ms → the browser's 100ms)");
 assert.equal(frames[1]!.delay, 100, "frame 1 delay (100ms, left alone)");

@@ -48,7 +48,8 @@ export type DecodeResponse =
       ok: true;
       frames: Frame[];
       duration: number;
-      loops: boolean;
+      /** Declared repeats; see DecodeResult.repeat. `Infinity` clones fine. */
+      repeat: number;
       /** Hydrate with `hydrateFrameSource` to get the playback-side source. */
       source: FrameSourceData;
     }

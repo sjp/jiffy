@@ -50,9 +50,14 @@ declare module "gifuct-js" {
     };
   }
 
-  /** An application extension block — NETSCAPE2.0 (looping) and friends. */
+  /**
+   * An application extension block — NETSCAPE2.0 (looping) and friends.
+   * `blocks` is the extension's sub-blocks concatenated, which the underlying
+   * schema parser hands back as a `Uint8Array` (the shipped types say
+   * `number[]`); for the looping extension that is `[1, count-lo, count-hi]`.
+   */
   export interface GifApplicationBlock {
-    application: { id: string; blocks: number[] };
+    application: { id: string; blocks: Uint8Array };
   }
 
   /**

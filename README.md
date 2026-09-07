@@ -62,6 +62,7 @@ Prefer to build it yourself? See [Building from source](#building-from-source).
 | ▶ / ⏸ Play / Pause | Start or stop playback                     |
 | ◀ / ▶ Step         | Jump one frame back or forward (pauses)    |
 | Scrubber           | Click or drag to seek to any frame         |
+| Loop               | Repeat forever, or play through once       |
 | Speed              | Slow down or speed up playback             |
 | Direction          | Forward, reverse, or ping-pong (bounce)    |
 | Copy frame         | Put the frame on screen on the clipboard   |
@@ -69,6 +70,11 @@ Prefer to build it yourself? See [Building from source](#building-from-source).
 | Grip handle        | Drag to move the player bar out of the way |
 | Double-click grip  | Snap the bar back to its default spot      |
 | ✕ Close            | Remove the controls                        |
+
+> 🔁 **How many times it plays** — an animation that asks to be played a set
+> number of times is played that many times and then parks on its last frame,
+> the way the browser plays it. **Loop** in the ⚙ menu overrides that: on repeats
+> forever, off plays through once, and ▶ replays from the start either way.
 
 > 💾 **Getting a frame out** — speed, direction, loop and the two frame-export
 > actions live behind the ⚙ button, which keeps the bar small enough to sit on

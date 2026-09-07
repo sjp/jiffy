@@ -12,7 +12,7 @@
 // happens per patch draw during playback (see frameSource's drawIndexed).
 
 import { parseGIF, decompressFrames } from "gifuct-js";
-import type { ParsedFrame } from "gifuct-js";
+import type { ParsedFrame, ParsedGif } from "gifuct-js";
 
 import { decodeApng, isAnimatedPng } from "./decodeApng";
 import { decodeAvif, isAnimatedAvif } from "./decodeAvif";
@@ -91,6 +91,16 @@ const toDispose = (disposalType: number | undefined): Dispose =>
       : DISPOSE_NONE;
 
 /**
+ * Every index a GIF's one-byte pixels can name. A colour table is allowed to be
+ * shorter, and a malformed file (or one whose local table is smaller than its
+ * largest index) then points past the end of it. Padding the flattened palette
+ * out to the full index space makes that pixel opaque black — what gifuct's own
+ * patch builder paints for the same case — without a bounds check inside the
+ * per-pixel expansion loop. The padding costs at most 768 bytes per table.
+ */
+const PALETTE_ENTRIES = 256;
+
+/**
  * Flatten gifuct's `[r,g,b][]` colour table into the packed triples the frame
  * source indexes. Frames of a GIF using the global colour table share one array
  * instance, so the flattened palette is shared too — a per-frame copy would cost
@@ -102,7 +112,7 @@ function flattenPalette(
 ): Uint8Array {
   const hit = cache.get(colorTable);
   if (hit) return hit;
-  const flat = new Uint8Array(colorTable.length * 3);
+  const flat = new Uint8Array(Math.max(colorTable.length, PALETTE_ENTRIES) * 3);
   for (let i = 0; i < colorTable.length; i++) {
     const c = colorTable[i]!;
     flat[i * 3] = c[0];
@@ -132,6 +142,35 @@ function toStep(rf: ParsedFrame, palettes: Map<unknown, Uint8Array>): FrameStep 
     clear: false, // GIF patches always blend over the canvas
     dispose: toDispose(rf.disposalType),
   };
+}
+
+/**
+ * The GIF's repeat count, as {@link DecodeResult.repeat} counts them.
+ *
+ * It lives in the looping application extension, whose one sub-block is
+ * `[1, count-lo, count-hi]`: count 0 means forever, count N means N repeats
+ * *after* the first play (N + 1 plays in total — the reading both Gecko and
+ * Blink implement, and the one `gif2webp -loop_compatibility` converts away
+ * from). A GIF carrying no such extension plays through exactly once.
+ *
+ * Netscape's `NETSCAPE2.0` is the identifier everything writes; `ANIMEXTS1.0`
+ * is the equivalent from Animation Extensions, which browsers accept and some
+ * older encoders emit. gifuct keeps both as `application` entries in the raw
+ * `gif.frames` (the decompressed frames hold only images).
+ */
+function readLoopCount(gif: ParsedGif): number {
+  for (const block of gif.frames) {
+    if (!("application" in block)) continue;
+    const { id, blocks } = block.application;
+    if (id !== "NETSCAPE2.0" && id !== "ANIMEXTS1.0") continue;
+    // A truncated or unrecognised sub-block tells us nothing about the count,
+    // but the extension's presence still means "repeats" — forever is what
+    // every encoder that writes one without a usable count intends.
+    if (blocks.length < 3 || blocks[0] !== 1) return Infinity;
+    const count = blocks[1]! | (blocks[2]! << 8);
+    return count === 0 ? Infinity : count;
+  }
+  return 0;
 }
 
 /**
@@ -181,13 +220,7 @@ export async function decode(bytes: ArrayBuffer, signal?: AbortSignal): Promise<
   // `false` → skip gifuct's RGBA patch expansion; we keep the indexed pixels.
   const rawFrames = decompressFrames(gif, false);
 
-  // Loop setting from the NETSCAPE2.0 application extension. Its presence means
-  // the GIF repeats (count 0 = infinite, count N = N repeats); a GIF without it
-  // plays through once. gifuct keeps the extension as an `application` entry in
-  // the raw `gif.frames` (the decompressed `rawFrames` above hold only images).
-  const loops = gif.frames.some(
-    (block) => "application" in block && block.application.id === "NETSCAPE2.0",
-  );
+  const repeat = readLoopCount(gif);
 
   const palettes = new Map<unknown, Uint8Array>();
   const steps: FrameStep[] = [];
@@ -205,5 +238,5 @@ export async function decode(bytes: ArrayBuffer, signal?: AbortSignal): Promise<
   }
 
   const source = await createFrameSource({ width, height, steps, signal });
-  return { frames, source, duration: elapsed, loops };
+  return { frames, source, duration: elapsed, repeat };
 }

@@ -275,6 +275,6 @@ export async function decodeInWorker(
     frames: response.frames,
     source: hydrateFrameSource(response.source),
     duration: response.duration,
-    loops: response.loops,
+    repeat: response.repeat,
   };
 }

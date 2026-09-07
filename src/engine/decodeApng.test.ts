@@ -162,7 +162,7 @@ const APNG = new Uint8Array([
   0x00, 0x00, 0x00, 0x00,
 ]);
 
-const { frames, source, duration, loops } = await decodeApng(
+const { frames, source, duration, repeat } = await decodeApng(
   APNG.buffer.slice(APNG.byteOffset, APNG.byteOffset + APNG.byteLength),
 );
 
@@ -171,8 +171,8 @@ assert.equal(source.frameCount, 2, "frame source frame count");
 assert.equal(source.width, 2, "frame source width from IHDR");
 assert.equal(source.height, 2, "frame source height from IHDR");
 
-// acTL num_plays is 0 (infinite) → loops.
-assert.equal(loops, true, "num_plays 0 (infinite) → loops");
+// acTL num_plays is 0 (infinite) → repeats forever.
+assert.equal(repeat, Infinity, "num_plays 0 (infinite) → repeats forever");
 
 assert.equal(frames[0]!.delay, 50, "frame 0 delay (5/100 s → 50ms)");
 assert.equal(frames[1]!.delay, 100, "frame 1 delay (10/100 s → 100ms)");
@@ -212,6 +212,68 @@ await assert.rejects(
   /closed/,
   "a closed source hands out nothing",
 );
+
+// ---- colour-management chunks travel into every frame ---------------------
+// Each frame blob is a PNG in its own right, so the chunks that say how its
+// pixels decode — gamma, chromaticities, ICC profile, rendering intent — have to
+// be repeated in it. Dropping them is what made a tagged APNG render in slightly
+// different colours under Jiffy than as the page's own <img>.
+{
+  // Whole chunks, as they'd sit in the file (the CRCs are never checked here).
+  const chunk = (type: string, data: number[]) => [
+    (data.length >> 24) & 0xff,
+    (data.length >> 16) & 0xff,
+    (data.length >> 8) & 0xff,
+    data.length & 0xff,
+    ...[...type].map((c) => c.charCodeAt(0)),
+    ...data,
+    0x00,
+    0x00,
+    0x00,
+    0x00, // CRC (fake)
+  ];
+  // Spliced in right after the parent IHDR (8-byte signature + 25-byte chunk),
+  // which is where the spec puts them and where they have to come back out.
+  const IHDR_END = 8 + 25;
+  const tagged = new Uint8Array([
+    ...APNG.subarray(0, IHDR_END),
+    ...chunk("gAMA", [0x00, 0x00, 0xb1, 0x8f]), // 1/2.2
+    ...chunk(
+      "cHRM",
+      Array.from({ length: 32 }, () => 0x11),
+    ),
+    ...chunk("sRGB", [0x00]), // perceptual
+    ...chunk("iCCP", [0x70, 0x00, 0x00, 0x78, 0x9c]), // "p\0" + fake deflate
+    ...APNG.subarray(IHDR_END),
+  ]);
+
+  const decoded = await decodeApng(
+    tagged.buffer.slice(tagged.byteOffset, tagged.byteOffset + tagged.byteLength),
+  );
+  // The steps hold the reconstructed per-frame PNGs; detaching is how they come
+  // back out (it's what the worker hands across a thread boundary).
+  const detached = decoded.source.detach!();
+  assert.equal(detached.steps.length, 2, "both frames were reconstructed");
+
+  for (const [index, step] of detached.steps.entries()) {
+    assert.equal(step.patch?.kind, "blob", `frame ${index} is a blob patch`);
+    const blob = (step.patch as { kind: "blob"; blob: Blob }).blob;
+    const png = String.fromCharCode(...new Uint8Array(await blob.arrayBuffer()));
+    const at = (type: string) => png.indexOf(type);
+
+    for (const type of ["gAMA", "cHRM", "sRGB", "iCCP"]) {
+      assert.ok(at(type) > 0, `frame ${index} carries ${type}`);
+      assert.ok(at(type) < at("IDAT"), `frame ${index}: ${type} precedes IDAT`);
+    }
+    // Same order as the parent, which is what the chunk-ordering rules ask for.
+    assert.ok(at("IHDR") < at("gAMA"), `frame ${index}: IHDR first`);
+    assert.ok(at("gAMA") < at("cHRM"), `frame ${index}: gAMA before cHRM`);
+    assert.ok(at("cHRM") < at("sRGB"), `frame ${index}: cHRM before sRGB`);
+    assert.ok(at("sRGB") < at("iCCP"), `frame ${index}: sRGB before iCCP`);
+    // bKGD says nothing about how the pixels decode, so it stays behind.
+    assert.equal(at("bKGD"), -1, `frame ${index} drops bKGD`);
+  }
+}
 
 // ---- a pre-aborted signal cancels the decode -----------------------------
 const abortedApng = new AbortController();

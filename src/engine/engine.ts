@@ -35,8 +35,10 @@ const defaultClock: EngineClock = {
  * - `step` **clamps** at both ends (stepping past the last frame stays on it).
  * - `play()` parked on the end it would move away from restarts from the far
  *   edge (replay) — last→first when going forward, first→last when reversed.
- * - When `loop` is on (default) the clock wraps modulo `duration`; when off,
- *   reaching the end parks on that frame and pauses (video-style).
+ * - Each pass over the end wraps the clock modulo `duration` and spends one of
+ *   the image's declared repeats (`setRepeat`; `Infinity` by default, so it
+ *   wraps forever). With none left, reaching the end parks on that frame and
+ *   pauses (video-style). `play()` refills the budget when it replays.
  * - `reverse` runs the clock backwards; `pingpong` bounces between the ends
  *   forever (taking precedence over loop/reverse). Both steer the live `dir`.
  */
@@ -52,9 +54,14 @@ export function createEngine(
   let index = 0;
   let rafHandle: number | null = null;
   let lastTick = 0;
-  // Default on (preserves the historical always-loop behaviour); callers override
-  // via setLoop with the source's own loop setting.
-  let loop = true;
+  // How many times playback repeats after the current pass. `Infinity` — the
+  // default, preserving the historical always-loop behaviour — never runs out;
+  // callers set the image's own declared count via setRepeat, and the Loop
+  // toggle overrides it through setLoop. `repeatsLeft` is the live budget,
+  // refilled from `repeat` whenever play() restarts from the far edge, so the
+  // play button always replays the whole thing.
+  let repeat = Infinity;
+  let repeatsLeft = Infinity;
   // Playback rate multiplier; the tick advances the clock by `delta * speed`.
   let speed = 1;
   // Direction modifiers. `reverse` plays backwards; `pingpong` bounces between
@@ -88,7 +95,8 @@ export function createEngine(
     frameCount,
     currentTime: position,
     duration,
-    loop,
+    loop: repeat !== 0,
+    repeat: repeatsLeft,
     speed,
     reverse,
     pingpong,
@@ -112,10 +120,11 @@ export function createEngine(
       if (pingpong) {
         position = duration; // turn around and keep playing
         dir = -1;
-      } else if (loop) {
+      } else if (repeatsLeft > 0) {
+        repeatsLeft -= 1; // Infinity - 1 is still Infinity: loops forever
         position %= duration; // wrap and keep playing
       } else {
-        // Looping off: park on the last frame and stop, like a video ending.
+        // Out of repeats: park on the last frame and stop, like a video ending.
         // play() restarts from 0, so the play button replays.
         position = duration;
         index = frameCount - 1;
@@ -129,12 +138,13 @@ export function createEngine(
       if (pingpong) {
         position = 0; // turn around and keep playing
         dir = 1;
-      } else if (loop) {
+      } else if (repeatsLeft > 0) {
         // Wrap to the end and keep playing backwards.
+        repeatsLeft -= 1;
         position %= duration;
         if (position <= 0) position += duration;
       } else {
-        // Looping off: park on the first frame and stop.
+        // Out of repeats: park on the first frame and stop.
         position = 0;
         index = 0;
         playing = false;
@@ -165,9 +175,11 @@ export function createEngine(
     if (dir > 0 && index >= frameCount - 1) {
       position = 0;
       index = 0;
+      repeatsLeft = repeat;
     } else if (dir < 0 && index <= 0) {
       position = duration;
       index = frameCount - 1;
+      repeatsLeft = repeat;
     }
     playing = true;
     lastTick = clock.now();
@@ -207,10 +219,24 @@ export function createEngine(
     notify();
   };
 
-  const setLoop = (enabled: boolean): void => {
-    if (loop === enabled) return;
-    loop = enabled;
+  // The declared count. Setting it refills the live budget: it arrives before
+  // playback starts, and re-declaring mid-play means starting the count over.
+  const setRepeat = (count: number): void => {
+    const next = Number.isNaN(count) ? 0 : Math.max(count, 0);
+    if (repeat === next && repeatsLeft === next) return;
+    repeat = next;
+    repeatsLeft = next;
     notify();
+  };
+
+  // The user's override, as the Loop toggle in the settings menu: on means
+  // forever regardless of what the image declared, off means play once. The
+  // unchanged-guard is what keeps a finite declared count intact — the toggle
+  // is seeded from `loop`, so applySettings re-asserting `true` on every
+  // unrelated settings change must not overwrite a "play 3 times" with forever.
+  const setLoop = (enabled: boolean): void => {
+    if (enabled === (repeat !== 0)) return;
+    setRepeat(enabled ? Infinity : 0);
   };
 
   // Rate must be positive; ignore non-positive/NaN so the loop can't stall or
@@ -264,6 +290,7 @@ export function createEngine(
     seekToTime,
     seekToIndex,
     setLoop,
+    setRepeat,
     setSpeed,
     setReverse,
     setPingPong,

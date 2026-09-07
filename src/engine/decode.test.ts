@@ -34,7 +34,7 @@ const { decode, NotAnimatedError } = await import("./decode.ts");
 
 // The fixture (see ../test/gifFixture) is 2×1, black/white, swapped between two
 // frames, each with a 10-centisecond delay and no loop extension.
-const { frames, source, duration, loops } = await decode(gifBytes());
+const { frames, source, duration, repeat } = await decode(gifBytes());
 
 assert.equal(frames.length, 2, "frame count");
 assert.equal(source.frameCount, 2, "frame source frame count");
@@ -42,7 +42,7 @@ assert.equal(source.width, 2, "frame source width");
 assert.equal(source.height, 1, "frame source height");
 
 // No NETSCAPE2.0 application extension → the GIF plays through once.
-assert.equal(loops, false, "GIF without a loop extension does not loop");
+assert.equal(repeat, 0, "GIF without a loop extension does not repeat");
 
 // gifuct normalises delay (10cs → 100ms), which is above the short-delay rule.
 assert.equal(frames[0]!.delay, 100, "frame 0 delay (ms)");
@@ -76,17 +76,19 @@ assert.deepEqual(pixelAt(frame0Again, 0, 0), black, "frame 0 still correct after
 
 source.close();
 
-// ---- a looping GIF: same frames + a NETSCAPE2.0 loop extension -----------
-// The application extension after the GCT marks the GIF as repeating (count 0 =
-// infinite), so decode should report loops = true.
+// ---- the looping application extension -----------------------------------
+// The extension after the GCT carries a 16-bit count: 0 is forever, N is N
+// repeats *after* the first play (N + 1 plays, the reading both engines
+// implement). `ANIMEXTS1.0` is the same extension under its other identifier.
+/** The 2-frame fixture with `id` declaring `count` repeats. */
 // prettier-ignore
-const LOOPING_GIF = new Uint8Array([
+const loopingGif = (id: string, count: number) => new Uint8Array([
   0x47, 0x49, 0x46, 0x38, 0x39, 0x61,             // "GIF89a"
   0x02, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00,       // LSD: 2×1, global colour table (2)
   0x00, 0x00, 0x00, 0xff, 0xff, 0xff,             // GCT: black, white
   0x21, 0xff, 0x0b,                               // app extension, block size 11
-  0x4e, 0x45, 0x54, 0x53, 0x43, 0x41, 0x50, 0x45, 0x32, 0x2e, 0x30, // "NETSCAPE2.0"
-  0x03, 0x01, 0x00, 0x00, 0x00,                   // sub-block: id 1, loop count 0, terminator
+  ...[...id].map((c) => c.charCodeAt(0)),         // "NETSCAPE2.0" / "ANIMEXTS1.0"
+  0x03, 0x01, count & 0xff, count >> 8, 0x00,     // sub-block: id 1, loop count, terminator
   0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00, // GCE frame 0: delay=10cs
   0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 0
   0x02, 0x02, 0x44, 0x0a, 0x00,                   // LZW: pixels [0,1]
@@ -96,12 +98,49 @@ const LOOPING_GIF = new Uint8Array([
   0x3b,                                           // trailer
 ]);
 
-const looping = await decode(
-  LOOPING_GIF.buffer.slice(LOOPING_GIF.byteOffset, LOOPING_GIF.byteOffset + LOOPING_GIF.byteLength),
-);
+const decodeLooping = async (id: string, count: number) => {
+  const bytes = loopingGif(id, count);
+  return decode(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+};
+
+const looping = await decodeLooping("NETSCAPE2.0", 0);
 assert.equal(looping.frames.length, 2, "looping GIF still decodes 2 frames");
-assert.equal(looping.loops, true, "GIF with NETSCAPE2.0 extension loops");
+assert.equal(looping.repeat, Infinity, "NETSCAPE2.0 count 0 → loops forever");
 looping.source.close();
+
+// A finite count is carried through instead of being flattened to "it loops":
+// the browser plays such a GIF count + 1 times and then stops.
+const thrice = await decodeLooping("NETSCAPE2.0", 3);
+assert.equal(thrice.repeat, 3, "NETSCAPE2.0 count 3 → three repeats");
+thrice.source.close();
+
+const netscapeOnce = await decodeLooping("NETSCAPE2.0", 1);
+assert.equal(netscapeOnce.repeat, 1, "NETSCAPE2.0 count 1 → one repeat, not forever");
+netscapeOnce.source.close();
+
+const animexts = await decodeLooping("ANIMEXTS1.0", 0);
+assert.equal(animexts.repeat, Infinity, "ANIMEXTS1.0 is the same extension");
+animexts.source.close();
+
+// ---- the palette covers every index a pixel byte can name ----------------
+// A GIF's colour table may be shorter than the indices its pixels name (a
+// malformed file, or a local table smaller than its own maximum). Padding the
+// flattened palette to the full 256 entries makes such a pixel opaque black —
+// what gifuct's own patch builder paints — with no bounds check in the
+// per-pixel expansion loop.
+{
+  const decoded = await decode(gifBytes());
+  const patch = decoded.source.detach!().steps[0]!.patch;
+  assert.equal(patch?.kind, "indexed", "GIF frames are indexed patches");
+  const { palette } = patch as Extract<typeof patch, { kind: "indexed" }>;
+  assert.equal(palette.length, 256 * 3, "palette spans every index a byte holds");
+  // The fixture declares two colours; everything past them is black.
+  assert.deepEqual(
+    Array.from(palette.subarray(6)),
+    Array.from({ length: palette.length - 6 }, () => 0),
+    "indices past the declared table are black",
+  );
+}
 
 // ---- the browser's short-delay rule --------------------------------------
 // Both engines show any frame declaring ≤10 ms for 100 ms (the historic GIF
