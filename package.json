@@ -16,7 +16,7 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "node scripts/test.mjs",
-    "pack": "cd dist-firefox && zip -r ../jiffy-firefox.zip . && cd .. && cd dist-chrome && zip -r ../jiffy-chrome.zip ."
+    "pack": "rm -f jiffy-firefox.zip jiffy-chrome.zip && (cd dist-firefox && zip -rX ../jiffy-firefox.zip .) && (cd dist-chrome && zip -rX ../jiffy-chrome.zip .)"
   },
   "dependencies": {
     "gifuct-js": "^2.1.2",

@@ -16,6 +16,9 @@
 //   node scripts/build.mjs --chrome           one-off Chrome build   → dist-chrome/
 //   node scripts/build.mjs --firefox --watch  Firefox dev (rebuild on change)
 //   node scripts/build.mjs --chrome  --watch  Chrome  dev (rebuild on change)
+//
+// JIFFY_SOURCEMAP=1 adds external source maps to a one-off build; watch builds
+// always inline them and a plain one-off build ships none.
 
 import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -64,6 +67,19 @@ const browser = isFirefox ? "firefox" : "chrome";
 const outdir = path.join(root, `dist-${browser}`);
 const manifestSrc = path.join(root, `manifest.${browser}.json`);
 
+// Source maps are ~590 KB of an ~785 KB store archive and embed the full source
+// text, so a one-off build (the one that gets packed and uploaded) writes none.
+// Watch builds inline them, since nothing is shipped from a watch build, and
+// JIFFY_SOURCEMAP=1 asks a one-off build for external maps when a production
+// bundle needs debugging — publish those as a separate release asset, not
+// inside the store zip.
+const sourcemap = watch ? "inline" : process.env.JIFFY_SOURCEMAP ? "linked" : false;
+
+// Both browsers get the same public/ tree apart from the icons: the Chrome
+// manifest names only the PNGs, the Firefox one only the SVG. Skip the format
+// the manifest never references so neither archive carries a dead asset.
+const unusedIcons = isChrome ? ["icons/icon.svg"] : ["icons/icon-48.png", "icons/icon-128.png"];
+
 const exists = async (p) => {
   try {
     await access(p);
@@ -85,7 +101,8 @@ async function copyStatic() {
   }
   const publicDir = path.join(root, "public");
   if (await exists(publicDir)) {
-    await cp(publicDir, outdir, { recursive: true });
+    const skip = new Set(unusedIcons.map((rel) => path.join(publicDir, rel)));
+    await cp(publicDir, outdir, { recursive: true, filter: (src) => !skip.has(src) });
   }
 }
 
@@ -128,7 +145,7 @@ const common = {
   bundle: true,
   platform: "browser",
   target: ["firefox115", "chrome148"],
-  sourcemap: true,
+  sourcemap,
   logLevel: "info",
   // Preact JSX — keep in sync with tsconfig (jsx/jsxImportSource).
   jsx: "automatic",

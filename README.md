@@ -148,6 +148,10 @@ npm run build:firefox   # → dist-firefox/
 npm run build:chrome    # → dist-chrome/
 ```
 
+A one-off build writes no source maps — they were three quarters of the store
+archive. Watch mode inlines them, and `JIFFY_SOURCEMAP=1 npm run build` writes
+external ones when a production bundle needs debugging.
+
 ### Watch mode (rebuilds on change)
 
 ```sh
@@ -181,6 +185,9 @@ auto-reload.)
 ```sh
 npm run pack            # → jiffy-firefox.zip and jiffy-chrome.zip
 ```
+
+`pack` deletes any existing archives first, so the zips only ever hold what the
+current build produced.
 
 ### Devcontainer
 

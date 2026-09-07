@@ -82,6 +82,13 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
   now says "Animated AVIF isn't supported in this browser" instead of showing
   the generic "Couldn't load this image" over a file the browser is happily
   animating in the page.
+- Release builds no longer write source maps, and each browser's package now
+  carries only the icon format its manifest names, so the store archives are
+  roughly a quarter of their previous size (~58 KB rather than ~232 KB). Watch
+  builds inline their maps as before, and `JIFFY_SOURCEMAP=1` puts external ones
+  back into a one-off build. `npm run pack` deletes the old archives before
+  writing new ones, so a local zip can no longer keep files that a rebuild
+  dropped.
 
 ### Fixed
 
