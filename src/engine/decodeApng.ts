@@ -32,9 +32,9 @@ import {
   type FrameStep,
 } from "./frameSource";
 import {
-  MIN_DELAY_MS,
   assertDecodeBudget,
   bitmapBytes,
+  normalizeDelay,
   type DecodeResult,
   type Frame,
 } from "./types";
@@ -336,7 +336,7 @@ export async function decodeApng(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     // The reconstructed blob holds everything we need; drop the raw payloads so
     // the uncompressed-in-JS copies aren't pinned for the player's lifetime.
     rf.payloads.length = 0;
-    const delay = Math.max(rf.delayMs, MIN_DELAY_MS);
+    const delay = normalizeDelay(rf.delayMs);
     elapsed += delay;
     frames.push({ time: elapsed, delay });
   }

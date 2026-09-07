@@ -27,9 +27,9 @@ import {
   type FrameStep,
 } from "./frameSource";
 import {
-  MIN_DELAY_MS,
   assertDecodeBudget,
   bitmapBytes,
+  normalizeDelay,
   type DecodeResult,
   type Frame,
 } from "./types";
@@ -62,18 +62,6 @@ function isGif(bytes: ArrayBuffer): boolean {
 }
 
 /**
- * Delay clamp. GIF delays are unreliable — `0`/`1` centiseconds are
- * common and browsers historically clamp to a floor — so we clamp ourselves so
- * the timeline matches user expectation. gifuct-js already normalises `delay`
- * to milliseconds, so `toMs` is the identity here. Floor is shared (engine/types).
- */
-const clampDelay = (ms: number): number => Math.max(ms, MIN_DELAY_MS);
-
-// GIF disposal methods (the GCE "disposal method" field):
-//   0 unspecified / 1 do-not-dispose → leave the canvas as-is
-//   2 restore-to-background          → clear the frame's rect
-//   3 restore-to-previous            → revert to the canvas before this frame
-/**
  * Bytes per pixel gifuct's LZW output costs while a decode is in flight. It
  * decompresses into `new Array(pixelCount)` — a plain JS array of small
  * integers, ~8 bytes an element in V8 — which we convert to a Uint8Array per
@@ -84,7 +72,12 @@ const DECOMPRESS_BYTES_PER_PIXEL = 8;
 const GIF_DISPOSAL_RESTORE_BACKGROUND = 2;
 const GIF_DISPOSAL_RESTORE_PREVIOUS = 3;
 
-const toDispose = (disposalType: number): Dispose =>
+// GIF disposal methods (the GCE "disposal method" field):
+//   0 unspecified / 1 do-not-dispose → leave the canvas as-is
+//   2 restore-to-background          → clear the frame's rect
+//   3 restore-to-previous            → revert to the canvas before this frame
+// A frame with no GCE declares nothing at all, which is method 0.
+const toDispose = (disposalType: number | undefined): Dispose =>
   disposalType === GIF_DISPOSAL_RESTORE_BACKGROUND
     ? DISPOSE_BACKGROUND
     : disposalType === GIF_DISPOSAL_RESTORE_PREVIOUS
@@ -186,7 +179,11 @@ export async function decode(bytes: ArrayBuffer, signal?: AbortSignal): Promise<
   let elapsed = 0;
   for (const rf of rawFrames) {
     steps.push(toStep(rf, palettes));
-    const delay = clampDelay(rf.delay);
+    // `delay` is absent on frames with no Graphic Control Extension (every
+    // GIF87a frame, and GIF89a frames needing neither transparency nor a
+    // delay); normalizeDelay resolves that to the browser's 100 ms rather than
+    // letting `undefined` turn the whole timeline into NaN.
+    const delay = normalizeDelay(rf.delay);
     elapsed += delay;
     frames.push({ time: elapsed, delay });
   }

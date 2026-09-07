@@ -2,7 +2,7 @@
 //
 // Covers isAnimatedAvif (pure ftyp byte scanning), the "ImageDecoder
 // unavailable" guard, the decodeAvif bookkeeping — frame count, monotonic
-// cumulative-time array, duration, delay clamping — and the decoder-backed
+// cumulative-time array, duration, delay normalisation — and the decoder-backed
 // frame source, against a mock ImageDecoder / VideoFrame. Real pixel decode
 // needs a browser with WebCodecs (verified manually).
 

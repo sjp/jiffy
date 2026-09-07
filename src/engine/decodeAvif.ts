@@ -25,16 +25,13 @@
 
 import type { FrameSource } from "./frameSource";
 import {
-  MIN_DELAY_MS,
   assertDecodeBudget,
   bitmapBytes,
+  normalizeDelay,
   throwIfAborted,
   type DecodeResult,
   type Frame,
 } from "./types";
-
-// Fallback per-frame delay when the decoder reports no per-frame duration.
-const DEFAULT_DELAY_MS = 100;
 
 /**
  * Decoded frames kept resident. Small enough that memory stays bounded on a
@@ -181,8 +178,9 @@ export async function decodeAvif(bytes: ArrayBuffer, signal?: AbortSignal): Prom
       }
       image.close();
 
-      const durationMs = durationUs != null ? durationUs / 1000 : DEFAULT_DELAY_MS;
-      const delay = Math.max(Math.round(durationMs), MIN_DELAY_MS);
+      // A null duration (the decoder knows of no per-frame timing) normalises
+      // to the same 100 ms the browser gives a frame declaring none.
+      const delay = normalizeDelay(durationUs == null ? undefined : Math.round(durationUs / 1000));
       elapsed += delay;
       frames.push({ time: elapsed, delay });
     }

@@ -3,12 +3,30 @@
 import type { FrameSource } from "./frameSource";
 
 /**
- * Floor for per-frame delays, in ms. Frame delays are unreliable across all the
- * formats we decode — `0`/`1` are common and browsers historically clamp to a
- * floor — so every decoder clamps to this shared value. Keeping it in one place
- * stops the floor drifting between GIF/WebP/APNG/AVIF.
+ * The delay, in ms, a browser actually shows a frame that declares a very short
+ * one. Both engines apply the same historic GIF workaround to every animated
+ * format: Gecko in `FrameTimeout::FromRawMilliseconds`, Blink in
+ * `BitmapImage::FrameDurationAtIndex` ("we follow Firefox's behavior and use a
+ * duration of 100 ms for any frames that specify a duration of <= 10 ms").
  */
-export const MIN_DELAY_MS = 20;
+export const SHORT_DELAY_MS = 100;
+
+/** Declared delays at or below this (ms) are shown for SHORT_DELAY_MS instead. */
+export const SHORT_DELAY_THRESHOLD_MS = 10;
+
+/**
+ * A declared frame delay as the browser would play it. Every decoder runs its
+ * per-frame delay through this, so the overlay keeps time with the `<img>` it
+ * replaced instead of racing ahead of it.
+ *
+ * Delays are also frequently *absent*: a GIF image block need not carry a
+ * Graphic Control Extension, and WebCodecs reports no duration for some AVIFs.
+ * A missing or nonsensical delay is treated as a declared zero — the same
+ * SHORT_DELAY_MS the browser uses — rather than propagating `NaN` into the
+ * timeline, which would leave the player mounted but unusable.
+ */
+export const normalizeDelay = (ms: number | undefined): number =>
+  ms !== undefined && Number.isFinite(ms) && ms > SHORT_DELAY_THRESHOLD_MS ? ms : SHORT_DELAY_MS;
 
 // The decode memory budget.
 //
@@ -119,7 +137,7 @@ export function assertDecodeBudget(bytes: number, limit = MAX_DECODE_BYTES): voi
 export interface Frame {
   /** Cumulative ms, end-of-frame convention (pick one and keep it). */
   time: number;
-  /** Clamped frame delay in ms. */
+  /** Frame delay in ms, as `normalizeDelay` resolved it. */
   delay: number;
 }
 

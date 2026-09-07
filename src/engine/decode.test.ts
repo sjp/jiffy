@@ -5,7 +5,8 @@
 // Node has no canvas APIs, so we install the software canvas from
 // ../test/fakeCanvas — enough of OffscreenCanvas / createImageBitmap / ImageData
 // to composite for real. That means this test covers both the *bookkeeping*
-// (frame count, monotonic cumulative-time array, duration, delay clamping) and
+// (frame count, monotonic cumulative-time array, duration, delay normalisation)
+// and
 // the actual pixels the frame source produces for a real GIF decoded by
 // gifuct-js. The disposal state machine itself is pinned against the
 // all-bitmap path in frameSource.test.ts.
@@ -21,6 +22,8 @@ import {
   DEFAULT_MAX_DECODE_BYTES,
   MAX_DECODE_BYTES,
   MIN_MAX_DECODE_BYTES,
+  SHORT_DELAY_MS,
+  normalizeDelay,
 } from "./types.ts";
 
 installFakeCanvas();
@@ -41,7 +44,7 @@ assert.equal(source.height, 1, "frame source height");
 // No NETSCAPE2.0 application extension → the GIF plays through once.
 assert.equal(loops, false, "GIF without a loop extension does not loop");
 
-// gifuct normalises delay (10cs → 100ms); clamp leaves it ≥ 20ms.
+// gifuct normalises delay (10cs → 100ms), which is above the short-delay rule.
 assert.equal(frames[0]!.delay, 100, "frame 0 delay (ms)");
 assert.equal(frames[1]!.delay, 100, "frame 1 delay (ms)");
 
@@ -99,6 +102,78 @@ const looping = await decode(
 assert.equal(looping.frames.length, 2, "looping GIF still decodes 2 frames");
 assert.equal(looping.loops, true, "GIF with NETSCAPE2.0 extension loops");
 looping.source.close();
+
+// ---- the browser's short-delay rule --------------------------------------
+// Both engines show any frame declaring ≤10 ms for 100 ms (the historic GIF
+// workaround, applied to every animated format). A missing or nonsensical delay
+// lands on the same value rather than escaping as NaN.
+for (const [declared, expected] of [
+  [0, 100],
+  [1, 100],
+  [10, 100],
+  [11, 11],
+  [20, 20],
+  [100, 100],
+  [1000, 1000],
+] as const) {
+  assert.equal(normalizeDelay(declared), expected, `normalizeDelay(${declared})`);
+}
+for (const missing of [undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
+  assert.equal(normalizeDelay(missing), SHORT_DELAY_MS, `normalizeDelay(${String(missing)})`);
+}
+
+// ---- a GIF whose frames declare 1 centisecond ----------------------------
+// gifuct hands 1 cs back as 10 ms; the browser plays it at 100 ms, so we must
+// too, or the overlay races 5× ahead of the <img> it replaced.
+const oneCentisecond = new Uint8Array(GIF);
+oneCentisecond[23] = 0x01; // GCE frame 0 delay byte: 10cs → 1cs
+oneCentisecond[46] = 0x01; // GCE frame 1 delay byte: 10cs → 1cs
+const fast = await decode(oneCentisecond.buffer.slice(0) as ArrayBuffer);
+assert.deepEqual(
+  fast.frames.map((f) => f.delay),
+  [100, 100],
+  "a 1cs declared delay plays at the browser's 100ms, not a 20ms floor",
+);
+assert.equal(fast.duration, 200, "duration follows the normalised delays");
+fast.source.close();
+
+// ---- a GIF with no Graphic Control Extension -----------------------------
+// A GCE is optional: GIF87a has none, and GIF89a encoders omit it on frames
+// needing neither transparency nor a delay. gifuct then leaves `delay`,
+// `disposalType` and `transparentIndex` undefined, which used to make every
+// cumulative time NaN — a mounted player stuck on the last frame.
+// prettier-ignore
+const NO_GCE_GIF = new Uint8Array([
+  0x47, 0x49, 0x46, 0x38, 0x39, 0x61,             // "GIF89a"
+  0x02, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00,       // LSD: 2×1, global colour table (2)
+  0x00, 0x00, 0x00, 0xff, 0xff, 0xff,             // GCT: black, white
+  0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 0 (no GCE)
+  0x02, 0x02, 0x44, 0x0a, 0x00,                   // LZW: pixels [0,1]
+  0x2c, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x01, 0x00, 0x00, // image desc 1 (no GCE)
+  0x02, 0x02, 0x0c, 0x0a, 0x00,                   // LZW: pixels [1,0]
+  0x3b,                                           // trailer
+]);
+
+const noGce = await decode(NO_GCE_GIF.buffer.slice(0) as ArrayBuffer);
+assert.equal(noGce.frames.length, 2, "GCE-less GIF decodes both frames");
+assert.deepEqual(
+  noGce.frames.map((f) => f.delay),
+  [100, 100],
+  "an absent delay becomes the browser's 100ms",
+);
+assert.ok(
+  noGce.frames.every((f) => Number.isFinite(f.time)),
+  "every cumulative time is finite",
+);
+assert.equal(noGce.duration, 200, "duration is positive and finite");
+
+// The pixels still decode: an absent disposal method is method 0 (leave the
+// canvas alone), and an absent transparent index means no transparency.
+const noGce0 = (await noGce.source.getBitmap(0)) as unknown as FakeImageBitmap;
+assert.deepEqual(pixelAt(noGce0, 0, 0), black, "GCE-less frame 0 left pixel is black");
+const noGce1 = (await noGce.source.getBitmap(1)) as unknown as FakeImageBitmap;
+assert.deepEqual(pixelAt(noGce1, 0, 0), white, "GCE-less frame 1 left pixel is white");
+noGce.source.close();
 
 // ---- non-animated bytes throw a typed error ------------------------------
 // Bytes matching no animated sniffer and lacking a GIF signature must throw

@@ -11,10 +11,14 @@ declare module "gifuct-js" {
   export interface ParsedFrame {
     /** Sub-rectangle this frame patches. */
     dims: FrameDims;
-    /** Frame delay, normalised to milliseconds by the library. */
-    delay: number;
+    /**
+     * Frame delay in ms. All three of these come from the frame's Graphic
+     * Control Extension, which is optional — GIF87a has none at all — and the
+     * library leaves them `undefined` when the frame carries no GCE.
+     */
+    delay?: number;
     /** Disposal method: how to treat the canvas before the next frame. */
-    disposalType: number;
+    disposalType?: number;
     /**
      * RGBA pixel data for this frame's rectangle (present when patches built).
      * Backed by a plain `ArrayBuffer` so it satisfies the `ImageData`
@@ -24,7 +28,7 @@ declare module "gifuct-js" {
     /** Raw colour-indexed pixels for this frame. */
     pixels: number[];
     colorTable: Array<[number, number, number]>;
-    transparentIndex: number | null;
+    transparentIndex?: number | null;
   }
 
   export interface ParsedGif {

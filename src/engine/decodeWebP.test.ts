@@ -2,7 +2,7 @@
 //
 // Covers isAnimatedWebP (pure RIFF/VP8X byte scanning, no canvas needed) and the
 // decodeWebP bookkeeping — frame count, monotonic cumulative-time array,
-// duration, delay clamping, and the frame source it hands back — against a
+// duration, delay normalisation, and the frame source it hands back — against a
 // hand-built minimal 2-frame WebP.
 //
 // Node can't decode a real VP8 bitstream, so the software canvas treats each
@@ -106,7 +106,7 @@ const animated = buildWebP([
 assert.equal(isAnimatedWebP(ab(animated)), true, "animated WebP");
 
 // ---- decodeWebP bookkeeping -----------------------------------------------
-// Frame 0 duration 10ms → clamped up to the 20ms floor; frame 1 is 100ms.
+// Frame 0 declares 10ms, which browsers show for 100ms; frame 1 declares 100ms.
 const file = buildWebP([
   chunk("VP8X", vp8x(4, 4, true)),
   chunk("ANIM", anim()),
@@ -135,15 +135,15 @@ const once = await decodeWebP(ab(playOnce));
 assert.equal(once.loops, false, "loop count 1 → plays once");
 once.source.close();
 
-assert.equal(frames[0]!.delay, 20, "frame 0 delay clamped to the 20ms floor");
-assert.equal(frames[1]!.delay, 100, "frame 1 delay (100ms, above floor)");
+assert.equal(frames[0]!.delay, 100, "frame 0 delay (10ms → the browser's 100ms)");
+assert.equal(frames[1]!.delay, 100, "frame 1 delay (100ms, left alone)");
 
 // End-of-frame cumulative convention: monotonically increasing.
-assert.equal(frames[0]!.time, 20, "frame 0 cumulative time");
-assert.equal(frames[1]!.time, 120, "frame 1 cumulative time");
+assert.equal(frames[0]!.time, 100, "frame 0 cumulative time");
+assert.equal(frames[1]!.time, 200, "frame 1 cumulative time");
 assert.ok(frames[1]!.time > frames[0]!.time, "time array is monotonic");
 
-assert.equal(duration, 120, "total duration == final cumulative time");
+assert.equal(duration, 200, "total duration == final cumulative time");
 
 // Frame 0 is always a keyframe, so it comes back without recompositing; frame 1
 // is replayed from it on demand.

@@ -23,9 +23,9 @@ import {
   type FrameStep,
 } from "./frameSource";
 import {
-  MIN_DELAY_MS,
   assertDecodeBudget,
   bitmapBytes,
+  normalizeDelay,
   type DecodeResult,
   type Frame,
 } from "./types";
@@ -195,7 +195,7 @@ export async function decodeWebP(bytes: ArrayBuffer, signal?: AbortSignal): Prom
       clear: rf.overwrite,
       dispose: rf.disposeToBackground ? DISPOSE_BACKGROUND : DISPOSE_NONE,
     });
-    const delay = Math.max(rf.durationMs, MIN_DELAY_MS);
+    const delay = normalizeDelay(rf.durationMs);
     elapsed += delay;
     frames.push({ time: elapsed, delay });
   }

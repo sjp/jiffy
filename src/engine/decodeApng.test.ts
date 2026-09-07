@@ -2,7 +2,7 @@
 //
 // Covers isAnimatedPng (pure byte scanning, no canvas needed) and the
 // decodeApng bookkeeping — frame count, monotonic cumulative-time array,
-// duration, delay clamping — using a hand-built minimal 2-frame APNG.
+// duration, delay normalisation — using a hand-built minimal 2-frame APNG.
 //
 // Node can't decode a real PNG bitstream, so the software canvas treats each
 // reconstructed frame blob as an empty image: the container parsing and the
@@ -113,8 +113,8 @@ assert.equal(isAnimatedPng(apng2.buffer), true, "APNG num_frames=2");
 
 // ---- decodeApng bookkeeping -----------------------------------------------
 // Hand-built 2-frame APNG: 1×1 RGBA canvas, first fcTL before IDAT.
-//   Frame 0: delay_num=5, delay_den=100 → 50ms  (clamp: max(50,20)=50ms)
-//   Frame 1: delay_num=10, delay_den=100 → 100ms (clamp: max(100,20)=100ms)
+//   Frame 0: delay_num=5, delay_den=100 → 50ms  (above 10ms, left alone)
+//   Frame 1: delay_num=10, delay_den=100 → 100ms (above 10ms, left alone)
 
 // prettier-ignore
 const APNG = new Uint8Array([
@@ -168,7 +168,7 @@ assert.equal(source.height, 1, "frame source height from IHDR");
 // acTL num_plays is 0 (infinite) → loops.
 assert.equal(loops, true, "num_plays 0 (infinite) → loops");
 
-assert.equal(frames[0]!.delay, 50, "frame 0 delay (5/100 s → 50ms, above 20ms floor)");
+assert.equal(frames[0]!.delay, 50, "frame 0 delay (5/100 s → 50ms)");
 assert.equal(frames[1]!.delay, 100, "frame 1 delay (10/100 s → 100ms)");
 
 // End-of-frame cumulative convention: monotonically increasing.
