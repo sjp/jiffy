@@ -53,9 +53,9 @@ act(() => {
 });
 assert.equal(seeked, 150, "onSeek gets the dragged time");
 
-act(() => range.dispatchEvent(ev("pointerdown")));
+act(() => void range.dispatchEvent(ev("pointerdown")));
 assert.equal(starts, 1, "pointerdown → onScrubStart");
-act(() => range.dispatchEvent(ev("pointerup")));
+act(() => void range.dispatchEvent(ev("pointerup")));
 assert.equal(ends, 1, "pointerup → onScrubEnd");
 
 render(null, a);
@@ -80,7 +80,7 @@ act(() => render(<Controls engine={engine} />, b));
 
 const slider = b.querySelector("input[type=range]")! as HTMLInputElement;
 
-act(() => slider.dispatchEvent(ev("pointerdown")));
+act(() => void slider.dispatchEvent(ev("pointerdown")));
 assert.equal(engine.state.playing, false, "pauses while dragging");
 
 act(() => {
@@ -90,7 +90,7 @@ act(() => {
 assert.equal(Math.round(engine.state.currentTime), 150, "drag seeks to time");
 assert.equal(engine.state.index, 1, "time 150 maps to frame 2");
 
-act(() => slider.dispatchEvent(ev("pointerup")));
+act(() => void slider.dispatchEvent(ev("pointerup")));
 assert.equal(engine.state.playing, true, "resumes playback after release");
 
 render(null, b);

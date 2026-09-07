@@ -46,7 +46,7 @@ function fakeEngine(): Engine & { emit: (index: number) => void } {
   let index = 0;
   return {
     state: { index: 0 } as EngineState,
-    subscribe(fn) {
+    subscribe(fn: (s: EngineState) => void) {
       subscribers.add(fn);
       return () => subscribers.delete(fn);
     },

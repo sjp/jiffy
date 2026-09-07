@@ -6,6 +6,7 @@
 import "../test/setup-dom.ts";
 import assert from "node:assert/strict";
 
+import type { StatusFn } from "./controller.ts";
 import {
   enhanceStandaloneImage,
   enterPickMode,
@@ -57,13 +58,13 @@ const highlightHost = () =>
 const instances = new Map<HTMLImageElement, object>();
 let picked: HTMLImageElement | null = null;
 let tornDown: HTMLImageElement | null = null;
-let lastStatus: ((status: string) => void) | undefined;
+let lastStatus: StatusFn | undefined;
 let toreDownAll = 0;
 let imports = 0;
 
 const stubPlayer = {
   instances,
-  processImage: async (img: HTMLImageElement, onStatus?: (status: string) => void) => {
+  processImage: async (img: HTMLImageElement, onStatus?: StatusFn) => {
     picked = img;
     lastStatus = onStatus;
     instances.set(img, {});
@@ -196,7 +197,9 @@ reset();
 // instead — see ./pick. jsdom has no elementsFromPoint, so stand one in.
 {
   const stackAt = new Map<string, Element[]>();
-  const doc = document as Document & { elementsFromPoint?: (x: number, y: number) => Element[] };
+  const doc = document as unknown as {
+    elementsFromPoint?: (x: number, y: number) => Element[];
+  };
   doc.elementsFromPoint = (x, y) => stackAt.get(`${x},${y}`) ?? [];
   const at = (x: number, y: number, stack: Element[]) => stackAt.set(`${x},${y}`, stack);
   // jsdom measures everything as 0×0; pick mode skips zero-size images.
@@ -266,7 +269,9 @@ reset();
 // the click delivers.
 {
   const stackAt = new Map<string, Element[]>();
-  const doc = document as Document & { elementsFromPoint?: (x: number, y: number) => Element[] };
+  const doc = document as unknown as {
+    elementsFromPoint?: (x: number, y: number) => Element[];
+  };
   doc.elementsFromPoint = (x, y) => stackAt.get(`${x},${y}`) ?? [];
   const at = (x: number, y: number, stack: Element[]) => stackAt.set(`${x},${y}`, stack);
   const move = (x: number, y: number) =>
@@ -343,7 +348,9 @@ reset();
 // anywhere else it stays the page's, since the click is about to cancel anyway.
 {
   const stackAt = new Map<string, Element[]>();
-  const doc = document as Document & { elementsFromPoint?: (x: number, y: number) => Element[] };
+  const doc = document as unknown as {
+    elementsFromPoint?: (x: number, y: number) => Element[];
+  };
   doc.elementsFromPoint = (x, y) => stackAt.get(`${x},${y}`) ?? [];
   const withBox = <T extends Element>(el: T): T => {
     el.getBoundingClientRect = () => ({ width: 200, height: 100, top: 0, left: 0 }) as DOMRect;

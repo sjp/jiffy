@@ -38,7 +38,7 @@ const boxText = (host: Element) => host.shadowRoot?.querySelector(".toast")?.tex
 // ---- creation + positioning -----------------------------------------------
 const toast = showToast(120, 40);
 assert.equal(hosts().length, 1, "one toast host attached to <body>");
-const [host] = hosts();
+const host = hosts()[0]!;
 assert.equal((host as HTMLElement).style.position, "fixed", "host is viewport-fixed");
 assert.equal((host as HTMLElement).style.left, "120px", "anchored at clientX");
 assert.equal((host as HTMLElement).style.top, "40px", "anchored at clientY");
@@ -63,7 +63,7 @@ assert.equal(boxText(host), "Not an animated image", "set() replaces the text");
 assert.equal(timers.size, 0, "no timer pending before an auto-dismiss set");
 toast.set("Couldn't load this image", 2500);
 assert.equal(timers.size, 1, "auto-dismiss schedules a timer");
-const [timerId] = timers.keys();
+const timerId = [...timers.keys()][0]!;
 fire(timerId);
 assert.equal(hosts().length, 0, "host removed when the auto-dismiss fires");
 

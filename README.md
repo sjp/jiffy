@@ -176,13 +176,18 @@ npm run dev:chrome
 ### Quality checks
 
 ```sh
-npm run typecheck       # TypeScript (no emit)
+npm run typecheck       # TypeScript (no emit), sources and tests
 npm run test            # Unit tests
 npm run lint            # web-ext lint on dist-firefox/
 npm run lint:js         # oxlint
 npm run format          # oxfmt (write)
 npm run format:check    # oxfmt (check only)
 ```
+
+Tests are bundled with esbuild (for JSX and the `.css` import) and run one
+process per file, concurrently; see `scripts/test.mjs`. A passing file prints
+one line and swallows its own output — set `JIFFY_TEST_VERBOSE=1` to see it, and
+the `console.debug` the tests deliberately provoke along with it.
 
 ### Load your local build
 

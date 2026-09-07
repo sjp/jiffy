@@ -1,0 +1,21 @@
+/* Typecheck for the test files, which tsconfig.json excludes.
+ *
+ * The tests run under Node with jsdom, not in a browser: they use Node globals
+ * and `node:` builtins, and stub browser APIs with shapes the real lib.dom types
+ * would reject. That's why they can't simply be folded into the main typecheck —
+ * but leaving them unchecked entirely means a type error in a test is only found
+ * when esbuild happens to choke on it. `npm run typecheck` runs both projects. */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "jsdom", "firefox-webext-browser"],
+    /* ES2023 for `findLast`, which the tests use to pick a host out of the DOM. */
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    /* Off here only: the flag exists so the shipped source stays strippable by
+       Node's own type erasure, and the tests are bundled by esbuild instead. It
+       buys the fakes their parameter properties. */
+    "erasableSyntaxOnly": false
+  },
+  "include": ["src", "types"],
+  "exclude": []
+}

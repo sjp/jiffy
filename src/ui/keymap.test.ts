@@ -23,17 +23,30 @@ function makeEngine() {
     frameCount: FRAME_COUNT,
     currentTime: 0,
     duration: 200,
+    loop: true,
+    repeat: Infinity,
+    speed: 1,
+    reverse: false,
+    pingpong: false,
   };
-  const engine = {
+  // The whole interface, not just the calls a key can make: a keymap that
+  // reached for a setter it shouldn't should show up as a recorded call, not as
+  // a TypeError from a fake that never had the method.
+  const engine: Engine = {
     state,
-    play: () => calls.push("play"),
-    pause: () => calls.push("pause"),
-    toggle: () => calls.push("toggle"),
-    step: (d: 1 | -1) => calls.push(`step(${d})`),
-    seekToTime: (t: number) => calls.push(`seekToTime(${t})`),
-    seekToIndex: (i: number) => calls.push(`seekToIndex(${i})`),
+    play: () => void calls.push("play"),
+    pause: () => void calls.push("pause"),
+    toggle: () => void calls.push("toggle"),
+    step: (d: 1 | -1) => void calls.push(`step(${d})`),
+    seekToTime: (t: number) => void calls.push(`seekToTime(${t})`),
+    seekToIndex: (i: number) => void calls.push(`seekToIndex(${i})`),
+    setLoop: (on: boolean) => void calls.push(`setLoop(${on})`),
+    setRepeat: (n: number) => void calls.push(`setRepeat(${n})`),
+    setSpeed: (r: number) => void calls.push(`setSpeed(${r})`),
+    setReverse: (on: boolean) => void calls.push(`setReverse(${on})`),
+    setPingPong: (on: boolean) => void calls.push(`setPingPong(${on})`),
     subscribe: () => () => {},
-  } as Engine;
+  };
   return { engine, calls };
 }
 

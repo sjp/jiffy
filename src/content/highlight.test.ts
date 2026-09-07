@@ -17,7 +17,7 @@ const label = (host: Element) => host.shadowRoot?.querySelector(".label") ?? nul
 // ---- creation: mounted but invisible until there's something to point at ----
 const highlight = createHighlight();
 assert.equal(hosts().length, 1, "one highlight host attached to <body>");
-const [host] = hosts() as HTMLElement[];
+const host = (hosts() as HTMLElement[])[0]!;
 assert.equal(host.style.position, "fixed", "host is viewport-fixed (rects are viewport coords)");
 assert.equal(host.style.pointerEvents, "none", "the box never intercepts the pick click");
 assert.equal(host.style.display, "none", "nothing is drawn until the first show()");

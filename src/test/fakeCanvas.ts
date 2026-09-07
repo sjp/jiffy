@@ -223,7 +223,9 @@ export class FakeOffscreenCanvas implements Pixels {
    * out was a non-empty image blob of the type it asked for.
    */
   async convertToBlob(options?: { type?: string }): Promise<Blob> {
-    return new Blob([this.data], { type: options?.type ?? "image/png" });
+    // `.slice()` also narrows the buffer type back to a plain ArrayBuffer,
+    // which is what BlobPart accepts.
+    return new Blob([this.data.slice()], { type: options?.type ?? "image/png" });
   }
 }
 

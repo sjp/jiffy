@@ -50,7 +50,7 @@ const DEFAULT_STYLE: FakeStyle = {
 
 const styles = new Map<Element, FakeStyle>();
 const setStyle = (el: Element, overrides: Partial<FakeStyle>): void => {
-  styles.set(el, { ...DEFAULT_STYLE, ...overrides });
+  styles.set(el, Object.assign({}, DEFAULT_STYLE, overrides));
 };
 
 const fakeGetComputedStyle = (el: Element): FakeStyle => styles.get(el) ?? DEFAULT_STYLE;

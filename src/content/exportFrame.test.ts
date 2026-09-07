@@ -151,12 +151,15 @@ await assert.rejects(() => exporter.copy(0), /clipboard/, "no clipboard → reje
 // ---- download --------------------------------------------------------------
 // The anchor click would navigate in jsdom; intercept it to observe the
 // download instead (and to keep the virtual console quiet).
-let clicked: { download: string; href: string } | null = null;
+// A list rather than a `let`: control-flow analysis can't see an assignment
+// made inside a listener, and would narrow the variable to `null` at the
+// assertions below.
+const clicks: Array<{ download: string; href: string }> = [];
 document.addEventListener(
   "click",
   (event) => {
     const anchor = event.target as HTMLAnchorElement;
-    clicked = { download: anchor.download, href: anchor.href };
+    clicks.push({ download: anchor.download, href: anchor.href });
     event.preventDefault();
   },
   true,
@@ -171,25 +174,25 @@ globals.URL = Object.assign(URL, {
 
 // Capture the deferred revoke instead of waiting out its real delay.
 const realSetTimeout = globalThis.setTimeout;
-let deferred: (() => void) | null = null;
+const deferred: Array<() => void> = [];
 globals.setTimeout = (fn: () => void, ms: number) => {
-  deferred = fn;
+  deferred.push(fn);
   assert.ok(ms > 0, "the revoke is deferred, not queued for the next tick");
   return 0;
 };
 await exporter.save(4);
 globals.setTimeout = realSetTimeout;
 
-assert.ok(clicked, "the download was triggered");
-assert.equal(clicked!.download, "cat-f005.png", "named after the image and the frame");
-assert.equal(clicked!.href, "blob:test/1", "points at the encoded frame");
+assert.equal(clicks.length, 1, "the download was triggered");
+assert.equal(clicks[0]!.download, "cat-f005.png", "named after the image and the frame");
+assert.equal(clicks[0]!.href, "blob:test/1", "points at the encoded frame");
 assert.equal(document.querySelector("a[download]"), null, "the anchor is not left behind");
 
 // The object URL is released, but only after the browser has had a chance to
 // start reading it — revoking inline can cancel the download.
 assert.deepEqual(revoked, [], "not revoked while the download is starting");
-assert.ok(deferred, "a revoke was scheduled");
-deferred!();
+assert.equal(deferred.length, 1, "a revoke was scheduled");
+deferred[0]!();
 assert.deepEqual(revoked, ["blob:test/1"], "the blob is released afterwards");
 
 console.log("exportFrame.test: OK");

@@ -10,7 +10,7 @@
     "build:chrome": "node scripts/build.mjs --chrome",
     "dev:firefox": "node scripts/build.mjs --firefox --watch",
     "dev:chrome": "node scripts/build.mjs --chrome --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json --noEmit",
     "lint": "web-ext lint -s dist-firefox/",
     "lint:js": "oxlint",
     "format": "oxfmt",

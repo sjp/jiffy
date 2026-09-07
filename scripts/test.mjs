@@ -9,10 +9,17 @@
 // (preact, jsdom, gifuct-js) as real runtime imports — only our own source
 // (incl. JSX) is transformed.
 //
-//   node scripts/test.mjs
+// Each file is an independent process, so they run concurrently. Their output is
+// captured and printed a file at a time, in a stable order, rather than being
+// interleaved into nonsense; failures are repeated at the end so the last thing
+// on screen (and the last thing in a CI log) is the list of what broke.
+//
+//   node scripts/test.mjs            # quiet: expected console.debug is silenced
+//   JIFFY_TEST_VERBOSE=1 node scripts/test.mjs
 
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readdirSync, rmSync } from "node:fs";
+import { availableParallelism } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -53,22 +60,59 @@ await esbuild.build({
   jsx: "automatic",
   jsxImportSource: "preact",
   loader: { ".css": "text" },
+  // Runs before anything else in every test bundle; see src/test/quiet.ts.
+  inject: [path.join(srcDir, "test/quiet.ts")],
   logLevel: "warning",
 });
 
-let failures = 0;
-for (const test of tests) {
+/** Run one bundled test, capturing its output instead of inheriting the tty. */
+function runTest(test) {
   const rel = path.relative(srcDir, test).replace(/\.tsx?$/, ".js");
-  const bundled = path.join(outdir, rel);
-  const result = spawnSync(process.execPath, [bundled], { stdio: "inherit" });
-  if (result.status !== 0) {
-    failures++;
-    console.error(`[jiffy] FAILED: ${path.relative(root, test)}`);
+  const child = spawn(process.execPath, [path.join(outdir, rel)], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const chunks = [];
+  child.stdout.on("data", (c) => chunks.push(c));
+  child.stderr.on("data", (c) => chunks.push(c));
+  return new Promise((resolve) => {
+    child.on("error", (err) => resolve({ test, ok: false, output: `${err.stack ?? err}\n` }));
+    child.on("close", (status) =>
+      resolve({ test, ok: status === 0, output: Buffer.concat(chunks).toString() }),
+    );
+  });
+}
+
+// A worker pool over the file list: `limit` processes in flight, each taking the
+// next file as it finishes. Bounded because every jsdom test builds a DOM, and
+// oversubscribing the box makes the suite slower, not faster.
+const limit = Math.max(1, Math.min(tests.length, availableParallelism()));
+const queue = tests.slice();
+const results = new Map();
+await Promise.all(
+  Array.from({ length: limit }, async () => {
+    for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+      results.set(next, await runTest(next));
+    }
+  }),
+);
+
+// Report in file order, not completion order, so a run reads the same every time.
+const failed = [];
+for (const test of tests) {
+  const { ok, output } = results.get(test);
+  const rel = path.relative(root, test);
+  if (!ok) failed.push(rel);
+  process.stdout.write(`${ok ? "ok  " : "FAIL"}  ${rel}\n`);
+  // A pass has already said so on that line; its own chatter is only interesting
+  // when something is being debugged.
+  if (!ok || process.env["JIFFY_TEST_VERBOSE"]) {
+    process.stdout.write(output.replace(/^/gm, "      "));
   }
 }
 
-if (failures > 0) {
-  console.error(`[jiffy] ${failures} test file(s) failed`);
+if (failed.length > 0) {
+  console.error(`\n[jiffy] ${failed.length} of ${tests.length} test file(s) failed:`);
+  for (const rel of failed) console.error(`  ${rel}`);
   process.exit(1);
 }
-console.log(`[jiffy] all ${tests.length} test file(s) passed`);
+console.log(`\n[jiffy] all ${tests.length} test file(s) passed`);

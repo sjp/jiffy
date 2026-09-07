@@ -189,6 +189,49 @@ assert.equal(duration, 150, "total duration");
 assert.ok(!(source.getBitmap(0) instanceof Promise), "frame 0 is a resident keyframe");
 assert.ok(await source.getBitmap(1), "frame 1 is recomposited on demand");
 
+// ---- fcTL delays that need the browser's rules -----------------------------
+// Two things only APNG spells this way: delay_den = 0 means 1/100 s (not a
+// division by zero), and delay_num = 0 means "as fast as possible", which every
+// browser shows for 100 ms like any other sub-10 ms delay.
+const withDelay = (num: number, den: number): ArrayBuffer => {
+  const bytes = new Uint8Array(APNG);
+  // fcTL data is seq(4) w(4) h(4) x(4) y(4) delay_num(2) delay_den(2) …, so the
+  // delay sits 24 bytes past the chunk's four type bytes.
+  const dv = new DataView(bytes.buffer);
+  for (let i = 0; i + 28 <= bytes.length; i++) {
+    if (dv.getUint32(i, false) !== 0x6663544c) continue; // "fcTL"
+    dv.setUint16(i + 24, num, false);
+    dv.setUint16(i + 26, den, false);
+  }
+  // The CRCs are now wrong, which is fine: like the GIF and WebP decoders, this
+  // one doesn't validate them on parse.
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+};
+
+{
+  const hundredth = await decodeApng(withDelay(1, 0));
+  assert.deepEqual(
+    hundredth.frames.map((f) => f.delay),
+    [100, 100],
+    "delay_den 0 means 1/100 s, and 10ms plays at the browser's 100ms",
+  );
+  hundredth.source.close();
+
+  const asFastAsPossible = await decodeApng(withDelay(0, 100));
+  assert.deepEqual(
+    asFastAsPossible.frames.map((f) => f.delay),
+    [100, 100],
+    "delay_num 0 plays at the browser's 100ms, not instantly",
+  );
+  assert.deepEqual(
+    asFastAsPossible.frames.map((f) => f.time),
+    [100, 200],
+    "cumulative times follow the normalised delays",
+  );
+  assert.equal(asFastAsPossible.duration, 200, "duration is positive and finite");
+  asFastAsPossible.source.close();
+}
+
 // ---- the bKGD colour is ignored -------------------------------------------
 // PNG defines bKGD as a suggestion for viewers with no background of their own;
 // browsers have one and let the page show through instead. The shimmed frame

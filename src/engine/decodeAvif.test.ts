@@ -98,6 +98,9 @@ class FakeVideoFrame {
   }
 }
 const decodedIndexes: number[] = [];
+// What every decoded VideoFrame reports as its duration. `null` is what
+// ImageDecoder gives for an AVIF whose samples carry no duration of their own.
+let frameDurationUs: number | null = 100_000;
 let closed = false;
 class FakeImageDecoder {
   tracks: {
@@ -110,7 +113,7 @@ class FakeImageDecoder {
   constructor(_init: unknown) {}
   async decode({ frameIndex }: { frameIndex: number }) {
     decodedIndexes.push(frameIndex);
-    return { image: new FakeVideoFrame(100_000), complete: true };
+    return { image: new FakeVideoFrame(frameDurationUs), complete: true };
   }
   close() {
     closed = true;
@@ -316,5 +319,59 @@ decodedIndexes.length = 0;
   );
   mismatched.source.close();
 }
+
+// ---- the short-delay rule reaches both timing paths ------------------------
+// AVIF is the one format whose delays can come from two places, so both have to
+// go through normalizeDelay or the same file plays at two different speeds
+// depending on whether its sample table could be read.
+decodedIndexes.length = 0;
+{
+  // 5/1000 s = 5 ms, declared by the container.
+  const brisk = await decodeAvif(timedAvif(1000, [[3, 5]]));
+  assert.deepEqual(decodedIndexes, [0], "still read from the container");
+  assert.deepEqual(
+    brisk.frames.map((f) => f.delay),
+    [100, 100, 100],
+    "a container delay of 5ms plays at the browser's 100ms",
+  );
+  assert.equal(brisk.duration, 300, "duration follows the normalised delays");
+  brisk.source.close();
+}
+
+// The same, from the decode pass: no container timing, and the decoder reports
+// a 5 ms duration per frame.
+decodedIndexes.length = 0;
+frameDurationUs = 5_000;
+{
+  const brisk = await decodeAvif(ab(avisMajor));
+  assert.deepEqual(decodedIndexes, [0, 1, 2], "no container timing → the decode pass");
+  assert.deepEqual(
+    brisk.frames.map((f) => f.delay),
+    [100, 100, 100],
+    "a decoder-reported 5ms plays at the browser's 100ms too",
+  );
+  brisk.source.close();
+}
+
+// A sequence whose samples declare no duration at all: WebCodecs reports null,
+// which must land on the same 100 ms rather than escaping as NaN into the
+// cumulative times.
+decodedIndexes.length = 0;
+frameDurationUs = null;
+{
+  const untimed = await decodeAvif(ab(avisMajor));
+  assert.deepEqual(
+    untimed.frames.map((f) => f.delay),
+    [100, 100, 100],
+    "an absent duration becomes the browser's 100ms",
+  );
+  assert.ok(
+    untimed.frames.every((f) => Number.isFinite(f.time)),
+    "every cumulative time is finite",
+  );
+  assert.equal(untimed.duration, 300, "duration is positive and finite");
+  untimed.source.close();
+}
+frameDurationUs = 100_000;
 
 console.log("decodeAvif.test: OK — %d frames, duration %dms", frames.length, duration);

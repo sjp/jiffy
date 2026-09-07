@@ -43,7 +43,7 @@ const renderMenu = (): void => {
 
 renderMenu();
 
-const rows = () => Array.from(container.querySelectorAll("button.menu-row"));
+const rows = () => Array.from(container.querySelectorAll<HTMLElement>("button.menu-row"));
 const text = () => container.textContent ?? "";
 
 // Main panel: one row showing label + current value, marked as a menuitem.
@@ -205,7 +205,7 @@ const key = (name: string) => {
     bubbles: true,
     cancelable: true,
   });
-  act(() => (focused() ?? navBox).dispatchEvent(event));
+  act(() => void (focused() ?? navBox).dispatchEvent(event));
   return event;
 };
 
