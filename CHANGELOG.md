@@ -193,6 +193,12 @@ read on the release.
   all-sites access — no longer risks reporting "Jiffy can't run on this page".
   Firefox can refuse to inject into any frame when one of them is off limits, so
   the top frame is now armed on its own if that happens.
+- A website can no longer tell that Jiffy is installed. The two bundles it loads
+  on demand have to be reachable from the page, and Chrome served them from the
+  extension's fixed address — so any site could ask for one and learn from the
+  answer who has Jiffy, without the extension ever being used there. Chrome now
+  hands them out from a random per-session address instead, and both browsers
+  offer them only to `http` and `https` pages.
 
 ## [0.3.0] — 2026-06-18
 

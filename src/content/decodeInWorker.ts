@@ -115,6 +115,11 @@ function fromFailure(failure: Exclude<DecodeFailure, { kind: "not-transferable" 
  * Fetch the worker bundle and wrap it in a `blob:` URL the page's origin will
  * accept as a worker script. Fetched once per page: the URL outlives the worker
  * built from it, and every decode spawns a fresh worker from the same bundle.
+ *
+ * The bundle is web-accessible, which is what makes this fetch legal — on Chrome
+ * under `use_dynamic_url`, where `runtime.getURL()` hands back that session's
+ * random origin rather than the extension's own (see the manifests). The blob is
+ * a copy, so it stays good even if that origin rotates under us.
  */
 function workerBlobUrl(): Promise<string | null> {
   blobUrl ??= (async () => {

@@ -22,7 +22,7 @@
   "web_accessible_resources": [
     {
       "resources": ["player.js", "decode-worker.js"],
-      "matches": ["<all_urls>"]
+      "matches": ["http://*/*", "https://*/*"]
     }
   ],
   "optional_host_permissions": ["http://*/*", "https://*/*"],

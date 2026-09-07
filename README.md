@@ -130,6 +130,13 @@ manifest, through the `data_collection_permissions` declaration AMO expects —
 which is also what sets the Firefox 142 floor, since earlier releases don't
 accept that key.
 
+Sites can't tell that you have it, either. The two bundles Jiffy loads once you
+pick an image have to be reachable from the page, and in Chrome anything served
+from an extension normally sits at a fixed address that any site could ask for —
+so it hands these out from a random per-session address instead
+(`use_dynamic_url`). Firefox already gives every profile its own address. Neither
+build offers them to anything but an `http`/`https` page.
+
 ## Building from source
 
 <details>

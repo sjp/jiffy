@@ -56,10 +56,13 @@ const PLAYER_BUNDLE = "player.js";
 /**
  * How the player bundle is obtained. Firefox and Chrome both allow a content
  * script to `import()` an extension URL that is web-accessible; the specifier
- * has to be built at runtime because the origin is per-profile (Firefox) or
- * per-extension (Chrome). Swappable so the headless tests can drive pick mode
- * without an extension runtime — the same dependency-injection seam the
- * pipeline uses (see PipelineDeps).
+ * has to be built at runtime because the origin is never fixed — per-profile in
+ * Firefox, and per-session in Chrome, where the entry carries
+ * `use_dynamic_url` so a page can't probe a stable URL to detect Jiffy.
+ * `runtime.getURL()` returns whichever of those is current, so this line is the
+ * same in both. Swappable so the headless tests can drive pick mode without an
+ * extension runtime — the same dependency-injection seam the pipeline uses
+ * (see PipelineDeps).
  */
 let importPlayer = (): Promise<PlayerModule> =>
   import(browser.runtime.getURL(PLAYER_BUNDLE)) as Promise<PlayerModule>;
