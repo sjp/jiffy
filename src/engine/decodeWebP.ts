@@ -13,6 +13,13 @@
 // WebP disposal/blending (per WebP Container Specification):
 //   ANMF flags byte, bit 0 (Disposal):  0 = leave canvas,  1 = fill rect with bg
 //   ANMF flags byte, bit 1 (Blending):  0 = alpha-blend,   1 = overwrite
+//
+// The ANIM chunk's background colour is deliberately ignored: the container
+// spec tells viewers "that have a preferred background against which to present
+// the images (web browsers, for example)" to ignore it, and Chromium and Gecko
+// both do — they start transparent and dispose to transparent black. Painting it
+// would put a box (libwebp defaults to opaque white) behind every transparent
+// animation, which is not what the native <img> shows.
 
 import {
   createFrameSource,
@@ -65,7 +72,6 @@ interface RawFrame {
 function parseAnimatedWebP(buf: ArrayBuffer): {
   canvasWidth: number;
   canvasHeight: number;
-  bgRGBA: readonly [number, number, number, number];
   loopCount: number;
   frames: RawFrame[];
 } {
@@ -75,8 +81,6 @@ function parseAnimatedWebP(buf: ArrayBuffer): {
 
   let canvasWidth = 0;
   let canvasHeight = 0;
-  // Background colour from ANIM chunk, converted from spec BGRA to RGBA.
-  let bgRGBA: readonly [number, number, number, number] = [255, 255, 255, 255];
   // ANIM loop count: 0 = infinite, N = play N times. Default to infinite.
   let loopCount = 0;
   const frames: RawFrame[] = [];
@@ -92,9 +96,9 @@ function parseAnimatedWebP(buf: ArrayBuffer): {
       canvasWidth = readU24LE(buf, data + 4) + 1;
       canvasHeight = readU24LE(buf, data + 7) + 1;
     } else if (cc === "ANIM") {
-      const b = new Uint8Array(buf, data, 4); // stored as B G R A
-      bgRGBA = [b[2]!, b[1]!, b[0]!, b[3]!];
-      loopCount = readU16LE(buf, data + 4); // u16 LE following the BGRA bytes
+      // Payload is a BGRA background colour we ignore (see the note above),
+      // then the loop count as a u16 LE.
+      loopCount = readU16LE(buf, data + 4);
     } else if (cc === "ANMF") {
       const flags = new Uint8Array(buf, data + 15, 1)[0]!;
       frames.push({
@@ -115,7 +119,7 @@ function parseAnimatedWebP(buf: ArrayBuffer): {
   if (!canvasWidth || !canvasHeight) throw new Error("decodeWebP: missing VP8X canvas dimensions");
   if (frames.length === 0) throw new Error("decodeWebP: no ANMF frames found");
 
-  return { canvasWidth, canvasHeight, bgRGBA, loopCount, frames };
+  return { canvasWidth, canvasHeight, loopCount, frames };
 }
 
 /**
@@ -166,19 +170,7 @@ function makeFrameBlob(frameData: ArrayBuffer, width: number, height: number): B
 
 /** Decode animated WebP bytes into a frame timeline + a frame source. */
 export async function decodeWebP(bytes: ArrayBuffer, signal?: AbortSignal): Promise<DecodeResult> {
-  const {
-    canvasWidth,
-    canvasHeight,
-    bgRGBA,
-    loopCount,
-    frames: rawFrames,
-  } = parseAnimatedWebP(bytes);
-
-  const [r, g, b, a] = bgRGBA;
-  // Declared background colour, seeded under frame 0 and repainted on disposal
-  // so transparent areas match what the browser shows for the native <img>. A
-  // fully transparent background means "leave the canvas clear".
-  const bgCss = a > 0 ? `rgba(${r},${g},${b},${a / 255})` : null;
+  const { canvasWidth, canvasHeight, loopCount, frames: rawFrames } = parseAnimatedWebP(bytes);
 
   const steps: FrameStep[] = [];
   const frames: Frame[] = [];
@@ -193,6 +185,8 @@ export async function decodeWebP(bytes: ArrayBuffer, signal?: AbortSignal): Prom
       // Overwrite blending: clear the rect first so the frame's transparent
       // pixels replace what was underneath (clear + source-over = copy).
       clear: rf.overwrite,
+      // Disposal clears the rect to transparent black, as browsers do; the
+      // declared background colour is not repainted.
       dispose: rf.disposeToBackground ? DISPOSE_BACKGROUND : DISPOSE_NONE,
     });
     const delay = normalizeDelay(rf.durationMs);
@@ -209,8 +203,6 @@ export async function decodeWebP(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     width: canvasWidth,
     height: canvasHeight,
     steps,
-    seedFill: bgCss,
-    disposeFill: bgCss,
     signal,
   });
 

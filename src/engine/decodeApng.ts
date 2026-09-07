@@ -20,6 +20,11 @@
 // APNG blend ops:
 //   0 SOURCE  all components (incl. alpha) overwrite — clear-then-draw
 //   1 OVER    alpha-blend onto canvas (drawImage default / source-over)
+//
+// The bKGD chunk is deliberately ignored: PNG defines it as a suggestion for
+// viewers with no background of their own, and browsers have one — they let the
+// page show through transparent pixels rather than painting bKGD. So the canvas
+// starts, and disposes to, transparent black.
 
 import {
   createFrameSource,
@@ -104,7 +109,6 @@ function parseApng(buf: ArrayBuffer): {
   ihdrData: Uint8Array; // 13-byte IHDR payload for reuse in frame blobs
   plte: Uint8Array | null;
   trns: Uint8Array | null;
-  bkgd: Uint8Array | null;
   numPlays: number;
   frames: FcTLInfo[];
 } {
@@ -119,7 +123,6 @@ function parseApng(buf: ArrayBuffer): {
   let ihdrData: Uint8Array | null = null;
   let plte: Uint8Array | null = null;
   let trns: Uint8Array | null = null;
-  let bkgd: Uint8Array | null = null;
   // acTL num_plays: 0 = infinite, N = play N times. Default to infinite.
   let numPlays = 0;
   const frames: FcTLInfo[] = [];
@@ -144,8 +147,6 @@ function parseApng(buf: ArrayBuffer): {
       plte = new Uint8Array(buf, dataOff, dataLen).slice();
     } else if (type === "tRNS") {
       trns = new Uint8Array(buf, dataOff, dataLen).slice();
-    } else if (type === "bKGD") {
-      bkgd = new Uint8Array(buf, dataOff, dataLen).slice();
     } else if (type === "acTL") {
       // num_frames is informational (we rely on fcTL/fdAT structure); num_plays
       // (offset +4 in the chunk data) is the loop count, 0 = infinite.
@@ -194,7 +195,6 @@ function parseApng(buf: ArrayBuffer): {
     ihdrData,
     plte,
     trns,
-    bkgd,
     numPlays,
     frames,
   };
@@ -265,40 +265,6 @@ export function isAnimatedPng(bytes: ArrayBuffer): boolean {
   return false;
 }
 
-/**
- * Resolve the bKGD chunk to a CSS colour, or null when there isn't one we can
- * render. Channel values are depth-scaled, so shift them down to 8-bit.
- */
-function backgroundCss(
-  bkgd: Uint8Array | null,
-  ihdrData: Uint8Array,
-  plte: Uint8Array | null,
-): string | null {
-  if (!bkgd) return null;
-  const colorType = ihdrData[9]!;
-  const bitDepth = ihdrData[8]!;
-  const shift = bitDepth > 8 ? bitDepth - 8 : 0;
-  const dv = new DataView(bkgd.buffer, bkgd.byteOffset);
-  if (colorType === 0 || colorType === 4) {
-    // Greyscale (± alpha): single 16-bit sample.
-    const v = dv.getUint16(0, false) >> shift;
-    return `rgb(${v},${v},${v})`;
-  }
-  if (colorType === 2 || colorType === 6) {
-    // Truecolor (± alpha): three 16-bit samples.
-    const r = dv.getUint16(0, false) >> shift;
-    const g = dv.getUint16(2, false) >> shift;
-    const b = dv.getUint16(4, false) >> shift;
-    return `rgb(${r},${g},${b})`;
-  }
-  if (colorType === 3 && plte) {
-    // Indexed: single byte palette index.
-    const i = bkgd[0]! * 3;
-    return `rgb(${plte[i]},${plte[i + 1]},${plte[i + 2]})`;
-  }
-  return null;
-}
-
 const toDispose = (disposeOp: number): Dispose =>
   disposeOp === DISPOSE_OP_BACKGROUND
     ? DISPOSE_BACKGROUND
@@ -314,7 +280,6 @@ export async function decodeApng(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     ihdrData,
     plte,
     trns,
-    bkgd,
     numPlays,
     frames: rawFrames,
   } = parseApng(bytes);
@@ -350,10 +315,6 @@ export async function decodeApng(bytes: ArrayBuffer, signal?: AbortSignal): Prom
     width: canvasWidth,
     height: canvasHeight,
     steps,
-    // bKGD seeds the canvas so transparent areas match the native <img>, but
-    // APNG's BACKGROUND disposal is defined as "clear to transparent black" —
-    // it does NOT repaint bKGD — so there is no dispose fill.
-    seedFill: backgroundCss(bkgd, ihdrData, plte),
     signal,
   });
 

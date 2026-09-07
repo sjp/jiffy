@@ -95,7 +95,6 @@ const build = (keyframeInterval: number) =>
     width: WIDTH,
     height: HEIGHT,
     steps,
-    seedFill: "rgb(10,20,30)",
     keyframeInterval,
   });
 

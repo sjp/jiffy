@@ -67,6 +67,12 @@ with the packaged Firefox and Chrome `.zip`s. See `scripts/release.sh`.
 
 ### Fixed
 
+- Transparent animated WebP and APNG images no longer gain a solid box behind
+  them while controlled. Both formats carry a suggested background colour that
+  browsers are told to ignore — and do — but which the encoders most people use
+  write as opaque white; it was being painted in, so a transparent sticker went
+  from showing the page to sitting in a white rectangle. The saved and copied
+  frames were carrying it too.
 - An animated image served from a URL with no recognisable file extension is no
   longer skipped before it is looked at.
 

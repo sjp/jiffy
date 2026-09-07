@@ -147,17 +147,6 @@ export interface FrameSourceOptions {
   width: number;
   height: number;
   steps: FrameStep[];
-  /**
-   * CSS colour painted over the blank canvas before frame 0 (WebP's ANIM
-   * background, APNG's bKGD), so transparent areas match what the browser shows
-   * for the native <img>. Null leaves the canvas transparent.
-   */
-  seedFill?: string | null;
-  /**
-   * CSS colour repainted into the rect on DISPOSE_BACKGROUND. WebP disposes to
-   * its declared background colour; GIF and APNG dispose to transparent (null).
-   */
-  disposeFill?: string | null;
   keyframeInterval?: number;
   signal?: AbortSignal;
 }
@@ -176,12 +165,6 @@ export interface FrameSourceData {
   width: number;
   height: number;
   steps: FrameStep[];
-  /**
-   * See `FrameSourceOptions.disposeFill`. Replay still needs it; `seedFill`
-   * doesn't survive here because playback always rewinds to a keyframe (frame 0
-   * is always one) and never to a blank canvas.
-   */
-  disposeFill: string | null;
   keyframeInterval: number;
   /** Retained frames, ascending by index — every `keyframeInterval`-th frame. */
   keyframes: Keyframe[];
@@ -248,7 +231,7 @@ interface Compositor {
   cursor: number;
   /** Snapshot the current frame's DISPOSE_PREVIOUS would restore. */
   restoreSnapshot: ImageData | null;
-  /** Blank the canvas (applying `seedFill`) and forget where we are. */
+  /** Blank the canvas and forget where we are. */
   seed(): void;
   /** Draw frame `i`; frame `i-1`'s disposal must already have been applied. */
   drawStep(i: number): Promise<void>;
@@ -256,13 +239,7 @@ interface Compositor {
   applyDispose(i: number): void;
 }
 
-function createCompositor(
-  width: number,
-  height: number,
-  steps: readonly FrameStep[],
-  seedFill: string | null,
-  disposeFill: string | null,
-): Compositor {
+function createCompositor(width: number, height: number, steps: readonly FrameStep[]): Compositor {
   const canvas = new OffscreenCanvas(width, height);
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("frameSource: failed to acquire 2D context");
@@ -312,10 +289,6 @@ function createCompositor(
 
     seed(): void {
       ctx.clearRect(0, 0, width, height);
-      if (seedFill) {
-        ctx.fillStyle = seedFill;
-        ctx.fillRect(0, 0, width, height);
-      }
       compositor.cursor = -1;
       compositor.restoreSnapshot = null;
     },
@@ -344,10 +317,6 @@ function createCompositor(
       const step = steps[i]!;
       if (step.dispose === DISPOSE_BACKGROUND) {
         ctx.clearRect(step.x, step.y, step.width, step.height);
-        if (disposeFill) {
-          ctx.fillStyle = disposeFill;
-          ctx.fillRect(step.x, step.y, step.width, step.height);
-        }
       } else if (step.dispose === DISPOSE_PREVIOUS && compositor.restoreSnapshot) {
         ctx.putImageData(compositor.restoreSnapshot, 0, 0);
       }
@@ -369,17 +338,9 @@ function createCompositor(
  * all-bitmap behaviour, byte for byte.
  */
 export async function buildFrameSource(opts: FrameSourceOptions): Promise<FrameSourceData> {
-  const {
-    width,
-    height,
-    steps,
-    seedFill = null,
-    disposeFill = null,
-    keyframeInterval = KEYFRAME_INTERVAL,
-    signal,
-  } = opts;
+  const { width, height, steps, keyframeInterval = KEYFRAME_INTERVAL, signal } = opts;
 
-  const compositor = createCompositor(width, height, steps, seedFill, disposeFill);
+  const compositor = createCompositor(width, height, steps);
   const keyframes: Keyframe[] = [];
   compositor.seed();
   try {
@@ -401,7 +362,7 @@ export async function buildFrameSource(opts: FrameSourceOptions): Promise<FrameS
     for (const kf of keyframes) kf.bitmap.close();
     throw err;
   }
-  return { width, height, steps, disposeFill, keyframeInterval, keyframes };
+  return { width, height, steps, keyframeInterval, keyframes };
 }
 
 /**
@@ -413,10 +374,8 @@ export async function buildFrameSource(opts: FrameSourceOptions): Promise<FrameS
  * Takes ownership of the keyframe bitmaps; `close()` frees them.
  */
 export function hydrateFrameSource(data: FrameSourceData): FrameSource {
-  const { width, height, steps, disposeFill, keyframeInterval } = data;
-  // No seed fill: every replay rewinds to a keyframe first (frame 0 is always
-  // one), so the blank-canvas state the seed produced is never revisited.
-  const compositor = createCompositor(width, height, steps, null, disposeFill);
+  const { width, height, steps, keyframeInterval } = data;
+  const compositor = createCompositor(width, height, steps);
   const { ctx } = compositor;
 
   const keyframes = new Map<number, Keyframe>(data.keyframes.map((kf) => [kf.index, kf]));
@@ -513,7 +472,7 @@ export function hydrateFrameSource(data: FrameSourceData): FrameSource {
       keyframes.clear();
       for (const bitmap of cache.values()) bitmap.close();
       cache.clear();
-      return { width, height, steps, disposeFill, keyframeInterval, keyframes: detached };
+      return { width, height, steps, keyframeInterval, keyframes: detached };
     },
     close(): void {
       closed = true;

@@ -12,7 +12,7 @@
 
 import assert from "node:assert/strict";
 
-import { installFakeCanvas } from "../test/fakeCanvas.ts";
+import { installFakeCanvas, pixelAt, type FakeImageBitmap } from "../test/fakeCanvas.ts";
 
 installFakeCanvas();
 
@@ -112,7 +112,9 @@ const apng2 = new Uint8Array([...PNG_SIG, ...IHDR_1x1, ...actl(2)]);
 assert.equal(isAnimatedPng(apng2.buffer), true, "APNG num_frames=2");
 
 // ---- decodeApng bookkeeping -----------------------------------------------
-// Hand-built 2-frame APNG: 1×1 RGBA canvas, first fcTL before IDAT.
+// Hand-built 2-frame APNG: 2×2 RGBA canvas, first fcTL before IDAT. The frames
+// are 1×1 at the origin, so three of the four canvas pixels are never painted —
+// which is what makes the "bKGD never reaches the canvas" check below bite.
 //   Frame 0: delay_num=5, delay_den=100 → 50ms  (above 10ms, left alone)
 //   Frame 1: delay_num=10, delay_den=100 → 100ms (above 10ms, left alone)
 
@@ -120,10 +122,14 @@ assert.equal(isAnimatedPng(apng2.buffer), true, "APNG num_frames=2");
 const APNG = new Uint8Array([
   // PNG signature
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-  // IHDR: 1×1, 8-bit RGBA
+  // IHDR: 2×2, 8-bit RGBA
   0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x02,
   0x08, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  // bKGD: opaque red (three 16-bit samples) — a suggestion browsers ignore
+  0x00, 0x00, 0x00, 0x06, 0x62, 0x4B, 0x47, 0x44,
+  0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00,
   // acTL: num_frames=2, num_plays=0
   0x00, 0x00, 0x00, 0x08, 0x61, 0x63, 0x54, 0x4C,
   0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
@@ -162,8 +168,8 @@ const { frames, source, duration, loops } = await decodeApng(
 
 assert.equal(frames.length, 2, "frame count");
 assert.equal(source.frameCount, 2, "frame source frame count");
-assert.equal(source.width, 1, "frame source width from IHDR");
-assert.equal(source.height, 1, "frame source height from IHDR");
+assert.equal(source.width, 2, "frame source width from IHDR");
+assert.equal(source.height, 2, "frame source height from IHDR");
 
 // acTL num_plays is 0 (infinite) → loops.
 assert.equal(loops, true, "num_plays 0 (infinite) → loops");
@@ -182,6 +188,24 @@ assert.equal(duration, 150, "total duration");
 // is replayed from it on demand.
 assert.ok(!(source.getBitmap(0) instanceof Promise), "frame 0 is a resident keyframe");
 assert.ok(await source.getBitmap(1), "frame 1 is recomposited on demand");
+
+// ---- the bKGD colour is ignored -------------------------------------------
+// PNG defines bKGD as a suggestion for viewers with no background of their own;
+// browsers have one and let the page show through instead. The shimmed frame
+// blobs decode to nothing, so the canvas must stay transparent black.
+for (const index of [0, 1]) {
+  const bitmap = (await source.getBitmap(index)) as unknown as FakeImageBitmap;
+  for (let y = 0; y < 2; y++) {
+    for (let x = 0; x < 2; x++) {
+      assert.deepEqual(
+        pixelAt(bitmap, x, y),
+        [0, 0, 0, 0],
+        `frame ${index} pixel (${x},${y}) is transparent, not the bKGD colour`,
+      );
+    }
+  }
+}
+
 source.close();
 await assert.rejects(
   async () => source.getBitmap(1),

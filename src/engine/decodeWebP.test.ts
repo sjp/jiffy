@@ -13,7 +13,7 @@
 
 import assert from "node:assert/strict";
 
-import { installFakeCanvas } from "../test/fakeCanvas.ts";
+import { installFakeCanvas, pixelAt, type FakeImageBitmap } from "../test/fakeCanvas.ts";
 
 installFakeCanvas();
 
@@ -49,7 +49,8 @@ const vp8x = (w: number, h: number, animFlag: boolean): number[] => [
   ...u24le(w - 1),
   ...u24le(h - 1),
 ];
-// ANIM payload: background colour (BGRA) + u16 loop count.
+// ANIM payload: background colour (BGRA) + u16 loop count. Opaque white is what
+// libwebp writes by default, and must not reach the canvas.
 const anim = (): number[] => [0xff, 0xff, 0xff, 0xff, 0, 0];
 // A frame's inner data: a single "VP8 " sub-chunk (content irrelevant — the
 // decode is shimmed; makeFrameBlob only reads the leading fourCC).
@@ -149,6 +150,25 @@ assert.equal(duration, 200, "total duration == final cumulative time");
 // is replayed from it on demand.
 assert.ok(!(source.getBitmap(0) instanceof Promise), "frame 0 is a resident keyframe");
 assert.ok(await source.getBitmap(1), "frame 1 is recomposited on demand");
+
+// ---- the ANIM background colour is ignored --------------------------------
+// Browsers ignore it (the container spec tells them to) and show the page
+// through transparent pixels; painting it would put an opaque white box behind
+// every transparent animation. The shimmed frame blobs decode to nothing, so
+// every canvas pixel must still be transparent black.
+for (const index of [0, 1]) {
+  const bitmap = (await source.getBitmap(index)) as unknown as FakeImageBitmap;
+  for (let y = 0; y < 4; y++) {
+    for (let x = 0; x < 4; x++) {
+      assert.deepEqual(
+        pixelAt(bitmap, x, y),
+        [0, 0, 0, 0],
+        `frame ${index} pixel (${x},${y}) is transparent, not the ANIM background`,
+      );
+    }
+  }
+}
+
 source.close();
 await assert.rejects(
   async () => source.getBitmap(1),
