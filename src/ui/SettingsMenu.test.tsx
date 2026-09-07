@@ -159,5 +159,103 @@ assert.equal(rows().length, 2, "just the actions");
 assert.equal(container.querySelector(".menu-empty"), null, "not treated as empty");
 assert.equal(container.querySelector('[role="separator"]'), null, "no rule with nothing above it");
 
+// ---- menu keyboard semantics --------------------------------------------
+// `role="menu"` promises Up/Down/Home/End between rows and Right/Left in and out
+// of a sub-panel, plus roving tabindex so Tab leaves rather than walks the menu.
+// A fresh container, because the menu focuses its first row on MOUNT — which is
+// what opening it is, and re-rendering into `container` would only diff the
+// instance that is already there.
+render(null, container);
+const navBox = document.createElement("div");
+document.body.appendChild(navBox);
+
+const navConfig: SettingsEntry[] = [
+  { id: "loop", label: "Loop", kind: "toggle", default: true },
+  ...config, // "speed", which owns a sub-panel
+];
+let navSettings: Settings = { loop: true, speed: 1 };
+const renderNav = (): void => {
+  act(() => {
+    render(
+      <SettingsMenu
+        config={navConfig}
+        settings={navSettings}
+        onChange={(id, value) => {
+          navSettings = { ...navSettings, [id]: value };
+          renderNav();
+        }}
+        actions={[{ id: "copy", label: "Copy frame", run: () => {} }]}
+      />,
+      navBox,
+    );
+  });
+};
+
+const navRows = () => Array.from(navBox.querySelectorAll<HTMLElement>("button.menu-row"));
+/** The row that currently holds focus, by identity — not by matching text. */
+const focused = () => navRows().find((r) => r === document.activeElement);
+const focusedText = () => focused()?.textContent ?? "(nothing focused)";
+/** Rows in the tab order; roving tabindex keeps this to exactly one. */
+const tabStops = () => navRows().filter((r) => r.tabIndex === 0);
+
+/** Press `key` on whichever row holds focus. */
+const key = (name: string) => {
+  const event = new window.KeyboardEvent("keydown", {
+    key: name,
+    bubbles: true,
+    cancelable: true,
+  });
+  act(() => (focused() ?? navBox).dispatchEvent(event));
+  return event;
+};
+
+renderNav();
+// Opening the menu is this component mounting, so it focuses its own first row —
+// <Controls> no longer has to reach in and do it.
+assert.equal(navRows().length, 3, "two settings plus one action");
+assert.match(focusedText(), /Loop/, "focus starts on the first row");
+assert.deepEqual(tabStops(), [focused()], "the focused row is the only tab stop");
+
+const down = key("ArrowDown");
+assert.match(focusedText(), /Speed/, "ArrowDown moves to the next row");
+assert.equal(down.defaultPrevented, true, "and is consumed, so the page can't scroll");
+
+key("ArrowDown");
+assert.match(focusedText(), /Copy frame/, "ArrowDown reaches the action rows");
+key("ArrowDown");
+assert.match(focusedText(), /Loop/, "ArrowDown wraps at the end");
+key("ArrowUp");
+assert.match(focusedText(), /Copy frame/, "ArrowUp wraps at the start");
+key("Home");
+assert.match(focusedText(), /Loop/, "Home goes to the first row");
+key("End");
+assert.match(focusedText(), /Copy frame/, "End goes to the last row");
+assert.deepEqual(tabStops(), [focused()], "still exactly one tab stop after moving");
+
+// Right enters the sub-panel of the row that owns one and lands on the current
+// choice; Left comes back out, onto the row it was opened from.
+key("Home");
+key("ArrowDown"); // Speed
+const right = key("ArrowRight");
+assert.equal(right.defaultPrevented, true, "ArrowRight is consumed");
+assert.equal(navBox.querySelectorAll('[role="menuitemradio"]').length, 3, "sub-panel opened");
+assert.match(focusedText(), /Normal/, "focus lands on the current choice");
+key("ArrowLeft");
+assert.equal(navBox.querySelector('[role="menuitemradio"]'), null, "ArrowLeft returns to main");
+assert.match(focusedText(), /Speed/, "…onto the row the sub-panel was opened from");
+
+// A row with no sub-panel has nothing to enter, so the key is left alone.
+key("Home"); // Loop
+const noPanel = key("ArrowRight");
+assert.equal(
+  navBox.querySelector('[role="menuitemradio"]'),
+  null,
+  "ArrowRight on a toggle opens nothing",
+);
+assert.equal(noPanel.defaultPrevented, false, "and is not consumed");
+
+render(null, navBox);
+navBox.remove();
+
 render(null, container);
 console.log("SettingsMenu.test: OK");

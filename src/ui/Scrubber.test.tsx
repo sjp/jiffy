@@ -39,6 +39,13 @@ const range = a.querySelector("input")!;
 assert.equal(range.type, "range", "is a range input");
 assert.equal(range.max, "300", "max = duration");
 assert.equal(range.value, "50", "value = time");
+// The value the input carries is milliseconds; aria-valuetext is what a screen
+// reader actually reads, so it has to be the human clock, not "fifty".
+assert.equal(
+  range.getAttribute("aria-valuetext"),
+  "0.1s of 0.3s",
+  "aria-valuetext speaks elapsed / total, not raw milliseconds",
+);
 
 act(() => {
   range.value = "150";

@@ -95,6 +95,28 @@ read on the release.
 
 ### Fixed
 
+- The control bar can be used without a pointer. The move handle now takes focus
+  and the arrow keys nudge the bar (Shift for a single pixel, Enter to snap it
+  back), so a bar sitting over the part of the image you're watching is no longer
+  stuck there. It advertised itself as a button before, and wasn't one.
+- The ⚙ menu behaves like the menu it announces: Up/Down/Home/End move between
+  rows, Right opens a setting's choices and Left comes back out onto the row it
+  was opened from, and only one row is in the tab order at a time, so Tab leaves
+  the menu instead of walking it. Arrow keys used to do nothing there but scroll
+  the page behind it.
+- Closing the player no longer drops keyboard focus on the floor: it goes back to
+  wherever it came from, or to the image itself when the pick started from a
+  click with nothing focused.
+- The bar, its menu and the status toast are drawn from the system palette in
+  Windows High Contrast (and any other forced-colours mode), where they were
+  previously an invisible set of controls floating over the image.
+- Screen readers now hear the pick flow. The status toast — "Loading…", "Not an
+  animated image", the export confirmations — is a live region rather than
+  visible-only text, and the seek slider reads out "1.2s of 3.0s" instead of its
+  raw millisecond value.
+- Slightly stronger contrast on the muted parts of the bar (the move handle and
+  the elapsed-time readout), which sat near the legibility floor over a light
+  image.
 - A controlled image that swaps to a different picture — a carousel advancing, a
   lazy-loader replacing its placeholder, a responsive image re-picking a
   candidate, an app changing the picture on a route change — now closes its

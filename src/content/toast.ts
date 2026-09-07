@@ -52,6 +52,19 @@ const TOAST_CSS = `
   .cancel:hover {
     background: rgba(255, 255, 255, 0.3);
   }
+  /* Forced colours drop the background and the shadow, which would leave white
+     text on the page itself. Repaint from the system palette, same as the bar. */
+  @media (forced-colors: active) {
+    .toast {
+      background: Canvas;
+      color: CanvasText;
+      border: 1px solid CanvasText;
+    }
+    .cancel:hover {
+      background: Highlight;
+      color: HighlightText;
+    }
+  }
 `;
 
 /** A live toast: update its text (optionally auto-dismissing) or remove it. */
@@ -89,7 +102,16 @@ export function showToast(clientX: number, clientY: number, onCancel?: () => voi
 
   // The message lives in its own node so the cancel button (a sibling) survives
   // a set() — writing box.textContent directly would wipe the button.
+  //
+  // It is also the live region: the toast is the ONLY report a pick ever makes,
+  // so without this "Loading…", "Not an animated image" and the export
+  // confirmations are visible-only and a screen-reader user gets silence.
+  // Polite, not assertive — none of these is worth interrupting for — and on the
+  // label rather than the box so the ✕ appearing and going isn't re-announced.
   const label = document.createElement("span");
+  label.setAttribute("role", "status");
+  label.setAttribute("aria-live", "polite");
+  label.setAttribute("aria-atomic", "true");
   box.appendChild(label);
 
   let timer: ReturnType<typeof setTimeout> | undefined;

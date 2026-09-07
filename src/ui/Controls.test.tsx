@@ -213,5 +213,76 @@ act(() => engine.seekToIndex(0));
 act(() => rowLabelled("Save frame…")!.click());
 assert.deepEqual(exported.at(-1), ["save", 0], "save acts on the frame on screen");
 
+// ---- the move handle is reachable from the keyboard ----------------------
+// The grip advertises itself as a button, so it has to be operable as one: it
+// takes focus, the arrows nudge the bar (Shift for a single pixel) and
+// Enter/Space snaps it back, all without leaking through to the bar's own
+// shortcuts behind it.
+const nudges: Array<[number, number]> = [];
+let resets = 0;
+const gripBox = document.createElement("div");
+document.body.appendChild(gripBox);
+act(() => {
+  render(
+    <Controls
+      engine={engine}
+      onDragStart={() => {}}
+      onResetPosition={() => resets++}
+      onNudge={(dx, dy) => nudges.push([dx, dy])}
+    />,
+    gripBox,
+  );
+});
+
+const grip = gripBox.querySelector(".grip") as HTMLElement;
+assert.ok(grip, "the grip renders when a drag handler is supplied");
+assert.equal(grip.getAttribute("role"), "button", "it announces as a button");
+assert.equal(grip.tabIndex, 0, "…and, unlike before, it can actually be focused");
+
+const gripKey = (name: string, shiftKey = false) => {
+  const event = new window.KeyboardEvent("keydown", {
+    key: name,
+    shiftKey,
+    bubbles: true,
+    cancelable: true,
+  });
+  act(() => {
+    grip.dispatchEvent(event);
+  });
+  return event;
+};
+
+const gripBar = gripBox.querySelector(".bar") as HTMLElement;
+assert.equal(gripBar.getAttribute("role"), "group", "the bar is a named group");
+assert.ok(gripBar.getAttribute("aria-label"), "…so it doesn't announce as an unnamed one");
+
+const before = { index: engine.state.index, playing: engine.state.playing };
+const arrow = gripKey("ArrowRight");
+assert.deepEqual(nudges.at(-1), [8, 0], "ArrowRight nudges the bar right");
+assert.equal(arrow.defaultPrevented, true, "the key is consumed");
+assert.equal(engine.state.index, before.index, "…and never reaches the frame-step shortcut");
+
+gripKey("ArrowLeft");
+assert.deepEqual(nudges.at(-1), [-8, 0], "ArrowLeft nudges left");
+gripKey("ArrowUp");
+assert.deepEqual(nudges.at(-1), [0, -8], "ArrowUp nudges up");
+gripKey("ArrowDown", true);
+assert.deepEqual(nudges.at(-1), [0, 1], "Shift asks for a single-pixel step");
+
+gripKey("Enter");
+assert.equal(resets, 1, "Enter resets the position, as a double-click does");
+gripKey(" ");
+assert.equal(resets, 2, "Space does too");
+assert.equal(engine.state.playing, before.playing, "…and does not also toggle playback");
+
+// Anything the grip has no use for is left for the bar behind it.
+gripKey("End");
+assert.equal(engine.state.index, 2, "a key the grip ignores still reaches the bar's shortcuts");
+const passed = gripKey("q");
+assert.equal(passed.defaultPrevented, false, "and one neither wants is left for the page");
+
+render(null, gripBox);
+gripBox.remove();
+
 render(null, container);
 console.log("Controls.test: OK");

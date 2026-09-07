@@ -91,11 +91,29 @@ export function mountControls(
     place(clampedLeft + window.scrollX, clampedTop + window.scrollY);
   };
 
-  // Snap back to the default anchored position (double-click the grip).
+  // reposition() clamps the bar into the viewport; fold that clamp back into the
+  // offset so pushing at an edge doesn't build up a debt that has to be paid
+  // back before the bar visually responds again. Called after every move.
+  const absorbClamp = (): void => {
+    const rect = img.getBoundingClientRect();
+    userDx = placedLeft - rect.left - 8;
+    userDy = placedTop - (rect.top + rect.height - 8 - host.offsetHeight);
+  };
+
+  // Snap back to the default anchored position (double-click or Enter on the grip).
   const resetPosition = (): void => {
     userDx = 0;
     userDy = 0;
     reposition();
+  };
+
+  // Keyboard move, from the grip's arrow keys. Same offset the drag accumulates
+  // into, so the two ways of moving the bar compose rather than fight.
+  const nudge = (dx: number, dy: number): void => {
+    userDx += dx;
+    userDy += dy;
+    reposition();
+    absorbClamp();
   };
 
   // Begin dragging the bar from the grip handle. Tracks the pointer on `window`
@@ -114,14 +132,7 @@ export function mountControls(
       userDx = baseDx + (e.clientX - startX);
       userDy = baseDy + (e.clientY - startY);
       reposition();
-      // Back-calculate from the clamped position so userDx/userDy never
-      // accumulate past the clamp boundary. Without this, dragging into an edge
-      // and then back requires travelling the full over-drag distance before the
-      // bar visually responds, making it appear stuck.
-      const r = img.getBoundingClientRect();
-      const bh = host.offsetHeight;
-      userDx = placedLeft - r.left - 8;
-      userDy = placedTop - (r.top + r.height - 8 - bh);
+      absorbClamp();
     };
     const onUp = (): void => {
       // The capture is auto-released on pointerup, but release explicitly to
@@ -164,6 +175,39 @@ export function mountControls(
     save: (index) => report(frameExport.save(index), "Frame saved", "Couldn't save this frame"),
   };
 
+  // Where focus was when the bar appeared, for putting it back when the bar goes
+  // away (see releaseFocus).
+  const focusedBefore = document.activeElement;
+
+  /**
+   * Hand focus back before the host is removed. Losing it to <body> strands a
+   * keyboard user with no idea where they are in the page, and the bar can be
+   * closed from inside itself (✕, or Escape on the toast) or from outside
+   * (reconcile), so this has to be conditional on actually holding the focus.
+   */
+  const releaseFocus = (): void => {
+    // The shadow root is open, but the page's activeElement is still the host —
+    // focus inside a shadow tree is reported as the host that contains it.
+    if (document.activeElement !== host) return;
+    if (
+      focusedBefore instanceof HTMLElement &&
+      focusedBefore.isConnected &&
+      focusedBefore !== document.body
+    ) {
+      focusedBefore.focus();
+      return;
+    }
+    // Nothing to go back to — a pick usually starts from a click on the page
+    // with nothing focused. Park on the image the bar was about. An <img> takes
+    // no focus of its own, so lend it a tabindex and take it back the moment it
+    // gives the focus up, leaving the page's own markup as we found it.
+    if (!img.hasAttribute("tabindex")) {
+      img.setAttribute("tabindex", "-1");
+      img.addEventListener("blur", () => img.removeAttribute("tabindex"), { once: true });
+    }
+    img.focus();
+  };
+
   // Render into a dedicated mount point so Preact's diffing never touches the
   // sibling <style> node.
   const mountPoint = document.createElement("div");
@@ -173,6 +217,7 @@ export function mountControls(
       engine={engine}
       onDragStart={beginDrag}
       onResetPosition={resetPosition}
+      onNudge={nudge}
       onClose={onClose}
       frameActions={frameActions}
     />,
@@ -184,6 +229,8 @@ export function mountControls(
   const untrack = trackImageBox(img, reposition);
 
   return () => {
+    // Before the unmount, while the focused control is still there to be asked about.
+    releaseFocus();
     render(null, mountPoint);
     untrack();
     remove();

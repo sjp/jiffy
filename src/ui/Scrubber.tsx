@@ -2,6 +2,7 @@
 // Driving by time gives smooth seeking across uneven GIF delays;
 // `engine.seekToTime` snaps to the correct frame internally, while frame-stepping
 // stays exact via the buttons. Pure/presentational: props + callbacks only.
+import { formatTime } from "./time";
 
 export interface ScrubberProps {
   /** Current playback time in ms (the engine's continuous clock). */
@@ -26,6 +27,9 @@ export function Scrubber({ time, duration, onSeek, onScrubStart, onScrubEnd }: S
       step="any"
       value={time}
       aria-label="Seek"
+      // The range's own value is milliseconds, which a screen reader would read
+      // out digit by digit ("twelve hundred"); say the same thing as the readout.
+      aria-valuetext={`${formatTime(time)} of ${formatTime(duration)}`}
       onPointerDown={onScrubStart}
       onInput={(e) => onSeek(e.currentTarget.valueAsNumber)}
       onPointerUp={onScrubEnd}

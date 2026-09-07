@@ -58,10 +58,12 @@
   align-items: center;
 }
 
-/* Drag handle: a pointer-only grip the user drags to reposition the bar. Muted
-   until hover so it reads as an affordance, not another control. `touch-action:
-   none` stops the browser claiming the gesture for scroll/pan so our pointermove
-   tracking stays clean. */
+/* Drag handle: the grip the user drags — or, from the keyboard, focuses and
+   nudges with the arrow keys — to reposition the bar. Muted until hover so it
+   reads as an affordance, not another control, but only to 0.7: below that it
+   drops under 4.5:1 against the translucent bar over a light image.
+   `touch-action: none` stops the browser claiming the gesture for scroll/pan so
+   our pointermove tracking stays clean. */
 .grip {
   display: inline-flex;
   align-items: center;
@@ -70,7 +72,7 @@
   height: 28px;
   margin-right: 2px;
   color: inherit;
-  opacity: 0.55;
+  opacity: 0.7;
   cursor: grab;
   touch-action: none;
 }
@@ -81,6 +83,13 @@
 
 .grip:active {
   cursor: grabbing;
+}
+
+/* Not a <button>, so `.bar button:focus-visible` doesn't reach it. */
+.grip:focus-visible {
+  opacity: 1;
+  outline: 2px solid #8b5cf6;
+  outline-offset: 1px;
 }
 
 .scrubber {
@@ -105,7 +114,7 @@
 }
 
 .readout .time {
-  opacity: 0.7;
+  opacity: 0.8;
 }
 
 /* Settings cog + popover. The popover lives inside the bar so it inherits the
@@ -184,4 +193,40 @@
 .menu-empty {
   padding: 8px 10px;
   opacity: 0.6;
+}
+
+/* Windows High Contrast (and any other forced-colours mode) drops our
+   backgrounds and box-shadows on the floor: without this the bar and its
+   popover become invisible controls floating over the image. Repaint from the
+   system palette and draw a real border in place of the shadow, and take the
+   dimming off the muted parts — forced colours give us one foreground colour,
+   so opacity is the only thing left that could make text unreadable. */
+@media (forced-colors: active) {
+  .bar,
+  .menu {
+    background: Canvas;
+    color: CanvasText;
+    border: 1px solid CanvasText;
+  }
+
+  .bar button:hover {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .grip,
+  .readout .time,
+  .menu-value,
+  .menu-back,
+  .menu-empty {
+    opacity: 1;
+  }
+
+  .menu-back {
+    border-bottom-color: CanvasText;
+  }
+
+  .menu-sep {
+    background: CanvasText;
+  }
 }

@@ -49,6 +49,13 @@ export interface ControlsProps {
   onDragStart?: (event: PointerEvent) => void;
   /** Double-click the move handle to snap the bar back to its default position. */
   onResetPosition?: () => void;
+  /**
+   * Move the bar by `dx`/`dy` viewport pixels. The keyboard counterpart to
+   * `onDragStart`: a pointer is not the only way a user may need the bar off the
+   * part of the image they are looking at. Same owner as the drag — the host
+   * does the positioning — so it arrives the same way.
+   */
+  onNudge?: (dx: number, dy: number) => void;
   /** Called when the user clicks the close button; tears down the player. */
   onClose?: () => void;
   /**
@@ -58,6 +65,18 @@ export interface ControlsProps {
    */
   frameActions?: FrameActions;
 }
+
+// How far one arrow key moves the bar, and the finer step Shift asks for.
+const NUDGE_PX = 8;
+const FINE_NUDGE_PX = 1;
+
+/** Unit direction for each arrow key the grip nudges with. */
+const NUDGE_KEYS: Record<string, { x: number; y: number }> = {
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+};
 
 const useScrubResume = () => {
   const ref = useRef(false);
@@ -74,6 +93,7 @@ export function Controls({
   engine,
   onDragStart,
   onResetPosition,
+  onNudge,
   onClose,
   frameActions,
 }: ControlsProps) {
@@ -116,15 +136,27 @@ export function Controls({
     return () => document.removeEventListener("pointerdown", onPointerDown, true);
   }, [menuOpen]);
 
-  // Move focus into the menu when it opens.
-  useEffect(() => {
-    if (!menuOpen) return;
-    settingsRef.current?.querySelector<HTMLElement>(".menu-row")?.focus();
-  }, [menuOpen]);
-
   const closeMenu = (): void => {
     setMenuOpen(false);
     cogRef.current?.focus();
+  };
+
+  // Keyboard equivalent of dragging the grip: arrows nudge (Shift for a single
+  // pixel), Enter/Space snaps back to the default spot the way a double-click
+  // does. Handled on the grip itself and stopped there, so the arrows don't also
+  // step frames and Space doesn't also toggle playback on the bar behind it.
+  const onGripKeyDown = (event: KeyboardEvent): void => {
+    const direction = NUDGE_KEYS[event.key];
+    const step = event.shiftKey ? FINE_NUDGE_PX : NUDGE_PX;
+    if (direction && onNudge) {
+      onNudge(direction.x * step, direction.y * step);
+    } else if ((event.key === "Enter" || event.key === " ") && onResetPosition) {
+      onResetPosition();
+    } else {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
   };
 
   // Export rows for the menu. The action runs BEFORE the menu closes so the
@@ -158,7 +190,21 @@ export function Controls({
     // text inputs keep their keys.
     <div
       class="bar"
+      // A focusable element with no accessible name announces as just "group";
+      // there may be two of these on a page, so say which one this is.
+      role="group"
+      aria-label="Jiffy playback controls"
       tabIndex={0}
+      onFocusOut={(event) => {
+        // Tab out of the roving-tabindex menu (or a click that lands elsewhere)
+        // leaves it open behind the focus. Close it, but don't pull focus back
+        // to the cog — the user asked to be somewhere else.
+        const wrapper = settingsRef.current;
+        const next = event.relatedTarget;
+        if (!menuOpen || !wrapper) return;
+        if (next instanceof Node && wrapper.contains(next)) return;
+        setMenuOpen(false);
+      }}
       onKeyDown={(event) => {
         // While the settings menu is open it owns keyboard input: Escape closes
         // it (and returns focus to the cog); other keys are left for the menu
@@ -174,16 +220,21 @@ export function Controls({
       }}
     >
       {onDragStart && (
-        // Drag handle. A non-<button> element so it
-        // stays out of the tab order and the keyboard step shortcuts — it's a
-        // pointer-only affordance for repositioning the bar away from content.
+        // Move handle. Focusable and arrow-nudgeable, not pointer-only: it
+        // carries a button role and label, and a control that announces itself
+        // and then can't be operated is worse than none. A <div> rather than a
+        // <button> so Space and the arrows reach onGripKeyDown intact instead of
+        // being spent on native activation.
         <div
           class="grip"
           role="button"
+          tabIndex={0}
           aria-label="Move controls"
-          title="Drag to move · double-click to reset"
+          aria-keyshortcuts="ArrowUp ArrowDown ArrowLeft ArrowRight Enter"
+          title="Drag or arrow-key to move · double-click or Enter to reset"
           onPointerDown={(event) => onDragStart(event)}
           onDblClick={() => onResetPosition?.()}
+          onKeyDown={onGripKeyDown}
         >
           <GripIcon />
         </div>

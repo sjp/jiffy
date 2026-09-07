@@ -44,6 +44,15 @@ assert.equal((host as HTMLElement).style.left, "120px", "anchored at clientX");
 assert.equal((host as HTMLElement).style.top, "40px", "anchored at clientY");
 assert.equal((host as HTMLElement).style.pointerEvents, "none", "toast never eats clicks");
 
+// ---- the message is a live region -----------------------------------------
+// The toast is the pick flow's only report, so a screen reader has to hear it.
+// The region sits on the label, not the box, so the ✕ coming and going doesn't
+// re-announce the message beside it.
+const label = host.shadowRoot!.querySelector("span")!;
+assert.equal(label.getAttribute("role"), "status", "the message is a status region");
+assert.equal(label.getAttribute("aria-live"), "polite", "announced politely, not assertively");
+assert.equal(label.getAttribute("aria-atomic"), "true", "read whole, not just the changed words");
+
 // ---- set() writes text into the shadow box --------------------------------
 toast.set("Loading…");
 assert.equal(boxText(host), "Loading…", "set() updates the message");
