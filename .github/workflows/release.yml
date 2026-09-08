@@ -21,9 +21,9 @@ jobs:
 
       - run: npm ci
 
-      # The same gate CI runs, in the same order. A tag can be pushed from a
-      # branch that never went through CI, so the release must not be the first
-      # time any of these are checked.
+      # The same gate CI runs, in the same order (its smoke job included, below
+      # the build). A tag can be pushed from a branch that never went through CI,
+      # so the release must not be the first time any of these are checked.
       - run: npm run typecheck
 
       - run: npm run format:check
@@ -41,6 +41,12 @@ jobs:
       # Lint the built Firefox extension against AMO's rules. Needs
       # dist-firefox/, so it runs after the build.
       - run: npm run lint
+
+      # The real-browser pass CI runs as its own job. It downloads the Chrome
+      # the manifest's floor names, so it is a minute and a network dependency —
+      # worth both here, since this is the last chance to notice that the thing
+      # being published doesn't actually run. dist-chrome/ is built above.
+      - run: npm run test:smoke
 
       - run: npm run pack
 

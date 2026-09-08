@@ -36,3 +36,37 @@ jobs:
       - run: npm run lint
 
       - run: npm run build:chrome
+
+  # The real-browser pass, kept out of the job above so a Chrome download can
+  # never slow down (or flake) the fast gate. It builds the Chrome extension,
+  # loads it in the oldest Chrome the manifest claims to support, and picks an
+  # animated GIF on a fixture page — the only coverage there is for the parts
+  # that only exist in the extension runtime. See scripts/smoke.mjs.
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run build:chrome
+
+      # Which Chrome the smoke test downloads is `minimum_chrome_version`, so
+      # that is the cache key: raising the floor fetches a new build, and
+      # everything else reuses the last one.
+      - id: floor
+        run: |
+          echo "milestone=$(node -p 'require("./manifest.chrome.json").minimum_chrome_version')" \
+            >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/jiffy-browsers
+          key: chrome-for-testing-${{ runner.os }}-${{ steps.floor.outputs.milestone }}
+
+      - run: npm run test:smoke

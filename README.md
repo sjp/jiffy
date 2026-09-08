@@ -179,6 +179,7 @@ npm run dev:chrome
 ```sh
 npm run typecheck       # TypeScript (no emit), sources and tests
 npm run test            # Unit tests
+npm run test:smoke      # Real-browser test (needs dist-chrome/)
 npm run lint            # web-ext lint on dist-firefox/
 npm run lint:js         # oxlint
 npm run format          # oxfmt (write)
@@ -189,6 +190,17 @@ Tests are bundled with esbuild (for JSX and the `.css` import) and run one
 process per file, concurrently; see `scripts/test.mjs`. A passing file prints
 one line and swallows its own output — set `JIFFY_TEST_VERBOSE=1` to see it, and
 the `console.debug` the tests deliberately provoke along with it.
+
+`test:smoke` is the one test that isn't headless. It loads `dist-chrome/` into
+the oldest Chrome `minimum_chrome_version` claims to support — downloaded from
+Chrome for Testing on first run — picks an animated GIF on a fixture page, and
+reads the frame back off a screenshot. That is the only coverage for the parts
+that exist only in the extension runtime: the `browser.*` namespace, the decode
+worker's `blob:` fallback, the background fetch port, and where the overlay
+actually lands on a transformed page. Chrome for Testing has no linux-arm64
+build, so on that platform point it at a local browser:
+`JIFFY_SMOKE_CHROME=/usr/bin/chromium npm run test:smoke`. Add
+`JIFFY_SMOKE_HEADFUL=1` to watch it run.
 
 ### Load your local build
 

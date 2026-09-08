@@ -16,6 +16,7 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check",
     "test": "node scripts/test.mjs",
+    "test:smoke": "node scripts/smoke.mjs",
     "pack": "rm -f jiffy-firefox.zip jiffy-chrome.zip && (cd dist-firefox && zip -rX ../jiffy-firefox.zip .) && (cd dist-chrome && zip -rX ../jiffy-chrome.zip .)"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "preact": "^10.29.8"
   },
   "devDependencies": {
+    "@puppeteer/browsers": "^3.2.2",
     "@types/firefox-webext-browser": "^143.0.0",
     "@types/jsdom": "^30.0.0",
     "@types/node": "^26.4.1",
@@ -30,6 +32,7 @@
     "jsdom": "^30.0.1",
     "oxfmt": "^0.66.0",
     "oxlint": "^1.81.0",
+    "puppeteer-core": "^24.43.1",
     "typescript": "^7.0.2",
     "web-ext": "^10.6.0"
   },
