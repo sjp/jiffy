@@ -64,7 +64,7 @@ jobs:
           echo "milestone=$(node -p 'require("./manifest.chrome.json").minimum_chrome_version')" \
             >> "$GITHUB_OUTPUT"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: node_modules/.cache/jiffy-browsers
           key: chrome-for-testing-${{ runner.os }}-${{ steps.floor.outputs.milestone }}
