@@ -314,13 +314,25 @@ try {
     executablePath: chrome.executablePath,
     headless: process.env.JIFFY_SMOKE_HEADFUL !== "1",
     enableExtensions: [extDir],
-    // `enableExtensions` with a path list needs the pipe transport rather than a
-    // websocket; puppeteer refuses the combination otherwise.
+    // A path list is installed over CDP as `Extensions.loadUnpacked`, which
+    // Chrome only answers on a browser-level target reached over the pipe
+    // transport — a websocket client is refused `AllowUnsafeOperations` and the
+    // command comes back "Method not available.".
     pipe: true,
     defaultViewport: { width: 1000, height: 1050 },
-    // Containers and CI runners have no user namespace to sandbox into, and
-    // /dev/shm is routinely too small for Chrome's default shared memory use.
-    args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    args: [
+      // The other half of that gate, and the reason this stopped working when
+      // puppeteer-core went 24 → 25: up to and including milestone 148,
+      // `Extensions.loadUnpacked` also needs this switch. Puppeteer 24 always
+      // passed it for `enableExtensions`; 25 does not, because Chrome dropped
+      // the check after 148 — but the manifest's floor is what runs here, so we
+      // pass it ourselves. Newer Chrome ignores a switch it no longer reads.
+      "--enable-unsafe-extension-debugging",
+      // Containers and CI runners have no user namespace to sandbox into, and
+      // /dev/shm is routinely too small for Chrome's default shared memory use.
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+    ],
   });
 
   // ---- the background service worker came up ------------------------------
