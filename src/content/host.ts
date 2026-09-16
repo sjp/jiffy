@@ -110,10 +110,14 @@ export interface MountedHost {
   /**
    * Move the host's top-left corner to `x`/`y` — page coordinates for an
    * `absolute` host, viewport coordinates for a `fixed` one.
+   *
+   * `this: void` because every caller destructures this off the returned
+   * object; the implementation is a closure over `createHost`'s locals and
+   * never reads `this`, and saying so keeps `unbound-method` quiet.
    */
-  place(x: number, y: number): void;
+  place(this: void, x: number, y: number): void;
   /** Remove the host, and everything in its shadow tree, from the page. */
-  remove(): void;
+  remove(this: void): void;
 }
 
 export interface HostOptions {

@@ -181,10 +181,18 @@ npm run typecheck       # TypeScript (no emit), sources and tests
 npm run test            # Unit tests
 npm run test:smoke      # Real-browser test (needs dist-chrome/)
 npm run lint            # web-ext lint on dist-firefox/
-npm run lint:js         # oxlint
+npm run lint:js         # oxlint, including type-aware rules
 npm run format          # oxfmt (write)
 npm run format:check    # oxfmt (check only)
 ```
+
+`lint:js` runs oxlint's type-aware rules too (`no-floating-promises`,
+`await-thenable`, `unbound-method`, …), which need a type checker rather than
+just the AST. Those are handed to `oxlint-tsgolint`, a devDependency that wraps
+the TypeScript compiler's Go port — the same engine `typecheck` uses — so the
+lint is a hard failure if that package is missing rather than quietly skipping
+them. It reads the nearest `tsconfig.json`, which reaches the test files through
+the project reference in it.
 
 Tests are bundled with esbuild (for JSX and the `.css` import) and run one
 process per file, concurrently; see `scripts/test.mjs`. A passing file prints

@@ -29,7 +29,7 @@ const engine = createEngine(frames, 300, clock);
 const container = document.createElement("div");
 document.body.appendChild(container);
 
-act(() => {
+await act(() => {
   render(<Controls engine={engine} />, container);
 });
 
@@ -44,18 +44,18 @@ assert.equal(toggle!.getAttribute("aria-label"), "Play", "starts paused");
 assert.match(text(), /1 \/ 3/, "readout shows 1 / 3");
 
 // Toggle → plays; icon/label reflects state via the subscription.
-act(() => toggle!.click());
+await act(() => toggle!.click());
 assert.equal(engine.state.playing, true, "clicking toggle plays");
 assert.equal(toggle!.getAttribute("aria-label"), "Pause", "icon reflects playing");
 
 // Next → steps one frame and pauses (stepping is exact + paused).
-act(() => next!.click());
+await act(() => next!.click());
 assert.equal(engine.state.index, 1, "next steps one frame");
 assert.equal(engine.state.playing, false, "stepping pauses");
 assert.match(text(), /2 \/ 3/, "readout updates to 2 / 3");
 
 // Prev → steps back.
-act(() => prev!.click());
+await act(() => prev!.click());
 assert.equal(engine.state.index, 0, "prev steps back");
 assert.match(text(), /1 \/ 3/, "readout back to 1 / 3");
 
@@ -66,31 +66,31 @@ assert.match(text(), /1 \/ 3/, "readout back to 1 / 3");
 const bar = container.querySelector(".bar") as HTMLElement;
 assert.equal(bar.tabIndex, 0, "controls bar is focusable");
 
-const press = (key: string) => {
+const press = async (key: string) => {
   const event = new window.KeyboardEvent("keydown", {
     key,
     bubbles: true,
     cancelable: true,
   });
-  act(() => {
+  await act(() => {
     bar.dispatchEvent(event);
   });
   return event;
 };
 
-const space = press(" ");
+const space = await press(" ");
 assert.equal(engine.state.playing, true, "Space toggles play");
 assert.equal(space.defaultPrevented, true, "Space is preventDefault-ed (no page scroll)");
 
-press("ArrowRight");
+await press("ArrowRight");
 assert.equal(engine.state.index, 1, "ArrowRight steps forward");
 assert.equal(engine.state.playing, false, "stepping pauses");
 
-press("ArrowLeft");
+await press("ArrowLeft");
 assert.equal(engine.state.index, 0, "ArrowLeft steps back");
 
 // Unrelated keys are left for the page/browser.
-const other = press("a");
+const other = await press("a");
 assert.equal(other.defaultPrevented, false, "unrelated keys are not consumed");
 
 // ---- settings menu -------------------------------------------------------
@@ -101,7 +101,7 @@ assert.equal(cog.getAttribute("aria-haspopup"), "menu", "cog advertises a menu")
 assert.equal(cog.getAttribute("aria-expanded"), "false", "menu starts closed");
 assert.equal(container.querySelector('[role="menu"]'), null, "no popover while closed");
 
-act(() => cog.click());
+await act(() => cog.click());
 assert.equal(cog.getAttribute("aria-expanded"), "true", "cog click opens menu");
 assert.ok(container.querySelector('[role="menu"]'), "popover appears");
 
@@ -112,11 +112,11 @@ assert.ok(loopToggle(), "menu has a Loop toggle");
 assert.equal(engine.state.loop, true, "engine loops by default");
 assert.equal(loopToggle().getAttribute("aria-checked"), "true", "toggle is on");
 
-act(() => loopToggle().click());
+await act(() => loopToggle().click());
 assert.equal(engine.state.loop, false, "toggling Loop off disables engine loop");
 assert.equal(loopToggle().getAttribute("aria-checked"), "false", "toggle is off");
 
-act(() => loopToggle().click());
+await act(() => loopToggle().click());
 assert.equal(engine.state.loop, true, "toggling Loop on re-enables engine loop");
 
 // The Speed entry opens a sub-panel of rates and drives engine.setSpeed. It
@@ -126,13 +126,13 @@ const speedRow = buttons().find((b) => (b.textContent ?? "").includes("Speed")) 
 assert.ok(speedRow, "menu has a Speed row");
 assert.equal(engine.state.speed, 1, "engine speed defaults to 1");
 
-act(() => speedRow.click());
+await act(() => speedRow.click());
 const twoX = Array.from(container.querySelectorAll('[role="menuitemradio"]')).find((r) =>
   (r.textContent ?? "").includes("2×"),
 ) as HTMLElement;
 assert.ok(twoX, "sub-panel lists a 2× option");
 
-act(() => twoX.click());
+await act(() => twoX.click());
 assert.equal(engine.state.speed, 2, "selecting 2× sets engine speed");
 assert.ok(loopToggle(), "returned to the main panel after choosing a speed");
 
@@ -149,11 +149,11 @@ assert.ok(pingpongToggle(), "menu has a Ping Pong toggle");
 assert.equal(engine.state.reverse, false, "reverse off by default");
 assert.equal(engine.state.pingpong, false, "ping-pong off by default");
 
-act(() => reverseToggle().click());
+await act(() => reverseToggle().click());
 assert.equal(engine.state.reverse, true, "toggling Reverse drives the engine");
 
 // Turning on Ping Pong clears Reverse (mutual exclusivity).
-act(() => pingpongToggle().click());
+await act(() => pingpongToggle().click());
 assert.equal(engine.state.pingpong, true, "Ping Pong enabled");
 assert.equal(engine.state.reverse, false, "enabling Ping Pong clears Reverse");
 assert.equal(
@@ -163,11 +163,11 @@ assert.equal(
 );
 
 // …and vice versa.
-act(() => reverseToggle().click());
+await act(() => reverseToggle().click());
 assert.equal(engine.state.reverse, true, "Reverse re-enabled");
 assert.equal(engine.state.pingpong, false, "enabling Reverse clears Ping Pong");
 
-press("Escape");
+await press("Escape");
 assert.equal(cog.getAttribute("aria-expanded"), "false", "Escape closes menu");
 assert.equal(container.querySelector('[role="menu"]'), null, "popover removed after Escape");
 
@@ -176,13 +176,13 @@ assert.equal(container.querySelector('[role="menu"]'), null, "popover removed af
 // frame that's on screen at the moment they're picked.
 const rowLabelled = (label: string) => buttons().find((b) => (b.textContent ?? "").includes(label));
 
-act(() => cog.click());
+await act(() => cog.click());
 assert.equal(rowLabelled("Copy frame"), undefined, "no export rows without an exporter");
-act(() => cog.click());
+await act(() => cog.click());
 
 const exported: Array<[string, number]> = [];
-const rerender = (withExport: boolean): void => {
-  act(() => {
+const rerender = async (withExport: boolean): Promise<void> => {
+  await act(() => {
     render(
       <Controls
         engine={engine}
@@ -200,17 +200,17 @@ const rerender = (withExport: boolean): void => {
   });
 };
 
-rerender(true);
-act(() => engine.seekToIndex(2));
+await rerender(true);
+await act(() => engine.seekToIndex(2));
 
-act(() => cog.click());
-act(() => rowLabelled("Copy frame")!.click());
+await act(() => cog.click());
+await act(() => rowLabelled("Copy frame")!.click());
 assert.deepEqual(exported.at(-1), ["copy", 2], "copy acts on the frame on screen");
 assert.equal(cog.getAttribute("aria-expanded"), "false", "the menu closes after an action");
 
-act(() => cog.click());
-act(() => engine.seekToIndex(0));
-act(() => rowLabelled("Save frame…")!.click());
+await act(() => cog.click());
+await act(() => engine.seekToIndex(0));
+await act(() => rowLabelled("Save frame…")!.click());
 assert.deepEqual(exported.at(-1), ["save", 0], "save acts on the frame on screen");
 
 // ---- the move handle is reachable from the keyboard ----------------------
@@ -222,7 +222,7 @@ const nudges: Array<[number, number]> = [];
 let resets = 0;
 const gripBox = document.createElement("div");
 document.body.appendChild(gripBox);
-act(() => {
+await act(() => {
   render(
     <Controls
       engine={engine}
@@ -239,14 +239,14 @@ assert.ok(grip, "the grip renders when a drag handler is supplied");
 assert.equal(grip.getAttribute("role"), "button", "it announces as a button");
 assert.equal(grip.tabIndex, 0, "…and, unlike before, it can actually be focused");
 
-const gripKey = (name: string, shiftKey = false) => {
+const gripKey = async (name: string, shiftKey = false) => {
   const event = new window.KeyboardEvent("keydown", {
     key: name,
     shiftKey,
     bubbles: true,
     cancelable: true,
   });
-  act(() => {
+  await act(() => {
     grip.dispatchEvent(event);
   });
   return event;
@@ -257,28 +257,28 @@ assert.equal(gripBar.getAttribute("role"), "group", "the bar is a named group");
 assert.ok(gripBar.getAttribute("aria-label"), "…so it doesn't announce as an unnamed one");
 
 const before = { index: engine.state.index, playing: engine.state.playing };
-const arrow = gripKey("ArrowRight");
+const arrow = await gripKey("ArrowRight");
 assert.deepEqual(nudges.at(-1), [8, 0], "ArrowRight nudges the bar right");
 assert.equal(arrow.defaultPrevented, true, "the key is consumed");
 assert.equal(engine.state.index, before.index, "…and never reaches the frame-step shortcut");
 
-gripKey("ArrowLeft");
+await gripKey("ArrowLeft");
 assert.deepEqual(nudges.at(-1), [-8, 0], "ArrowLeft nudges left");
-gripKey("ArrowUp");
+await gripKey("ArrowUp");
 assert.deepEqual(nudges.at(-1), [0, -8], "ArrowUp nudges up");
-gripKey("ArrowDown", true);
+await gripKey("ArrowDown", true);
 assert.deepEqual(nudges.at(-1), [0, 1], "Shift asks for a single-pixel step");
 
-gripKey("Enter");
+await gripKey("Enter");
 assert.equal(resets, 1, "Enter resets the position, as a double-click does");
-gripKey(" ");
+await gripKey(" ");
 assert.equal(resets, 2, "Space does too");
 assert.equal(engine.state.playing, before.playing, "…and does not also toggle playback");
 
 // Anything the grip has no use for is left for the bar behind it.
-gripKey("End");
+await gripKey("End");
 assert.equal(engine.state.index, 2, "a key the grip ignores still reaches the bar's shortcuts");
-const passed = gripKey("q");
+const passed = await gripKey("q");
 assert.equal(passed.defaultPrevented, false, "and one neither wants is left for the page");
 
 render(null, gripBox);

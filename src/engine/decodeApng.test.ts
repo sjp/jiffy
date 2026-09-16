@@ -268,7 +268,7 @@ await assert.rejects(
     (data.length >> 16) & 0xff,
     (data.length >> 8) & 0xff,
     data.length & 0xff,
-    ...[...type].map((c) => c.charCodeAt(0)),
+    ...Array.from(type, (c) => c.charCodeAt(0)),
     ...data,
     0x00,
     0x00,

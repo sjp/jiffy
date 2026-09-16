@@ -4,6 +4,7 @@
   "categories": {
     "correctness": "error"
   },
+  "options": { "typeAware": true, "typeCheck": true },
   "ignorePatterns": ["dist/", "dist-firefox/", "dist-chrome/"],
   "rules": {
     "no-unused-vars": [

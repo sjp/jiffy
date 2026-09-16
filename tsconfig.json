@@ -32,6 +32,14 @@
 
     "skipLibCheck": true
   },
+  /* Not used by `tsc` here — `npm run typecheck` runs the two projects
+     separately. It is for oxlint's type-aware rules: `oxlint-tsgolint`
+     discovers projects by looking for a `tsconfig.json`, finds only this
+     one, and would otherwise lint every test file against an inferred
+     default config (no `jsxImportSource`, no ES2023 lib) where half the
+     types collapse to `any` and the rules quietly stop finding anything.
+     Following the reference gets them their real config. */
+  "references": [{ "path": "./tsconfig.test.json" }],
   "include": ["src", "types"],
   /* Test files + test helpers run under the esbuild test runner (Node globals,
      jsdom, no @types); keep them out of the browser-targeted typecheck. */

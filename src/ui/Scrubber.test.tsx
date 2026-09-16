@@ -22,7 +22,7 @@ let ends = 0;
 
 const a = document.createElement("div");
 document.body.appendChild(a);
-act(() => {
+await act(() => {
   render(
     <Scrubber
       time={50}
@@ -47,15 +47,15 @@ assert.equal(
   "aria-valuetext speaks elapsed / total, not raw milliseconds",
 );
 
-act(() => {
+await act(() => {
   range.value = "150";
   range.dispatchEvent(ev("input"));
 });
 assert.equal(seeked, 150, "onSeek gets the dragged time");
 
-act(() => void range.dispatchEvent(ev("pointerdown")));
+await act(() => void range.dispatchEvent(ev("pointerdown")));
 assert.equal(starts, 1, "pointerdown → onScrubStart");
-act(() => void range.dispatchEvent(ev("pointerup")));
+await act(() => void range.dispatchEvent(ev("pointerup")));
 assert.equal(ends, 1, "pointerup → onScrubEnd");
 
 render(null, a);
@@ -76,21 +76,21 @@ engine.play(); // playing (the scheduled tick never fires with this clock)
 
 const b = document.createElement("div");
 document.body.appendChild(b);
-act(() => render(<Controls engine={engine} />, b));
+await act(() => render(<Controls engine={engine} />, b));
 
 const slider = b.querySelector("input[type=range]")! as HTMLInputElement;
 
-act(() => void slider.dispatchEvent(ev("pointerdown")));
+await act(() => void slider.dispatchEvent(ev("pointerdown")));
 assert.equal(engine.state.playing, false, "pauses while dragging");
 
-act(() => {
+await act(() => {
   slider.value = "150";
   slider.dispatchEvent(ev("input"));
 });
 assert.equal(Math.round(engine.state.currentTime), 150, "drag seeks to time");
 assert.equal(engine.state.index, 1, "time 150 maps to frame 2");
 
-act(() => void slider.dispatchEvent(ev("pointerup")));
+await act(() => void slider.dispatchEvent(ev("pointerup")));
 assert.equal(engine.state.playing, true, "resumes playback after release");
 
 render(null, b);

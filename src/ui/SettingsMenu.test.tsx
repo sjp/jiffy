@@ -35,13 +35,13 @@ const onChange = (id: string, value: SettingValue): void => {
 const container = document.createElement("div");
 document.body.appendChild(container);
 
-const renderMenu = (): void => {
-  act(() => {
+const renderMenu = async (): Promise<void> => {
+  await act(() => {
     render(<SettingsMenu config={config} settings={settings} onChange={onChange} />, container);
   });
 };
 
-renderMenu();
+await renderMenu();
 
 const rows = () => Array.from(container.querySelectorAll<HTMLElement>("button.menu-row"));
 const text = () => container.textContent ?? "";
@@ -58,7 +58,7 @@ assert.match(text(), /Normal/, "row shows the current value");
 assert.equal(rows()[0]!.getAttribute("role"), "menuitem", "main row is menuitem");
 
 // Open the sub-panel.
-act(() => rows()[0]!.click());
+await act(() => rows()[0]!.click());
 const radios = () => Array.from(container.querySelectorAll('[role="menuitemradio"]'));
 assert.equal(radios().length, 3, "sub-panel lists the three options");
 const checked = radios().filter((r) => r.getAttribute("aria-checked") === "true");
@@ -67,20 +67,20 @@ assert.match(checked[0]!.textContent ?? "", /Normal/, "Normal is checked");
 
 // Select a new option → onChange fires; the panel returns to the main list.
 const twoX = radios().find((r) => (r.textContent ?? "").includes("2×"))!;
-act(() => (twoX as HTMLElement).click());
+await act(() => (twoX as HTMLElement).click());
 assert.deepEqual(changes.at(-1), ["speed", 2], "onChange got the new value");
 
 // Re-render with the parent-owned value, as <Controls> would.
-renderMenu();
+await renderMenu();
 assert.equal(rows().length, 1, "returned to the main panel after choosing");
 assert.match(text(), /2×/, "main row reflects the new value");
 
 // Back header returns to main without making a change.
-act(() => rows()[0]!.click());
+await act(() => rows()[0]!.click());
 const back = container.querySelector("button.menu-back") as HTMLElement;
 assert.ok(back, "sub-panel has a back button");
 const before = changes.length;
-act(() => back.click());
+await act(() => back.click());
 assert.equal(rows().length, 1, "back returns to the main panel");
 assert.equal(changes.length, before, "back makes no changes");
 
@@ -90,8 +90,8 @@ const toggleConfig: SettingsEntry[] = [
 ];
 let toggleSettings: Settings = { loop: true };
 const toggleChanges: Array<[string, SettingValue]> = [];
-const renderToggle = (): void => {
-  act(() => {
+const renderToggle = async (): Promise<void> => {
+  await act(() => {
     render(
       <SettingsMenu
         config={toggleConfig}
@@ -106,22 +106,22 @@ const renderToggle = (): void => {
   });
 };
 
-renderToggle();
+await renderToggle();
 const toggleRow = () => container.querySelector('[role="menuitemcheckbox"]') as HTMLElement;
 assert.ok(toggleRow(), "toggle renders as a menuitemcheckbox (no sub-panel)");
 assert.equal(toggleRow().getAttribute("aria-checked"), "true", "starts checked");
 
-act(() => toggleRow().click());
+await act(() => toggleRow().click());
 assert.deepEqual(toggleChanges.at(-1), ["loop", false], "click flips to false");
-renderToggle();
+await renderToggle();
 assert.equal(toggleRow().getAttribute("aria-checked"), "false", "now unchecked");
 
 // ---- action rows ---------------------------------------------------------
 // Actions are one-shot rows below the settings, separated by a rule so the two
 // kinds of row don't read as one list.
 const ran: string[] = [];
-const renderWithActions = (entries: SettingsEntry[]): void => {
-  act(() => {
+const renderWithActions = async (entries: SettingsEntry[]): Promise<void> => {
+  await act(() => {
     render(
       <SettingsMenu
         config={entries}
@@ -137,7 +137,7 @@ const renderWithActions = (entries: SettingsEntry[]): void => {
   });
 };
 
-renderWithActions(toggleConfig);
+await renderWithActions(toggleConfig);
 const actionRow = (label: string) =>
   rows().find((r) => (r.textContent ?? "").includes(label)) as HTMLElement;
 assert.equal(rows().length, 3, "the toggle plus the two actions");
@@ -149,12 +149,12 @@ assert.equal(
   "an action holds no value, so it is not checkable",
 );
 
-act(() => actionRow("Save frame…").click());
+await act(() => actionRow("Save frame…").click());
 assert.deepEqual(ran, ["save"], "picking a row runs that action");
 
 // Actions alone still make a menu — the "No settings" placeholder is for a
 // genuinely empty one, and no rule is drawn with nothing above it.
-renderWithActions([]);
+await renderWithActions([]);
 assert.equal(rows().length, 2, "just the actions");
 assert.equal(container.querySelector(".menu-empty"), null, "not treated as empty");
 assert.equal(container.querySelector('[role="separator"]'), null, "no rule with nothing above it");
@@ -174,15 +174,19 @@ const navConfig: SettingsEntry[] = [
   ...config, // "speed", which owns a sub-panel
 ];
 let navSettings: Settings = { loop: true, speed: 1 };
-const renderNav = (): void => {
-  act(() => {
+const renderNav = async (): Promise<void> => {
+  await act(() => {
     render(
       <SettingsMenu
         config={navConfig}
         settings={navSettings}
         onChange={(id, value) => {
           navSettings = { ...navSettings, [id]: value };
-          renderNav();
+          // Re-entrant, from inside the `act()` this very call is running in,
+          // and `onChange` is synchronous — so this is the one render that
+          // can't be awaited. `act()` has already flushed by the time it
+          // returns, so the discarded promise carries nothing.
+          void renderNav();
         }}
         actions={[{ id: "copy", label: "Copy frame", run: () => {} }]}
       />,
@@ -199,54 +203,54 @@ const focusedText = () => focused()?.textContent ?? "(nothing focused)";
 const tabStops = () => navRows().filter((r) => r.tabIndex === 0);
 
 /** Press `key` on whichever row holds focus. */
-const key = (name: string) => {
+const key = async (name: string) => {
   const event = new window.KeyboardEvent("keydown", {
     key: name,
     bubbles: true,
     cancelable: true,
   });
-  act(() => void (focused() ?? navBox).dispatchEvent(event));
+  await act(() => void (focused() ?? navBox).dispatchEvent(event));
   return event;
 };
 
-renderNav();
+await renderNav();
 // Opening the menu is this component mounting, so it focuses its own first row —
 // <Controls> no longer has to reach in and do it.
 assert.equal(navRows().length, 3, "two settings plus one action");
 assert.match(focusedText(), /Loop/, "focus starts on the first row");
 assert.deepEqual(tabStops(), [focused()], "the focused row is the only tab stop");
 
-const down = key("ArrowDown");
+const down = await key("ArrowDown");
 assert.match(focusedText(), /Speed/, "ArrowDown moves to the next row");
 assert.equal(down.defaultPrevented, true, "and is consumed, so the page can't scroll");
 
-key("ArrowDown");
+await key("ArrowDown");
 assert.match(focusedText(), /Copy frame/, "ArrowDown reaches the action rows");
-key("ArrowDown");
+await key("ArrowDown");
 assert.match(focusedText(), /Loop/, "ArrowDown wraps at the end");
-key("ArrowUp");
+await key("ArrowUp");
 assert.match(focusedText(), /Copy frame/, "ArrowUp wraps at the start");
-key("Home");
+await key("Home");
 assert.match(focusedText(), /Loop/, "Home goes to the first row");
-key("End");
+await key("End");
 assert.match(focusedText(), /Copy frame/, "End goes to the last row");
 assert.deepEqual(tabStops(), [focused()], "still exactly one tab stop after moving");
 
 // Right enters the sub-panel of the row that owns one and lands on the current
 // choice; Left comes back out, onto the row it was opened from.
-key("Home");
-key("ArrowDown"); // Speed
-const right = key("ArrowRight");
+await key("Home");
+await key("ArrowDown"); // Speed
+const right = await key("ArrowRight");
 assert.equal(right.defaultPrevented, true, "ArrowRight is consumed");
 assert.equal(navBox.querySelectorAll('[role="menuitemradio"]').length, 3, "sub-panel opened");
 assert.match(focusedText(), /Normal/, "focus lands on the current choice");
-key("ArrowLeft");
+await key("ArrowLeft");
 assert.equal(navBox.querySelector('[role="menuitemradio"]'), null, "ArrowLeft returns to main");
 assert.match(focusedText(), /Speed/, "…onto the row the sub-panel was opened from");
 
 // A row with no sub-panel has nothing to enter, so the key is left alone.
-key("Home"); // Loop
-const noPanel = key("ArrowRight");
+await key("Home"); // Loop
+const noPanel = await key("ArrowRight");
 assert.equal(
   navBox.querySelector('[role="menuitemradio"]'),
   null,

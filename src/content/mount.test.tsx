@@ -147,9 +147,9 @@ const press = (el: Element, key: string, shiftKey = false): void => {
   const { img, shadow, teardown } = mount(exporter as FrameExport);
 
   const rows = () => Array.from(shadow.querySelectorAll<HTMLElement>("button.menu-row"));
-  const openMenu = (): void => {
+  const openMenu = async (): Promise<void> => {
     const cog = shadow.querySelector('button[aria-label="Settings"]') as HTMLElement;
-    act(() => cog.click());
+    await act(() => cog.click());
   };
   const rowNamed = (label: string): HTMLElement => {
     const row = rows().find((r) => (r.textContent ?? "").includes(label));
@@ -164,15 +164,15 @@ const press = (el: Element, key: string, shiftKey = false): void => {
     return texts.at(-1) ?? "";
   };
 
-  openMenu();
-  act(() => rowNamed("Copy frame").click());
+  await openMenu();
+  await act(() => rowNamed("Copy frame").click());
   await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(outcomes, ["copy(0)"], "the row exports the frame on screen");
   assert.match(toastText(), /Frame copied/, "a successful copy is confirmed");
 
-  openMenu();
-  act(() => rowNamed("Save frame").click());
+  await openMenu();
+  await act(() => rowNamed("Save frame").click());
   await Promise.resolve();
   await Promise.resolve();
   assert.deepEqual(outcomes, ["copy(0)", "save(0)"], "the save row runs the save");

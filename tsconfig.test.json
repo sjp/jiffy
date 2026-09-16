@@ -8,6 +8,15 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    /* Only so tsconfig.json may `references` this project — see the note
+       there. A referenced project has to be composite and has to not
+       disable emit, so emit is nominally on and pointed somewhere
+       harmless. Nothing ever builds this project: `npm run typecheck`
+       passes `--noEmit` on the command line, which wins. */
+    "composite": true,
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "declarationDir": "node_modules/.cache/tsc-test",
     "types": ["node", "jsdom", "firefox-webext-browser"],
     /* ES2023 for `findLast`, which the tests use to pick a host out of the DOM. */
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
