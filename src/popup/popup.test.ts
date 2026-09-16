@@ -66,7 +66,8 @@ function popup(): Document {
   bindPopup(doc);
   return doc;
 }
-const el = <T extends HTMLElement>(doc: Document, id: string) => doc.getElementById(id) as T;
+const el = (doc: Document, id: string): HTMLElement => doc.getElementById(id)!;
+const input = (doc: Document, id: string): HTMLInputElement => el(doc, id) as HTMLInputElement;
 
 // ---- picking ---------------------------------------------------------------
 {
@@ -123,7 +124,7 @@ const el = <T extends HTMLElement>(doc: Document, id: string) => doc.getElementB
   const doc = popup();
   await flush();
   assert.equal(
-    el<HTMLInputElement>(doc, "all-sites").checked,
+    input(doc, "all-sites").checked,
     true,
     "the checkbox reflects access the user has already granted",
   );
@@ -132,7 +133,7 @@ const el = <T extends HTMLElement>(doc: Document, id: string) => doc.getElementB
 {
   granted = false;
   const doc = popup();
-  const box = el<HTMLInputElement>(doc, "all-sites");
+  const box = input(doc, "all-sites");
   await flush();
   assert.equal(box.checked, false, "access is off by default");
 
@@ -155,7 +156,7 @@ const el = <T extends HTMLElement>(doc: Document, id: string) => doc.getElementB
   granted = false;
   grantRequest = false;
   const doc = popup();
-  const box = el<HTMLInputElement>(doc, "all-sites");
+  const box = input(doc, "all-sites");
   box.checked = true;
   box.dispatchEvent(new window.Event("change"));
   await flush();

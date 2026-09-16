@@ -138,7 +138,7 @@ assert.ok(loopToggle(), "returned to the main panel after choosing a speed");
 
 // Reverse and Ping Pong are mutually-exclusive toggles that drive the engine.
 const checkboxes = () =>
-  Array.from(container.querySelectorAll('[role="menuitemcheckbox"]')) as HTMLElement[];
+  Array.from(container.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"]'));
 const findToggle = (label: string): HTMLElement =>
   checkboxes().find((b) => (b.textContent ?? "").includes(label))!;
 const reverseToggle = () => findToggle("Reverse");

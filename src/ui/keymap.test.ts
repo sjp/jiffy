@@ -80,7 +80,7 @@ for (const key of ["a", "Enter", "Escape", "Tab", "ArrowUp", "ArrowDown"]) {
 // its last frame, not a captured constant.
 {
   const { engine, calls } = makeEngine();
-  (engine.state as EngineState).frameCount = 1234;
+  engine.state.frameCount = 1234;
   handleControlKey("End", engine);
   assert.deepEqual(calls, ["seekToIndex(1233)"], "End uses the live frame count");
 }

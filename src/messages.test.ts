@@ -162,21 +162,18 @@ assert.deepEqual(payload(chunked), [...big], "chunked transfer rejoins byte-for-
 assert.deepEqual(terminals(chunked), ["FETCH_DONE"]);
 
 // A body arriving as many small reads is coalesced into few messages.
-stub(
-  async () =>
-    ({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      headers: { get: () => null },
-      body: new ReadableStream<Uint8Array>({
-        start(c) {
-          for (let i = 0; i < 40; i++) c.enqueue(new Uint8Array(100).fill(i));
-          c.close();
-        },
-      }),
-    }) as unknown,
-);
+stub(async () => ({
+  ok: true,
+  status: 200,
+  statusText: "OK",
+  headers: { get: () => null },
+  body: new ReadableStream<Uint8Array>({
+    start(c) {
+      for (let i = 0; i < 40; i++) c.enqueue(new Uint8Array(100).fill(i));
+      c.close();
+    },
+  }),
+}));
 const coalesced = await run("http://example.com/drip.gif", { chunkBytes: 1000 });
 const chunkCount = coalesced.filter((e) => e.type === "FETCH_CHUNK").length;
 assert.equal(chunkCount, 4, "40 × 100-byte reads coalesce into 4 × 1000-byte messages");

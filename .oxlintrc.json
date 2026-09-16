@@ -2,11 +2,76 @@
   "$schema": "./node_modules/oxlint/configuration_schema.json",
   "plugins": ["typescript", "unicorn", "react"],
   "categories": {
-    "correctness": "error"
+    /* Outright wrong or useless. */
+    "correctness": "error",
+    /* Most likely wrong or useless — the tier that catches the real mistakes
+       without wandering into style. */
+    "suspicious": "error",
+    "perf": "error"
   },
   "options": { "typeAware": true, "typeCheck": true },
   "ignorePatterns": ["dist/", "dist-firefox/", "dist-chrome/"],
   "rules": {
+    /* ---- off: these fire on patterns this codebase uses on purpose ------- */
+
+    /* The JSX runtime is automatic (`jsx: "react-jsx"`, `jsxImportSource:
+       "preact"`), so nothing has to be in scope for a tag to compile. 62 of
+       these, all of them wrong. */
+    "react/react-in-jsx-scope": "off",
+    /* Every `querySelector` result has to be narrowed to something before it
+       can be used, and this codebase does that with `as HTMLElement` rather
+       than a type guard per call site. 122 of these. `no-unsafe-*` and the
+       type checker still cover the cases that actually lose type safety. */
+    "typescript/no-unsafe-type-assertion": "off",
+    /* `targetOrigin` is a `window.postMessage` parameter. All four sites are
+       `Worker`/`DedicatedWorkerGlobalScope.postMessage`, which has no such
+       argument. */
+    "unicorn/require-post-message-target-origin": "off",
+    /* The awaits in loops here are sequential on purpose — a test stepping
+       frames in order, a script downloading one browser at a time. */
+    "eslint/no-await-in-loop": "off",
+    /* Where a helper lives is a readability call. The ten it flags are all test
+       helpers deliberately scoped to the block they belong to. */
+    "unicorn/consistent-function-scoping": "off",
+    /* `addEventListener` is the right default because `on*` silently replaces
+       whatever was there. The decode worker is owned outright by the code that
+       spawns it, and setting `onmessage`/`onerror` back to `null` is how it is
+       torn down — with listeners that would mean keeping a handle to each. */
+    "unicorn/prefer-add-event-listener": "off",
+    /* `window.__jiffyLoaded` is a deliberately ugly name for a deliberately
+       global flag; the underscores are the point. */
+    "eslint/no-underscore-dangle": "off",
+    /* Tried and rejected: all 35 hits were read, and it is the second kind of
+       finding every time — a type that overstates what exists at runtime —
+       rather than dead code.
+
+       An extension runs on pages and browsers it doesn't control, so it checks
+       for what the ambient types swear is always there: `navigator.clipboard`
+       is absent in an insecure context, `document.head` is absent in an XML
+       document, `Element.setPointerCapture` is absent in jsdom, and
+       `browser.runtime` is absent whenever a module is imported headlessly by
+       a test — which is the whole reason those guards are written. Deleting
+       any of them to satisfy the rule would delete the portability.
+
+       The rest are `let closed = false` flipped inside a callback and read
+       after an `await`, which TypeScript narrows to `false` because it cannot
+       see across the closure, and `textContent ?? ""` in tests. */
+    "typescript/no-unnecessary-condition": "off",
+
+    /* ---- on: bug-catchers from tiers the categories above don't cover ---- */
+
+    "typescript/no-misused-promises": "error",
+    "typescript/only-throw-error": "error",
+    "typescript/prefer-promise-reject-errors": "error",
+    "typescript/consistent-return": "error",
+    /* A `switch` over a union that grows a member and does not grow a case. */
+    "typescript/switch-exhaustiveness-check": "error",
+    /* Hooks called conditionally or outside a component — the Preact bug that
+       shows up as state landing on the wrong component, not as a crash. */
+    "react-hooks/rules-of-hooks": "error",
+    /* `null` left out: `x != null` is this codebase's nullish check, and all
+       14 hits were that idiom rather than a sloppy comparison. */
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
     "no-unused-vars": [
       "error",
       {

@@ -108,7 +108,7 @@ let cancelled = 0;
 const cancellable = showToast(10, 10, () => cancelled++);
 const cancelHost = hosts().at(-1)!;
 cancellable.set("Loading…");
-const button = cancelHost.shadowRoot!.querySelector(".cancel") as HTMLButtonElement | null;
+const button = cancelHost.shadowRoot!.querySelector<HTMLButtonElement>(".cancel");
 assert.ok(button, "onCancel renders a ✕ button");
 assert.equal(
   cancelHost.shadowRoot!.querySelector("span")?.textContent,
@@ -118,7 +118,7 @@ assert.equal(
 // set() must update the text without wiping the button.
 cancellable.set("Still loading…");
 assert.ok(cancelHost.shadowRoot!.querySelector(".cancel"), "set() preserves the cancel button");
-button!.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 assert.equal(cancelled, 1, "clicking ✕ invokes onCancel exactly once");
 assert.equal(hosts().length, 0, "clicking ✕ dismisses the toast");
 

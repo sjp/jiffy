@@ -19,4 +19,4 @@ export const GIF = new Uint8Array([
 
 /** The fixture as a standalone ArrayBuffer, which is what `decode` takes. */
 export const gifBytes = (): ArrayBuffer =>
-  GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength) as ArrayBuffer;
+  GIF.buffer.slice(GIF.byteOffset, GIF.byteOffset + GIF.byteLength);

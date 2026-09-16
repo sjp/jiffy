@@ -144,7 +144,7 @@ const press = (el: Element, key: string, shiftKey = false): void => {
       throw new Error("downloads are blocked here");
     },
   };
-  const { img, shadow, teardown } = mount(exporter as FrameExport);
+  const { img, shadow, teardown } = mount(exporter);
 
   const rows = () => Array.from(shadow.querySelectorAll<HTMLElement>("button.menu-row"));
   const openMenu = async (): Promise<void> => {

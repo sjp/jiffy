@@ -132,7 +132,7 @@ animexts.source.close();
   const decoded = await decode(gifBytes());
   const patch = decoded.source.detach!().steps[0]!.patch;
   assert.equal(patch?.kind, "indexed", "GIF frames are indexed patches");
-  const { palette } = patch as Extract<typeof patch, { kind: "indexed" }>;
+  const { palette } = patch;
   assert.equal(palette.length, 256 * 3, "palette spans every index a byte holds");
   // The fixture declares two colours; everything past them is black.
   assert.deepEqual(
@@ -167,7 +167,7 @@ for (const missing of [undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
 const oneCentisecond = new Uint8Array(GIF);
 oneCentisecond[23] = 0x01; // GCE frame 0 delay byte: 10cs → 1cs
 oneCentisecond[46] = 0x01; // GCE frame 1 delay byte: 10cs → 1cs
-const fast = await decode(oneCentisecond.buffer.slice(0) as ArrayBuffer);
+const fast = await decode(oneCentisecond.buffer.slice(0));
 assert.deepEqual(
   fast.frames.map((f) => f.delay),
   [100, 100],
@@ -193,7 +193,7 @@ const NO_GCE_GIF = new Uint8Array([
   0x3b,                                           // trailer
 ]);
 
-const noGce = await decode(NO_GCE_GIF.buffer.slice(0) as ArrayBuffer);
+const noGce = await decode(NO_GCE_GIF.buffer.slice(0));
 assert.equal(noGce.frames.length, 2, "GCE-less GIF decodes both frames");
 assert.deepEqual(
   noGce.frames.map((f) => f.delay),
@@ -265,7 +265,7 @@ assert.equal(
 const ceilings = [0.25, 0.5, 1, 2, 4, 8].map((gib) => computeMaxDecodeBytes(gib));
 assert.deepEqual(
   ceilings,
-  [...ceilings].sort((a, b) => a - b),
+  ceilings.toSorted((a, b) => a - b),
   "more RAM never means a smaller ceiling",
 );
 assert.ok(
@@ -297,7 +297,7 @@ const budgetErr = (() => {
   return undefined;
 })();
 assert.equal(budgetErr?.bytes, 1_800_000_000, "the error carries the estimated size");
-assert.match(budgetErr!.message, /1\.8 GB/, "the message reports the size in human units");
+assert.match(budgetErr.message, /1\.8 GB/, "the message reports the size in human units");
 
 // The estimate is built from the frames' own image descriptors, which parseGIF
 // hands over without decompressing anything, so an over-budget GIF is refused
@@ -324,7 +324,7 @@ const gifOf = (screen: number, count: number, w: number, h: number) => {
     ...Array.from({ length: count }, () => frameBlock).flat(),
     0x3b,
   ]);
-  return bytes.buffer.slice(0) as ArrayBuffer;
+  return bytes.buffer.slice(0);
 };
 
 // 100 full-canvas 4000×4000 patches: 1.6 Gpx, ~12.8 GB of gifuct's LZW output.

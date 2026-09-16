@@ -49,12 +49,22 @@ export interface SettingsMenuProps {
   actions?: MenuAction[];
 }
 
+/* A default prop written `actions = []` builds a new array on every render, so
+   every render also looks like a change to anything comparing props by
+   identity. One frozen empty array can't. */
+const NO_ACTIONS: MenuAction[] = [];
+
 /** The focusable rows of whichever panel is rendered, in DOM order. */
 function rowsIn(panel: HTMLElement | null): HTMLButtonElement[] {
   return panel ? Array.from(panel.querySelectorAll<HTMLButtonElement>("button.menu-row")) : [];
 }
 
-export function SettingsMenu({ config, settings, onChange, actions = [] }: SettingsMenuProps) {
+export function SettingsMenu({
+  config,
+  settings,
+  onChange,
+  actions = NO_ACTIONS,
+}: SettingsMenuProps) {
   // id of the open sub-panel; null = the main list. Ephemeral nav state only.
   const [openId, setOpenId] = useState<string | null>(null);
   const entry = openId ? (config.find((e) => e.id === openId) ?? null) : null;

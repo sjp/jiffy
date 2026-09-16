@@ -139,12 +139,12 @@ export function mountControls(
       // mirror the setPointerCapture in this handler and keep the pairing obvious.
       grip.releasePointerCapture?.(event.pointerId);
       grip.removeEventListener("pointermove", onMove as EventListener);
-      grip.removeEventListener("pointerup", onUp as EventListener);
-      grip.removeEventListener("pointercancel", onUp as EventListener);
+      grip.removeEventListener("pointerup", onUp);
+      grip.removeEventListener("pointercancel", onUp);
     };
     grip.addEventListener("pointermove", onMove as EventListener);
-    grip.addEventListener("pointerup", onUp as EventListener);
-    grip.addEventListener("pointercancel", onUp as EventListener);
+    grip.addEventListener("pointerup", onUp);
+    grip.addEventListener("pointercancel", onUp);
   };
 
   // Report an export's outcome just above the bar. The bar is where the user

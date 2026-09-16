@@ -98,6 +98,10 @@ const abortError = (): DOMException => new DOMException("decode aborted", "Abort
  * `not-transferable` isn't one: it's a "decode this yourself" instruction,
  * handled before anything gets here.
  */
+// Every arm returns, and the switch is exhaustive over the union — which the
+// type checker agrees with, or the `: Error` return type would not hold. The
+// rule sees only that control can reach the end of the function.
+// eslint-disable-next-line typescript/consistent-return
 function fromFailure(failure: Exclude<DecodeFailure, { kind: "not-transferable" }>): Error {
   switch (failure.kind) {
     case "not-animated":

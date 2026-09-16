@@ -142,7 +142,7 @@ for (const interval of [2, 4, 8, 16, 64]) {
   assert.equal(source.frameCount, FRAME_COUNT, `interval ${interval}: frame count`);
 
   const forward = Array.from({ length: FRAME_COUNT }, (_, i) => i);
-  const reverse = [...forward].reverse();
+  const reverse = forward.toReversed();
   // Ping-pong turns around at both ends; scrub jumps around at random.
   const pingpong = [...forward, ...reverse, ...forward];
   const scrub = Array.from({ length: 60 }, () => rand(FRAME_COUNT));

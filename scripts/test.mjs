@@ -40,7 +40,7 @@ function findTests(dir) {
   return found;
 }
 
-const tests = findTests(srcDir).sort();
+const tests = findTests(srcDir).toSorted();
 if (tests.length === 0) {
   console.log("[jiffy] no test files found");
   process.exit(0);

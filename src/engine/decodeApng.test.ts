@@ -205,7 +205,7 @@ const withDelay = (num: number, den: number): ArrayBuffer => {
   }
   // The CRCs are now wrong, which is fine: like the GIF and WebP decoders, this
   // one doesn't validate them on parse.
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
 };
 
 {
@@ -300,7 +300,7 @@ await assert.rejects(
 
   for (const [index, step] of detached.steps.entries()) {
     assert.equal(step.patch?.kind, "blob", `frame ${index} is a blob patch`);
-    const blob = (step.patch as { kind: "blob"; blob: Blob }).blob;
+    const blob = step.patch.blob;
     const png = String.fromCharCode(...new Uint8Array(await blob.arrayBuffer()));
     const at = (type: string) => png.indexOf(type);
 

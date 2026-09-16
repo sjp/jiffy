@@ -80,7 +80,7 @@ const stubPlayer = {
 } as never;
 
 /** Install a player loader; by default one that hands over the stub immediately. */
-const usePlayer = (load = async () => ({ controller: stubPlayer })) =>
+const stubPlayerLoader = (load = async () => ({ controller: stubPlayer })) =>
   setPlayerLoader(async () => {
     imports++;
     return load();
@@ -95,7 +95,7 @@ const reset = () => {
 };
 
 // ---- the bundle is not touched until the user asks for it ------------------
-usePlayer();
+stubPlayerLoader();
 assert.equal(imports, 0, "an idle page never reaches for the player bundle");
 
 // Entering pick mode warms it: the user has declared intent, so the bundle is
@@ -177,12 +177,12 @@ pickClick(staticImg);
 await flush();
 assert.equal(picked, staticImg, "the static image was still processed");
 assert.ok(lastStatus, "a status reporter is handed to processImage");
-lastStatus!("not-animated");
+lastStatus("not-animated");
 assert.match(toastText(), /Not an animated image/, "not-animated surfaces a toast");
 
 // A format this browser has no decoder for names itself, so the message reads
 // as a limit of the browser rather than as Jiffy failing on a good image.
-lastStatus!("unsupported", "Animated AVIF");
+lastStatus("unsupported", "Animated AVIF");
 assert.match(
   toastText(),
   /Animated AVIF isn't supported in this browser/,
@@ -280,7 +280,7 @@ reset();
     );
 
   reset();
-  usePlayer();
+  stubPlayerLoader();
   const target = imgWith("http://x/hover.gif");
   target.getBoundingClientRect = () => ({ top: 30, left: 60, width: 240, height: 120 }) as DOMRect;
   document.body.appendChild(target);
@@ -293,24 +293,24 @@ reset();
   await nextFrame();
   const boxHost = highlightHost();
   assert.ok(boxHost, "hovering an image mounts the highlight");
-  assert.equal(boxHost!.style.left, "60px", "the box is placed over the image's box");
-  assert.equal(boxHost!.style.top, "30px");
-  assert.equal(boxHost!.style.width, "240px");
-  assert.equal(boxHost!.style.height, "120px");
-  assert.equal(boxHost!.style.display, "block", "the box is visible");
+  assert.equal(boxHost.style.left, "60px", "the box is placed over the image's box");
+  assert.equal(boxHost.style.top, "30px");
+  assert.equal(boxHost.style.width, "240px");
+  assert.equal(boxHost.style.height, "120px");
+  assert.equal(boxHost.style.display, "block", "the box is visible");
 
   // Moving off the image hides the box (the same host is kept for the next one).
   move(400, 400);
   await nextFrame();
   assert.equal(highlightHost(), boxHost, "the host is reused rather than rebuilt");
-  assert.equal(boxHost!.style.display, "none", "no candidate under the pointer → no box");
+  assert.equal(boxHost.style.display, "none", "no candidate under the pointer → no box");
 
   // Scrolling moves the page under a stationary cursor, so the candidate is
   // re-resolved from the last pointer position rather than left stale.
   at(400, 400, [target, document.body]);
   window.dispatchEvent(new window.Event("scroll"));
   await nextFrame();
-  assert.equal(boxHost!.style.display, "block", "a scroll re-resolves the candidate");
+  assert.equal(boxHost.style.display, "block", "a scroll re-resolves the candidate");
 
   // Clicking picks the image the box was pointing at.
   move(80, 90);
@@ -358,7 +358,7 @@ reset();
   };
 
   reset();
-  usePlayer();
+  stubPlayerLoader();
   const target = withBox(imgWith("http://x/press.gif"));
   const elsewhere = document.createElement("div");
   document.body.append(target, elsewhere);
@@ -421,7 +421,7 @@ reset();
 // the click must not look like it did nothing.
 {
   let release: (module: { controller: never }) => void = () => {};
-  usePlayer(() => new Promise((resolve) => (release = resolve)));
+  stubPlayerLoader(() => new Promise((resolve) => (release = resolve)));
 
   const slow = imgWith("http://x/slow.gif");
   document.body.appendChild(slow);
@@ -439,7 +439,7 @@ reset();
 
 // ---- a failed bundle load reports an error and stays retryable -------------
 {
-  usePlayer(() => Promise.reject(new Error("blocked")));
+  stubPlayerLoader(() => Promise.reject(new Error("blocked")));
   const failing = imgWith("http://x/fail.gif");
   document.body.appendChild(failing);
   enterPickMode();
@@ -451,7 +451,7 @@ reset();
   // The memo is cleared on failure, so a later pick tries again rather than
   // leaving the extension permanently dead on this page.
   reset();
-  usePlayer();
+  stubPlayerLoader();
   const before = imports;
   const retry = imgWith("http://x/retry.gif");
   pickClick(retry);
@@ -467,7 +467,7 @@ reset();
 // the whole auto-dismiss with nothing left to cancel.
 {
   let release: (module: { controller: never }) => void = () => {};
-  usePlayer(() => new Promise((resolve) => (release = resolve)));
+  stubPlayerLoader(() => new Promise((resolve) => (release = resolve)));
   reset();
   const slow = imgWith("http://x/outcome.gif");
   document.body.appendChild(slow);
@@ -479,11 +479,11 @@ reset();
   release({ controller: stubPlayer });
   await flush();
   assert.ok(lastStatus, "the pick resumed and reports status");
-  lastStatus!("error");
+  lastStatus("error");
   assert.match(toastText(), /Couldn't load this image/, "the same toast carries the outcome");
   assert.equal(toastCancel(), null, "the outcome drops the ✕");
   reset();
-  usePlayer();
+  stubPlayerLoader();
 }
 
 // ---- standalone image: toolbar toggles directly (ImageDocument) ------------

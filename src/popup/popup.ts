@@ -94,7 +94,11 @@ export function bindPopup(doc: Document): void {
     status.hidden = text === "";
   };
 
-  button?.addEventListener("click", async () => {
+  // The listener itself stays synchronous and discards the promise: an `async`
+  // handler here would hand `addEventListener` a promise it never looks at, so
+  // anything thrown outside the `try` would surface as an unhandled rejection
+  // rather than an error on this click.
+  const onPick = async (): Promise<void> => {
     try {
       await pickInActiveTab();
       window.close(); // pick mode is armed; get out of the user's way
@@ -103,7 +107,8 @@ export function bindPopup(doc: Document): void {
       // closing silently would look like the button did nothing.
       say("Jiffy can't run on this page.");
     }
-  });
+  };
+  button?.addEventListener("click", () => void onPick());
 
   if (allSites) {
     // Reflect the current grant before the user can flip it. The box starts
@@ -111,7 +116,7 @@ export function bindPopup(doc: Document): void {
     void hasAllSites()
       .then((granted) => (allSites.checked = granted))
       .catch(() => {});
-    allSites.addEventListener("change", async () => {
+    const onToggleAllSites = async (): Promise<void> => {
       const wanted = allSites.checked;
       try {
         allSites.checked = await setAllSites(wanted);
@@ -120,7 +125,8 @@ export function bindPopup(doc: Document): void {
       }
       if (allSites.checked !== wanted && wanted) say("Access wasn't granted.");
       else say("");
-    });
+    };
+    allSites.addEventListener("change", () => void onToggleAllSites());
   }
 }
 

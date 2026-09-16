@@ -78,7 +78,7 @@ const b = document.createElement("div");
 document.body.appendChild(b);
 await act(() => render(<Controls engine={engine} />, b));
 
-const slider = b.querySelector("input[type=range]")! as HTMLInputElement;
+const slider = b.querySelector<HTMLInputElement>("input[type=range]")!;
 
 await act(() => void slider.dispatchEvent(ev("pointerdown")));
 assert.equal(engine.state.playing, false, "pauses while dragging");

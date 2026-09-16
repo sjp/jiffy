@@ -92,12 +92,17 @@ let releaseFetch: (() => void) | undefined;
 
 (globalThis as Record<string, unknown>).fetch = (url: string, init?: { signal?: AbortSignal }) => {
   fetched.push({ url, signal: init?.signal });
-  const respond = () =>
-    new Response(BODY, { headers: { "content-type": "image/gif" } }) as unknown as Response;
+  const respond = () => new Response(BODY, { headers: { "content-type": "image/gif" } });
   if (!releaseFetch) return Promise.resolve(respond());
   return new Promise<Response>((resolve, reject) => {
     releaseFetch = () => resolve(respond());
-    init?.signal?.addEventListener("abort", () => reject(init.signal!.reason), { once: true });
+    init?.signal?.addEventListener(
+      "abort",
+      // `AbortSignal.reason` is `any`; for an aborted signal it is the
+      // `DOMException` the abort carried, which is what production sees.
+      () => reject(init.signal!.reason as Error),
+      { once: true },
+    );
   });
 };
 
@@ -167,7 +172,7 @@ sendFails = false;
 // ---- only the fetch port is claimed -----------------------------------------
 {
   const other = new FakePort("some-other-extension-port");
-  onConnect(other as never);
+  onConnect(other);
   assert.equal(other.listenerCount, 0, "a port with another name is left for its owner");
 }
 
@@ -175,7 +180,7 @@ sendFails = false;
 {
   fetched = [];
   const port = new FakePort(FETCH_PORT, { url: "http://example.com/page.html" });
-  onConnect(port as never);
+  onConnect(port);
   assert.equal(port.listenerCount, 1, "the fetch port gets a message listener");
   assert.equal(port.posted.length, 0, "and nothing is fetched until it asks");
 
@@ -204,7 +209,7 @@ sendFails = false;
 {
   fetched = [];
   const port = new FakePort(FETCH_PORT, { url: "https://example.com/page.html" });
-  onConnect(port as never);
+  onConnect(port);
   port.send({ type: "FETCH_GIF", url: "http://127.0.0.1/a.gif" });
   await flush();
   assert.deepEqual(fetched, [], "a private target is refused before the network is touched");
@@ -219,7 +224,7 @@ sendFails = false;
 {
   fetched = [];
   const port = new FakePort(FETCH_PORT, { url: "http://localhost:8080/page.html" });
-  onConnect(port as never);
+  onConnect(port);
   port.send({ type: "FETCH_GIF", url: "http://127.0.0.1/a.gif" });
   await flush();
   assert.equal(fetched.length, 1, "a private page's own network is still fetched");
@@ -237,7 +242,7 @@ sendFails = false;
   fetched = [];
   releaseFetch = () => {};
   const port = new FakePort(FETCH_PORT, { url: "http://example.com/page.html" });
-  onConnect(port as never);
+  onConnect(port);
   port.send({ type: "FETCH_GIF", url: "http://example.com/slow.gif" });
   await flush();
   const signal = fetched[0]!.signal!;
@@ -256,12 +261,12 @@ sendFails = false;
   fetched = [];
   releaseFetch = () => {};
   const port = new FakePort(FETCH_PORT, { url: "http://example.com/page.html" });
-  onConnect(port as never);
+  onConnect(port);
   port.postThrows = true;
   port.send({ type: "FETCH_GIF", url: "http://example.com/gone.gif" });
   await flush();
   const signal = fetched[0]!.signal!;
-  releaseFetch!(); // the response arrives, and the first chunk can't be posted
+  releaseFetch(); // the response arrives, and the first chunk can't be posted
   await flush();
   assert.equal(signal.aborted, true, "a throwing postMessage aborts the fetch");
   releaseFetch = undefined;

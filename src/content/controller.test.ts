@@ -176,10 +176,10 @@ ctrl.teardownAll();
 
   assert.deepEqual(statuses, ["loading"], "loading reported before cancel");
   assert.ok(capturedSignal, "a signal is handed to decode");
-  assert.equal(capturedSignal!.aborted, false, "signal live before cancel");
+  assert.equal(capturedSignal.aborted, false, "signal live before cancel");
 
   cancelCtrl.teardown(cancelImg);
-  assert.equal(capturedSignal!.aborted, true, "teardown aborts the in-flight decode signal");
+  assert.equal(capturedSignal.aborted, true, "teardown aborts the in-flight decode signal");
 
   // A late-resolving decode (e.g. the loop hadn't reached its next abort check)
   // must have its frame source dropped, not mounted.

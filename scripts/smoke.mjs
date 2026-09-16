@@ -340,6 +340,10 @@ try {
   // listeners, which is exactly what shipping below the namespace's floor does.
   // `hasListeners()` is the difference between "the worker exists" and "the
   // worker ran background.ts to the end".
+  // puppeteer types `type()` as its `TargetType` enum, so comparing against the
+  // string literal reads as an unsafe enum comparison — but the enum's members
+  // are those very strings, and this file is plain JS with no way to name it.
+  // eslint-disable-next-line typescript/no-unsafe-enum-comparison
   const swTarget = await browserInstance.waitForTarget((t) => t.type() === "service_worker", {
     timeout: READY_MS,
   });

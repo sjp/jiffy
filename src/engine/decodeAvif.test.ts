@@ -110,6 +110,9 @@ class FakeImageDecoder {
     ready: Promise.resolve(),
     selectedTrack: { frameCount: 3, animated: true },
   };
+  // The body is empty on purpose; the parameter is what gives the fake the
+  // real `ImageDecoder` constructor's arity.
+  // eslint-disable-next-line no-useless-constructor
   constructor(_init: unknown) {}
   async decode({ frameIndex }: { frameIndex: number }) {
     decodedIndexes.push(frameIndex);

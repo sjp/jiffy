@@ -77,7 +77,7 @@ function deferredSource(residentIndexes: number[]): FrameSource & {
       pending.get(index)?.({ recomposited: index });
       pending.delete(index);
     },
-  } as unknown as FrameSource & { settle: (index: number) => void };
+  };
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));

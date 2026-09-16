@@ -95,7 +95,10 @@ Object.defineProperty(navigator, "clipboard", {
   value: {
     async write(items: FakeClipboardItem[]): Promise<void> {
       writesStarted++;
-      if (writeError) throw writeError;
+      // `writeError` is a module-level `let`, and the rule reads its declared
+      // `Error | null` rather than following the narrowing on this line.
+      // eslint-disable-next-line typescript/only-throw-error
+      if (writeError !== null) throw writeError;
       for (const item of items) {
         for (const [type, data] of Object.entries(item.items)) {
           written.push({ types: [type], data: await data });

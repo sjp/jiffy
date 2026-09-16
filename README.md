@@ -186,6 +186,13 @@ npm run format          # oxfmt (write)
 npm run format:check    # oxfmt (check only)
 ```
 
+`lint:js` runs the `correctness`, `suspicious` and `perf` categories, plus a
+handful of hand-picked bug-catchers (`no-misused-promises`, `only-throw-error`,
+`switch-exhaustiveness-check`, `rules-of-hooks`, …). `pedantic`, `style` and
+`restriction` are deliberately left off: they are style opinions rather than
+error-prevention, and they fight this codebase's conventions. Every rule turned
+back off in `.oxlintrc.json` carries the reason next to it.
+
 `lint:js` runs oxlint's type-aware rules too (`no-floating-promises`,
 `await-thenable`, `unbound-method`, …), which need a type checker rather than
 just the AST. Those are handed to `oxlint-tsgolint`, a devDependency that wraps

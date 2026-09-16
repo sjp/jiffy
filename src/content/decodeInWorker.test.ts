@@ -84,7 +84,7 @@ globals.fetch = (url: string) => {
   return Promise.resolve({ ok: true, status: 200, text: () => Promise.resolve("/* bundle */") });
 };
 let blobUrls = 0;
-URL.createObjectURL = (() => `blob:test-page/${++blobUrls}`) as typeof URL.createObjectURL;
+URL.createObjectURL = () => `blob:test-page/${++blobUrls}`;
 
 const { buildFrameSource } = await import("../engine/frameSource.ts");
 const { NotAnimatedError } = await import("../engine/decode.ts");

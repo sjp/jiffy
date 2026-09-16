@@ -126,7 +126,10 @@ export function Controls({
   // Close on a click outside the cog/popover. composedPath() pierces the shadow
   // boundary, so containment of our in-shadow nodes works from a document listener.
   useEffect(() => {
-    if (!menuOpen) return;
+    // `undefined` rather than a bare `return`: the other path hands back a
+    // cleanup, and an effect that returns a value on one path and nothing on
+    // the other is the shape `consistent-return` is there to catch.
+    if (!menuOpen) return undefined;
     const onPointerDown = (event: PointerEvent): void => {
       const wrapper = settingsRef.current;
       if (wrapper && event.composedPath().includes(wrapper)) return;
