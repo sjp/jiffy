@@ -27,15 +27,15 @@
     "@puppeteer/browsers": "^3.2.2",
     "@types/firefox-webext-browser": "^143.0.0",
     "@types/jsdom": "^30.0.0",
-    "@types/node": "^26.6.1",
+    "@types/node": "^26.6.2",
     "esbuild": "^0.28.2",
-    "jsdom": "^30.0.1",
-    "oxfmt": "^0.68.0",
-    "oxlint": "^1.83.0",
-    "oxlint-tsgolint": "^7.0.2001",
+    "jsdom": "^30.1.1",
+    "oxfmt": "^0.70.0",
+    "oxlint": "^1.85.0",
+    "oxlint-tsgolint": "^7.0.2002",
     "puppeteer-core": "^25.11.0",
     "typescript": "^7.0.2",
-    "web-ext": "^10.6.0"
+    "web-ext": "^10.7.0"
   },
   "engines": {
     "node": ">=26"
