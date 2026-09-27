@@ -14,6 +14,8 @@ read on the release.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-27
+
 ### Added
 
 - Copy or save the frame on screen, from the ⚙ menu: **Copy frame** puts a PNG
