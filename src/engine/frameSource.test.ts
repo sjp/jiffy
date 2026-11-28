@@ -14,7 +14,13 @@
 
 import assert from "node:assert/strict";
 
-import { FakeImageBitmap, FakePixelBlob, installFakeCanvas, pixelAt } from "../test/fakeCanvas.ts";
+import {
+  FakeImageBitmap,
+  FakePixelBlob,
+  asFakeBitmap,
+  installFakeCanvas,
+  pixelAt,
+} from "../test/fakeCanvas.ts";
 
 installFakeCanvas();
 
@@ -178,8 +184,7 @@ for (const interval of [2, 4, 8, 16, 64]) {
 const counted = await build(8);
 // Every bitmap the source ever produced, so we can check what close() releases.
 const produced: FakeImageBitmap[] = [];
-for (let i = 0; i < FRAME_COUNT; i++)
-  produced.push((await counted.getBitmap(i)) as FakeImageBitmap);
+for (let i = 0; i < FRAME_COUNT; i++) produced.push(asFakeBitmap(await counted.getBitmap(i)));
 
 const keyframes = produced.filter((_, i) => i % 8 === 0);
 assert.equal(keyframes.length, keyframeCount(FRAME_COUNT, 8), "one keyframe per interval");
@@ -270,8 +275,8 @@ const blobKeyed = await createFrameSource({
   keyframeInterval: 2,
 });
 for (let i = blobSteps.length - 1; i >= 0; i--) {
-  const want = (await blobRef.getBitmap(i)) as FakeImageBitmap;
-  const got = (await blobKeyed.getBitmap(i)) as FakeImageBitmap;
+  const want = asFakeBitmap(await blobRef.getBitmap(i));
+  const got = asFakeBitmap(await blobKeyed.getBitmap(i));
   assert.deepEqual([...got.data], [...want.data], `blob patches: frame ${i}`);
 }
 blobRef.close();
@@ -301,7 +306,7 @@ const midway = new AbortController();
 const captured: FakeImageBitmap[] = [];
 const realCreateImageBitmap = globalThis.createImageBitmap;
 (globalThis as Record<string, unknown>).createImageBitmap = async (source: unknown) => {
-  const bitmap = (await realCreateImageBitmap(source as ImageBitmapSource)) as FakeImageBitmap;
+  const bitmap = asFakeBitmap(await realCreateImageBitmap(source as ImageBitmapSource));
   captured.push(bitmap);
   if (captured.length === 2) midway.abort();
   return bitmap as unknown as ImageBitmap;

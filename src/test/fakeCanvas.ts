@@ -50,6 +50,12 @@ export class FakeImageBitmap implements Pixels {
   }
 }
 
+/** Narrow a bitmap handed out by code under test to the fake it really is. */
+export function asFakeBitmap(bitmap: unknown): FakeImageBitmap {
+  if (!(bitmap instanceof FakeImageBitmap)) throw new TypeError("expected a FakeImageBitmap");
+  return bitmap;
+}
+
 /**
  * A Blob stand-in carrying decodable pixels, so `createImageBitmap(blob)` can
  * work in tests. The real WebP/APNG bitstreams can't be decoded in Node, so
